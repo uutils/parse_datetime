@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-humantime_to_duration = "0.1.0"
+humantime_to_duration = "0.1.1"
 ```
 
 Then, import the crate and use the from_str function:
