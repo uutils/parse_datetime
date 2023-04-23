@@ -23,7 +23,7 @@ use humantime_to_duration::from_str;
 use time::Duration;
 
 let duration = from_str("+3 days");
-assert_eq!(duration, Some(Duration::days(3)));
+assert_eq!(duration.unwrap(), Duration::days(3));
 ```
 
 ### Supported Formats
@@ -45,8 +45,12 @@ The `from_str` function supports the following formats for relative time:
 
 The `from_str` function returns:
 
-- `Some(Duration)` - If the input string can be parsed as a relative time.
-- `None` - If the input string cannot be parsed as a relative time.
+- `Ok(Duration)` - If the input string can be parsed as a relative time
+- `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
+
+This function will return `Err(ParseDurationError::InvalidInput)` if the input string
+cannot be parsed as a relative time.
+
 
 ## License
 
