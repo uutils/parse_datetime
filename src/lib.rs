@@ -278,5 +278,11 @@ mod tests {
             Err(ParseDurationError::InvalidInput) => assert!(true),
             _ => assert!(false),
         }
+        // Fails for now with a panic
+        /*        let result = from_str("777777777777777771m");
+        match result {
+            Err(ParseDurationError::InvalidInput) => assert!(true),
+            _ => assert!(false),
+        }*/
     }
 }
