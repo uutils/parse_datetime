@@ -70,38 +70,40 @@ impl From<RegexError> for ParseDurationError {
 ///
 /// # Returns
 ///
-/// * `Some(Duration)` - If the input string can be parsed as a relative time
-/// * `None` - If the input string cannot be parsed as a relative time
+/// * `Ok(Duration)` - If the input string can be parsed as a relative time
+/// * `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
 ///
 /// # Errors
 ///
-/// This function will return `None` if the input string cannot be parsed as a
-/// relative time.
-///
-/// # Panics
-///
-/// This function will return `None` if the input string cannot be parsed as a
-/// relative time.
+/// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
-            r"(?x)
+        r"(?x)
             (?P<value>[-+]?\d*)\s*
             (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
-            (\s*(?P<separator>and|,)?\s*)?"
-        )
-        .unwrap();
+            (\s*(?P<separator>and|,)?\s*)?",
+    )?;
 
     let mut total_duration = Duration::ZERO;
     let mut is_ago = s.contains(" ago");
 
     for capture in time_pattern.captures_iter(s) {
-        let value_str = capture.name("value").unwrap().as_str();
+        let value_str = capture
+            .name("value")
+            .ok_or(ParseDurationError::InvalidInput)?
+            .as_str();
         let value = if value_str.is_empty() {
             1
         } else {
-            value_str.parse::<i64>().unwrap_or(1)
+            value_str
+                .parse::<i64>()
+                .map_err(|_| ParseDurationError::InvalidInput)?
         };
-        let unit = capture.name("unit").unwrap().as_str();
+        let unit = capture
+            .name("unit")
+            .ok_or(ParseDurationError::InvalidInput)?
+            .as_str();
 
         if capture.name("ago").is_some() {
             is_ago = true;
