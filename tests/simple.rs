@@ -113,3 +113,14 @@ fn test_duration_parsing() {
         Duration::seconds(-39_398_402)
     );
 }
+
+#[test]
+fn test_display_parse_duration_error_through_from_str() {
+    let invalid_input = "9223372036854775807 seconds and 1 second";
+    let error = from_str(invalid_input).unwrap_err();
+
+    assert_eq!(
+        format!("{}", error),
+        "Invalid input string: cannot be parsed as a relative time"
+    );
+}
