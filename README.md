@@ -1,7 +1,8 @@
 # humantime_to_duration
 
 [![Crates.io](https://img.shields.io/crates/v/humantime_to_duration.svg)](https://crates.io/crates/humantime_to_duration)
-[![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/coreutils/blob/main/LICENSE)
+[![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/humantime_to_duration/blob/main/LICENSE)
+[![CodeCov](https://codecov.io/gh/uutils/humantime_to_duration/branch/master/graph/badge.svg)](https://codecov.io/gh/uutils/humantime_to_duration)
 
 A Rust crate for parsing human-readable relative time strings and converting them to a `Duration`.
 
