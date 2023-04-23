@@ -1,8 +1,40 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use regex::Regex;
+use regex::{Error as RegexError, Regex};
+use std::error::Error;
+use std::fmt::{self, Display};
 use time::Duration;
+
+#[derive(Debug)]
+pub enum ParseDurationError {
+    InvalidRegex(RegexError),
+    InvalidInput,
+}
+
+impl Display for ParseDurationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseDurationError::InvalidRegex(err) => {
+                write!(f, "Invalid regex for time pattern: {}", err)
+            }
+            ParseDurationError::InvalidInput => {
+                write!(
+                    f,
+                    "Invalid input string: cannot be parsed as a relative time"
+                )
+            }
+        }
+    }
+}
+
+impl Error for ParseDurationError {}
+
+impl From<RegexError> for ParseDurationError {
+    fn from(err: RegexError) -> Self {
+        ParseDurationError::InvalidRegex(err)
+    }
+}
 
 /// Parses a relative time string and returns a `Duration` representing the
 /// relative time.
@@ -16,7 +48,7 @@ use time::Duration;
 /// ```
 /// use time::Duration;
 /// let duration = humantime_to_duration::from_str("+3 days");
-/// assert_eq!(duration, Some(Duration::days(3)));
+/// assert_eq!(duration.unwrap(), Duration::days(3));
 /// ```
 ///
 /// # Supported formats
@@ -45,7 +77,12 @@ use time::Duration;
 ///
 /// This function will return `None` if the input string cannot be parsed as a
 /// relative time.
-pub fn from_str(s: &str) -> Option<Duration> {
+///
+/// # Panics
+///
+/// This function will return `None` if the input string cannot be parsed as a
+/// relative time.
+pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
             r"(?x)
             (?P<value>[-+]?\d*)\s*
@@ -82,115 +119,162 @@ pub fn from_str(s: &str) -> Option<Duration> {
             "yesterday" => Duration::days(-1),
             "tomorrow" => Duration::days(1),
             "now" | "today" => Duration::ZERO,
-            _ => return None,
+            _ => return Err(ParseDurationError::InvalidInput),
         };
 
-        total_duration = total_duration.checked_add(if is_ago { -duration } else { duration })?;
+        total_duration = match total_duration.checked_add(if is_ago { -duration } else { duration })
+        {
+            Some(duration) => duration,
+            None => return Err(ParseDurationError::InvalidInput),
+        };
     }
 
     if total_duration == Duration::ZERO && !time_pattern.is_match(s) {
-        None
+        Err(ParseDurationError::InvalidInput)
     } else {
-        Some(total_duration)
+        Ok(total_duration)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
 
     use super::from_str;
+    use super::ParseDurationError;
     use time::Duration;
 
     #[test]
     fn test_years() {
-        assert_eq!(from_str("1 year"), Some(Duration::seconds(31536000)));
-        assert_eq!(from_str("-2 years"), Some(Duration::seconds(-63072000)));
-        assert_eq!(from_str("2 years ago"), Some(Duration::seconds(-63072000)));
-        assert_eq!(from_str("year"), Some(Duration::seconds(31536000)));
+        assert_eq!(from_str("1 year").unwrap(), Duration::seconds(31_536_000));
+        assert_eq!(
+            from_str("-2 years").unwrap(),
+            Duration::seconds(-63_072_000)
+        );
+        assert_eq!(
+            from_str("2 years ago").unwrap(),
+            Duration::seconds(-63_072_000)
+        );
+        assert_eq!(from_str("year").unwrap(), Duration::seconds(31_536_000));
     }
 
     #[test]
     fn test_months() {
-        assert_eq!(from_str("1 month"), Some(Duration::seconds(2592000)));
-        assert_eq!(from_str("1 month and 2 weeks"), Some(Duration::seconds(3801600)));
-        assert_eq!(from_str("1 month and 2 weeks ago"), Some(Duration::seconds(-3801600)));
-        assert_eq!(from_str("2 months"), Some(Duration::seconds(5184000)));
-        assert_eq!(from_str("month"), Some(Duration::seconds(2592000)));
+        assert_eq!(from_str("1 month").unwrap(), Duration::seconds(2_592_000));
+        assert_eq!(
+            from_str("1 month and 2 weeks").unwrap(),
+            Duration::seconds(3_801_600)
+        );
+        assert_eq!(
+            from_str("1 month and 2 weeks ago").unwrap(),
+            Duration::seconds(-3_801_600)
+        );
+        assert_eq!(from_str("2 months").unwrap(), Duration::seconds(5_184_000));
+        assert_eq!(from_str("month").unwrap(), Duration::seconds(2_592_000));
     }
 
     #[test]
     fn test_fortnights() {
-        assert_eq!(from_str("1 fortnight"), Some(Duration::seconds(1209600)));
-        assert_eq!(from_str("3 fortnights"), Some(Duration::seconds(3628800)));
-        assert_eq!(from_str("fortnight"), Some(Duration::seconds(1209600)));
+        assert_eq!(
+            from_str("1 fortnight").unwrap(),
+            Duration::seconds(1_209_600)
+        );
+        assert_eq!(
+            from_str("3 fortnights").unwrap(),
+            Duration::seconds(3_628_800)
+        );
+        assert_eq!(from_str("fortnight").unwrap(), Duration::seconds(1_209_600));
     }
 
     #[test]
     fn test_weeks() {
-        assert_eq!(from_str("1 week"), Some(Duration::seconds(604800)));
-        assert_eq!(from_str("1 week 3 days"), Some(Duration::seconds(864000)));
-        assert_eq!(from_str("1 week 3 days ago"), Some(Duration::seconds(-864000)));
-        assert_eq!(from_str("-2 weeks"), Some(Duration::seconds(-1209600)));
-        assert_eq!(from_str("2 weeks ago"), Some(Duration::seconds(-1209600)));
-        assert_eq!(from_str("week"), Some(Duration::seconds(604800)));
+        assert_eq!(from_str("1 week").unwrap(), Duration::seconds(604_800));
+        assert_eq!(
+            from_str("1 week 3 days").unwrap(),
+            Duration::seconds(864_000)
+        );
+        assert_eq!(
+            from_str("1 week 3 days ago").unwrap(),
+            Duration::seconds(-864_000)
+        );
+        assert_eq!(from_str("-2 weeks").unwrap(), Duration::seconds(-1_209_600));
+        assert_eq!(
+            from_str("2 weeks ago").unwrap(),
+            Duration::seconds(-1_209_600)
+        );
+        assert_eq!(from_str("week").unwrap(), Duration::seconds(604_800));
     }
 
     #[test]
     fn test_days() {
-        assert_eq!(from_str("1 day"), Some(Duration::seconds(86400)));
-        assert_eq!(from_str("2 days ago"), Some(Duration::seconds(-172800)));
-        assert_eq!(from_str("-2 days"), Some(Duration::seconds(-172800)));
-        assert_eq!(from_str("day"), Some(Duration::seconds(86400)));
+        assert_eq!(from_str("1 day").unwrap(), Duration::seconds(86400));
+        assert_eq!(from_str("2 days ago").unwrap(), Duration::seconds(-172_800));
+        assert_eq!(from_str("-2 days").unwrap(), Duration::seconds(-172_800));
+        assert_eq!(from_str("day").unwrap(), Duration::seconds(86400));
     }
 
     #[test]
     fn test_hours() {
-        assert_eq!(from_str("1 hour"), Some(Duration::seconds(3600)));
-        assert_eq!(from_str("1 hour ago"), Some(Duration::seconds(-3600)));
-        assert_eq!(from_str("-2 hours"), Some(Duration::seconds(-7200)));
-        assert_eq!(from_str("hour"), Some(Duration::seconds(3600)));
+        assert_eq!(from_str("1 hour").unwrap(), Duration::seconds(3600));
+        assert_eq!(from_str("1 hour ago").unwrap(), Duration::seconds(-3600));
+        assert_eq!(from_str("-2 hours").unwrap(), Duration::seconds(-7200));
+        assert_eq!(from_str("hour").unwrap(), Duration::seconds(3600));
     }
 
     #[test]
     fn test_minutes() {
-        assert_eq!(from_str("1 minute"), Some(Duration::seconds(60)));
-        assert_eq!(from_str("2 minutes"), Some(Duration::seconds(120)));
-        assert_eq!(from_str("min"), Some(Duration::seconds(60)));
+        assert_eq!(from_str("1 minute").unwrap(), Duration::seconds(60));
+        assert_eq!(from_str("2 minutes").unwrap(), Duration::seconds(120));
+        assert_eq!(from_str("min").unwrap(), Duration::seconds(60));
     }
 
     #[test]
     fn test_seconds() {
-        assert_eq!(from_str("1 second"), Some(Duration::seconds(1)));
-        assert_eq!(from_str("2 seconds"), Some(Duration::seconds(2)));
-        assert_eq!(from_str("sec"), Some(Duration::seconds(1)));
+        assert_eq!(from_str("1 second").unwrap(), Duration::seconds(1));
+        assert_eq!(from_str("2 seconds").unwrap(), Duration::seconds(2));
+        assert_eq!(from_str("sec").unwrap(), Duration::seconds(1));
     }
 
     #[test]
     fn test_relative_days() {
-        assert_eq!(from_str("now"), Some(Duration::seconds(0)));
-        assert_eq!(from_str("today"), Some(Duration::seconds(0)));
-        assert_eq!(from_str("yesterday"), Some(Duration::seconds(-86400)));
-        assert_eq!(from_str("tomorrow"), Some(Duration::seconds(86400)));
+        assert_eq!(from_str("now").unwrap(), Duration::seconds(0));
+        assert_eq!(from_str("today").unwrap(), Duration::seconds(0));
+        assert_eq!(from_str("yesterday").unwrap(), Duration::seconds(-86400));
+        assert_eq!(from_str("tomorrow").unwrap(), Duration::seconds(86400));
     }
 
     #[test]
     fn test_no_spaces() {
-        assert_eq!(from_str("-1hour"), Some(Duration::hours(-1)));
-        assert_eq!(from_str("+3days"), Some(Duration::days(3)));
-        assert_eq!(from_str("2weeks"), Some(Duration::weeks(2)));
-        assert_eq!(from_str("2weeks 1hour"), Some(Duration::seconds(1213200)));
-        assert_eq!(from_str("2weeks 1hour ago"), Some(Duration::seconds(-1213200)));
-        assert_eq!(from_str("+4months"), Some(Duration::days(4 * 30)));
-        assert_eq!(from_str("-2years"), Some(Duration::days(-2 * 365)));
-        assert_eq!(from_str("15minutes"), Some(Duration::minutes(15)));
-        assert_eq!(from_str("-30seconds"), Some(Duration::seconds(-30)));
-        assert_eq!(from_str("30seconds ago"), Some(Duration::seconds(-30)));
+        assert_eq!(from_str("-1hour").unwrap(), Duration::hours(-1));
+        assert_eq!(from_str("+3days").unwrap(), Duration::days(3));
+        assert_eq!(from_str("2weeks").unwrap(), Duration::weeks(2));
+        assert_eq!(
+            from_str("2weeks 1hour").unwrap(),
+            Duration::seconds(1_213_200)
+        );
+        assert_eq!(
+            from_str("2weeks 1hour ago").unwrap(),
+            Duration::seconds(-1_213_200)
+        );
+        assert_eq!(from_str("+4months").unwrap(), Duration::days(4 * 30));
+        assert_eq!(from_str("-2years").unwrap(), Duration::days(-2 * 365));
+        assert_eq!(from_str("15minutes").unwrap(), Duration::minutes(15));
+        assert_eq!(from_str("-30seconds").unwrap(), Duration::seconds(-30));
+        assert_eq!(from_str("30seconds ago").unwrap(), Duration::seconds(-30));
     }
 
     #[test]
     fn test_invalid_input() {
-        assert_eq!(from_str("invalid"), None);
-        assert_eq!(from_str("1 invalid"), None);
+        let result = from_str("foobar");
+        println!("{:?}", result);
+        match result {
+            Err(ParseDurationError::InvalidInput) => assert!(true),
+            _ => assert!(false),
+        }
+
+        let result = from_str("invalid 1");
+        match result {
+            Err(ParseDurationError::InvalidInput) => assert!(true),
+            _ => assert!(false),
+        }
     }
 }
