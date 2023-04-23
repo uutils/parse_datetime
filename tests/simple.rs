@@ -120,7 +120,18 @@ fn test_display_parse_duration_error_through_from_str() {
     let error = from_str(invalid_input).unwrap_err();
 
     assert_eq!(
-        format!("{}", error),
+        format!("{error}"),
+        "Invalid input string: cannot be parsed as a relative time"
+    );
+}
+
+#[test]
+fn test_display_should_fail() {
+    let invalid_input = "Thu Jan 01 12:34:00 2015";
+    let error = from_str(invalid_input).unwrap_err();
+
+    assert_eq!(
+        format!("{error}"),
         "Invalid input string: cannot be parsed as a relative time"
     );
 }

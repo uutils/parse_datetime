@@ -80,15 +80,20 @@ impl From<RegexError> for ParseDurationError {
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
-            (?P<value>[-+]?\d*)\s*
-            (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
-            (\s*(?P<separator>and|,)?\s*)?",
+        (?:(?P<value>[-+]?\d*)\s*)?
+        (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
+        (\s*(?P<separator>and|,)?\s*)?
+        (\s*(?P<ago>ago)?)?",
     )?;
 
     let mut total_duration = Duration::ZERO;
     let mut is_ago = s.contains(" ago");
+    let mut captures_processed = 0;
+    let mut total_length = 0;
 
     for capture in time_pattern.captures_iter(s) {
+        captures_processed += 1;
+
         let value_str = capture
             .name("value")
             .ok_or(ParseDurationError::InvalidInput)?
@@ -129,9 +134,19 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
             Some(duration) => duration,
             None => return Err(ParseDurationError::InvalidInput),
         };
+
+        // Calculate the total length of the matched substring
+        if let Some(m) = capture.get(0) {
+            total_length += m.end() - m.start();
+        }
     }
 
-    if total_duration == Duration::ZERO && !time_pattern.is_match(s) {
+    // Check if the entire input string has been captured
+    if total_length != s.len() {
+        return Err(ParseDurationError::InvalidInput);
+    }
+
+    if captures_processed == 0 {
         Err(ParseDurationError::InvalidInput)
     } else {
         Ok(total_duration)
