@@ -101,4 +101,8 @@ fn test_duration_parsing() {
         from_str("1 year 2 months 4 weeks 3 days and 2 seconds").unwrap(),
         Duration::seconds(39_398_402)
     );
+    assert_eq!(
+        from_str("1 year 2 months 4 weeks 3 days and 2 seconds ago").unwrap(),
+        Duration::seconds(-39_398_402)
+    );
 }
