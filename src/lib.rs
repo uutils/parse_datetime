@@ -16,7 +16,7 @@ impl Display for ParseDurationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseDurationError::InvalidRegex(err) => {
-                write!(f, "Invalid regex for time pattern: {}", err)
+                write!(f, "Invalid regex for time pattern: {err}")
             }
             ParseDurationError::InvalidInput => {
                 write!(
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn test_invalid_input() {
         let result = from_str("foobar");
-        println!("{:?}", result);
+        println!("{result:?}");
         match result {
             Err(ParseDurationError::InvalidInput) => assert!(true),
             _ => assert!(false),
