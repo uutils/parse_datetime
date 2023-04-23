@@ -1,9 +1,10 @@
 [package]
 name = "humantime_to_duration"
+description = " parsing human-readable relative time strings and converting them to a Duration"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+repository = "https://github.com/uutils/humantime_to_duration"
 
 [dependencies]
 regex = "1.8.1"
