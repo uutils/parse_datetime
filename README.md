@@ -51,6 +51,12 @@ The `from_str` function returns:
 This function will return `Err(ParseDurationError::InvalidInput)` if the input string
 cannot be parsed as a relative time.
 
+## Fuzzer
+
+To run the fuzzer:
+```
+$ cargo fuzz run fuzz_from_str
+```
 
 ## License
 
