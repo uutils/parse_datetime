@@ -7,5 +7,5 @@ license = "MIT"
 repository = "https://github.com/uutils/humantime_to_duration"
 
 [dependencies]
-regex = "1.8.1"
+regex = "1.7"
 time = "0.3.20"
