@@ -11,6 +11,7 @@ A Rust crate for parsing human-readable relative time strings and converting the
 - Parses a variety of human-readable time formats.
 - Supports positive and negative durations.
 - Allows for chaining time units (e.g., "1 hour 2 minutes" or "2 days and 2 hours").
+- Calculate durations relative to a specified date.
 
 ## Usage
 
@@ -21,18 +22,25 @@ Add this to your `Cargo.toml`:
 humantime_to_duration = "0.1.1"
 ```
 
-Then, import the crate and use the from_str function:
+Then, import the crate and use the `from_str` and `from_str_at_date` functions:
 ```
 use humantime_to_duration::from_str;
 use time::Duration;
 
 let duration = from_str("+3 days");
 assert_eq!(duration.unwrap(), Duration::days(3));
+
+let today = OffsetDateTime::now_utc().date();
+let yesterday = today - Duration::days(1);
+assert_eq!(
+    from_str_at_date(yesterday, "2 days").unwrap(),
+    Duration::days(1)
+);
 ```
 
 ### Supported Formats
 
-The `from_str` function supports the following formats for relative time:
+The `from_str` and `from_str_at_date` functions support the following formats for relative time:
 
 - `num` `unit` (e.g., "-1 hour", "+3 days")
 - `unit` (e.g., "hour", "day")
@@ -47,7 +55,7 @@ The `from_str` function supports the following formats for relative time:
 
 ## Return Values
 
-The `from_str` function returns:
+The `from_str` and `from_str_at_date` functions return:
 
 - `Ok(Duration)` - If the input string can be parsed as a relative time
 - `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time

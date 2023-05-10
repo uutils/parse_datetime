@@ -4,7 +4,7 @@
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
-use time::Duration;
+use time::{Date, Duration, OffsetDateTime};
 
 #[derive(Debug)]
 pub enum ParseDurationError {
@@ -77,6 +77,17 @@ impl From<RegexError> for ParseDurationError {
 ///
 /// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
 /// cannot be parsed as a relative time.
+///
+/// # Examples
+///
+/// ```
+/// use time::Duration;
+/// use humantime_to_duration::{from_str, ParseDurationError};
+///
+/// assert_eq!(from_str("1 hour, 30 minutes").unwrap(), Duration::minutes(90));
+/// assert_eq!(from_str("tomorrow").unwrap(), Duration::days(1));
+/// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
+/// ```
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
@@ -153,12 +164,42 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     }
 }
 
+/// Parses a duration string and returns a `Duration` instance, with the duration
+/// calculated from the specified date.
+///
+/// # Arguments
+///
+/// * `date` - A `Date` instance representing the base date for the calculation
+/// * `s` - A string slice representing the relative time.
+///
+/// # Examples
+///
+/// ```
+/// use time::{Date, Duration, OffsetDateTime};
+/// use humantime_to_duration::{from_str_at_date, ParseDurationError};
+/// let today = OffsetDateTime::now_utc().date();
+/// let yesterday = today - Duration::days(1);
+/// assert_eq!(
+///     from_str_at_date(yesterday, "2 days").unwrap(),
+///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
+/// );
+/// ```
+pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationError> {
+    let time_now = OffsetDateTime::now_utc().date();
+    let date_duration = date - time_now;
+
+    match from_str(s) {
+        Ok(duration) => Ok(duration + date_duration),
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
-    use super::from_str;
     use super::ParseDurationError;
-    use time::Duration;
+    use super::{from_str, from_str_at_date};
+    use time::{Date, Duration, Month, OffsetDateTime};
 
     #[test]
     fn test_years() {
@@ -299,5 +340,31 @@ mod tests {
             Err(ParseDurationError::InvalidInput) => assert!(true),
             _ => assert!(false),
         }*/
+    }
+
+    #[test]
+    fn test_from_str_at_date() {
+        let date = Date::from_calendar_date(2014, Month::September, 5).unwrap();
+        let now = OffsetDateTime::now_utc().date();
+        let days_diff = (date - now).whole_days();
+
+        assert_eq!(
+            from_str_at_date(date, "1 day").unwrap(),
+            Duration::days(days_diff + 1)
+        );
+
+        assert_eq!(
+            from_str_at_date(date, "2 hours").unwrap(),
+            Duration::days(days_diff) + Duration::hours(2)
+        );
+    }
+
+    #[test]
+    fn test_invalid_input_at_date() {
+        let date = Date::from_calendar_date(2014, Month::September, 5).unwrap();
+        assert!(matches!(
+            from_str_at_date(date, "invalid"),
+            Err(ParseDurationError::InvalidInput)
+        ));
     }
 }
