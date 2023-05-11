@@ -62,7 +62,7 @@ impl From<RegexError> for ParseDurationError {
 /// * "tomorrow"
 /// * use "ago" for the past
 ///
-/// [num] can be a positive or negative integer.
+/// `[num]` can be a positive or negative integer.
 /// [unit] can be one of the following: "fortnight", "week", "day", "hour",
 /// "minute", "min", "second", "sec" and their plural forms.
 ///
