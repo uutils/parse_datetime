@@ -188,10 +188,7 @@ pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationEr
     let time_now = OffsetDateTime::now_utc().date();
     let date_duration = date - time_now;
 
-    match from_str(s) {
-        Ok(duration) => Ok(duration + date_duration),
-        Err(error) => Err(error),
-    }
+    Ok(from_str(s)? + date_duration)
 }
 
 #[cfg(test)]
