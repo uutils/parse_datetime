@@ -100,6 +100,11 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
 /// * `date` - A `Date` instance representing the base date for the calculation
 /// * `s` - A string slice representing the relative time.
 ///
+/// # Errors
+///
+/// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
+///
 /// # Examples
 ///
 /// ```
