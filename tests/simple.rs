@@ -1,5 +1,5 @@
-use humantime_to_duration::{from_str, ParseDurationError};
-use time::Duration;
+use humantime_to_duration::{from_str, from_str_at_date, ParseDurationError};
+use time::{Duration, OffsetDateTime};
 
 #[test]
 fn test_invalid_input() {
@@ -134,4 +134,31 @@ fn test_display_should_fail() {
         format!("{error}"),
         "Invalid input string: cannot be parsed as a relative time"
     );
+}
+
+#[test]
+fn test_from_str_at_date_day() {
+    let today = OffsetDateTime::now_utc().date();
+    let yesterday = today - Duration::days(1);
+    assert_eq!(
+        from_str_at_date(yesterday, "2 days").unwrap(),
+        Duration::days(1)
+    );
+}
+
+#[test]
+fn test_invalid_input_at_date() {
+    let today = OffsetDateTime::now_utc().date();
+    let result = from_str_at_date(today, "foobar");
+    println!("{result:?}");
+    match result {
+        Err(ParseDurationError::InvalidInput) => assert!(true),
+        _ => assert!(false),
+    }
+
+    let result = from_str_at_date(today, "invalid 1r");
+    match result {
+        Err(ParseDurationError::InvalidInput) => assert!(true),
+        _ => assert!(false),
+    }
 }
