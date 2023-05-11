@@ -149,15 +149,14 @@ fn test_from_str_at_date_day() {
 #[test]
 fn test_invalid_input_at_date() {
     let today = OffsetDateTime::now_utc().date();
-    let yesterday = today - Duration::days(1);
-    let result = from_str_at_date(yesterday, "foobar");
+    let result = from_str_at_date(today, "foobar");
     println!("{result:?}");
     match result {
         Err(ParseDurationError::InvalidInput) => assert!(true),
         _ => assert!(false),
     }
 
-    let result = from_str_at_date(yesterday, "invalid 1r");
+    let result = from_str_at_date(today, "invalid 1r");
     match result {
         Err(ParseDurationError::InvalidInput) => assert!(true),
         _ => assert!(false),
