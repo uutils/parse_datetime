@@ -24,7 +24,7 @@ humantime_to_duration = "0.1.1"
 
 Then, import the crate and use the `from_str` and `from_str_at_date` functions:
 ```
-use humantime_to_duration::from_str;
+use humantime_to_duration::{from_str, from_str_at_date};
 use time::Duration;
 
 let duration = from_str("+3 days");
