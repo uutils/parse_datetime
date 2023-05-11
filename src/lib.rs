@@ -89,6 +89,30 @@ impl From<RegexError> for ParseDurationError {
 /// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
 /// ```
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
+    from_str_at_date(OffsetDateTime::now_utc().date(), s)
+}
+
+/// Parses a duration string and returns a `Duration` instance, with the duration
+/// calculated from the specified date.
+///
+/// # Arguments
+///
+/// * `date` - A `Date` instance representing the base date for the calculation
+/// * `s` - A string slice representing the relative time.
+///
+/// # Examples
+///
+/// ```
+/// use time::{Date, Duration, OffsetDateTime};
+/// use humantime_to_duration::{from_str_at_date, ParseDurationError};
+/// let today = OffsetDateTime::now_utc().date();
+/// let yesterday = today - Duration::days(1);
+/// assert_eq!(
+///     from_str_at_date(yesterday, "2 days").unwrap(),
+///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
+/// );
+/// ```
+pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -160,35 +184,11 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
     if captures_processed == 0 {
         Err(ParseDurationError::InvalidInput)
     } else {
-        Ok(total_duration)
+        let time_now = OffsetDateTime::now_utc().date();
+        let date_duration = date - time_now;
+
+        Ok(total_duration + date_duration)
     }
-}
-
-/// Parses a duration string and returns a `Duration` instance, with the duration
-/// calculated from the specified date.
-///
-/// # Arguments
-///
-/// * `date` - A `Date` instance representing the base date for the calculation
-/// * `s` - A string slice representing the relative time.
-///
-/// # Examples
-///
-/// ```
-/// use time::{Date, Duration, OffsetDateTime};
-/// use humantime_to_duration::{from_str_at_date, ParseDurationError};
-/// let today = OffsetDateTime::now_utc().date();
-/// let yesterday = today - Duration::days(1);
-/// assert_eq!(
-///     from_str_at_date(yesterday, "2 days").unwrap(),
-///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
-/// );
-/// ```
-pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationError> {
-    let time_now = OffsetDateTime::now_utc().date();
-    let date_duration = date - time_now;
-
-    Ok(from_str(s)? + date_duration)
 }
 
 #[cfg(test)]
