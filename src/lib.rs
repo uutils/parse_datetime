@@ -6,7 +6,7 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use time::{Date, Duration, OffsetDateTime};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ParseDurationError {
     InvalidRegex(RegexError),
     InvalidInput,

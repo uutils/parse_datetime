@@ -5,16 +5,10 @@ use time::{Duration, OffsetDateTime};
 fn test_invalid_input() {
     let result = from_str("foobar");
     println!("{result:?}");
-    match result {
-        Err(ParseDurationError::InvalidInput) => assert!(true),
-        _ => assert!(false),
-    }
+    assert_eq!(result, Err(ParseDurationError::InvalidInput));
 
     let result = from_str("invalid 1");
-    match result {
-        Err(ParseDurationError::InvalidInput) => assert!(true),
-        _ => assert!(false),
-    }
+    assert_eq!(result, Err(ParseDurationError::InvalidInput));
 }
 
 #[test]
@@ -151,14 +145,8 @@ fn test_invalid_input_at_date() {
     let today = OffsetDateTime::now_utc().date();
     let result = from_str_at_date(today, "foobar");
     println!("{result:?}");
-    match result {
-        Err(ParseDurationError::InvalidInput) => assert!(true),
-        _ => assert!(false),
-    }
+    assert_eq!(result, Err(ParseDurationError::InvalidInput));
 
     let result = from_str_at_date(today, "invalid 1r");
-    match result {
-        Err(ParseDurationError::InvalidInput) => assert!(true),
-        _ => assert!(false),
-    }
+    assert_eq!(result, Err(ParseDurationError::InvalidInput));
 }
