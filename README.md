@@ -19,7 +19,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-humantime_to_duration = "0.1.1"
+humantime_to_duration = "0.2.1"
 ```
 
 Then, import the crate and use the `from_str` and `from_str_at_date` functions:
