@@ -9,7 +9,7 @@ cargo-fuzz = true
 [dependencies]
 rand = "0.8.4"
 libfuzzer-sys = "0.4"
-regex = "1.8.1"
+regex = "1.8.3"
 time = "0.3.20"
 
 [dependencies.humantime_to_duration]
