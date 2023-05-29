@@ -8,5 +8,5 @@ repository = "https://github.com/uutils/humantime_to_duration"
 readme = "README.md"
 
 [dependencies]
-regex = "1.7"
+regex = "1.8"
 time = "0.3.20"
