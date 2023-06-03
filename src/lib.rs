@@ -1,10 +1,10 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+use chrono::{Duration, Local, NaiveDate, Utc};
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
-use time::{Date, Duration, OffsetDateTime};
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDurationError {
@@ -46,7 +46,7 @@ impl From<RegexError> for ParseDurationError {
 /// # Examples
 ///
 /// ```
-/// use time::Duration;
+/// use chrono::Duration;
 /// let duration = humantime_to_duration::from_str("+3 days");
 /// assert_eq!(duration.unwrap(), Duration::days(3));
 /// ```
@@ -81,7 +81,7 @@ impl From<RegexError> for ParseDurationError {
 /// # Examples
 ///
 /// ```
-/// use time::Duration;
+/// use chrono::Duration;
 /// use humantime_to_duration::{from_str, ParseDurationError};
 ///
 /// assert_eq!(from_str("1 hour, 30 minutes").unwrap(), Duration::minutes(90));
@@ -89,7 +89,7 @@ impl From<RegexError> for ParseDurationError {
 /// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
 /// ```
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
-    from_str_at_date(OffsetDateTime::now_utc().date(), s)
+    from_str_at_date(Utc::today().naive_utc(), s)
 }
 
 /// Parses a duration string and returns a `Duration` instance, with the duration
@@ -108,16 +108,16 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
 /// # Examples
 ///
 /// ```
-/// use time::{Date, Duration, OffsetDateTime};
+/// use chrono::{Duration, NaiveDate, Utc, Local};
 /// use humantime_to_duration::{from_str_at_date, ParseDurationError};
-/// let today = OffsetDateTime::now_utc().date();
+/// let today = Local::now().date().naive_local();
 /// let yesterday = today - Duration::days(1);
 /// assert_eq!(
 ///     from_str_at_date(yesterday, "2 days").unwrap(),
 ///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
 /// );
 /// ```
-pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationError> {
+pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurationError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -126,7 +126,7 @@ pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationEr
         (\s*(?P<ago>ago)?)?",
     )?;
 
-    let mut total_duration = Duration::ZERO;
+    let mut total_duration = Duration::seconds(0);
     let mut is_ago = s.contains(" ago");
     let mut captures_processed = 0;
     let mut total_length = 0;
@@ -165,15 +165,15 @@ pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationEr
             "seconds" | "second" | "secs" | "sec" | "s" => Duration::seconds(value),
             "yesterday" => Duration::days(-1),
             "tomorrow" => Duration::days(1),
-            "now" | "today" => Duration::ZERO,
+            "now" | "today" => Duration::zero(),
             _ => return Err(ParseDurationError::InvalidInput),
         };
-
-        total_duration = match total_duration.checked_add(if is_ago { -duration } else { duration })
-        {
-            Some(duration) => duration,
-            None => return Err(ParseDurationError::InvalidInput),
-        };
+        let neg_duration = -duration;
+        total_duration =
+            match total_duration.checked_add(if is_ago { &neg_duration } else { &duration }) {
+                Some(duration) => duration,
+                None => return Err(ParseDurationError::InvalidInput),
+            };
 
         // Calculate the total length of the matched substring
         if let Some(m) = capture.get(0) {
@@ -189,7 +189,7 @@ pub fn from_str_at_date(date: Date, s: &str) -> Result<Duration, ParseDurationEr
     if captures_processed == 0 {
         Err(ParseDurationError::InvalidInput)
     } else {
-        let time_now = OffsetDateTime::now_utc().date();
+        let time_now = Local::now().date().naive_local();
         let date_duration = date - time_now;
 
         Ok(total_duration + date_duration)
@@ -201,7 +201,7 @@ mod tests {
 
     use super::ParseDurationError;
     use super::{from_str, from_str_at_date};
-    use time::{Date, Duration, Month, OffsetDateTime};
+    use chrono::{Date, Duration, Local, NaiveDate};
 
     #[test]
     fn test_years() {
@@ -346,9 +346,9 @@ mod tests {
 
     #[test]
     fn test_from_str_at_date() {
-        let date = Date::from_calendar_date(2014, Month::September, 5).unwrap();
-        let now = OffsetDateTime::now_utc().date();
-        let days_diff = (date - now).whole_days();
+        let date = NaiveDate::from_ymd(2014, 9, 5);
+        let now = Local::today().naive_local();
+        let days_diff = (date - now).num_days();
 
         assert_eq!(
             from_str_at_date(date, "1 day").unwrap(),
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_invalid_input_at_date() {
-        let date = Date::from_calendar_date(2014, Month::September, 5).unwrap();
+        let date = NaiveDate::from_ymd(2014, 9, 5);
         assert!(matches!(
             from_str_at_date(date, "invalid"),
             Err(ParseDurationError::InvalidInput)
