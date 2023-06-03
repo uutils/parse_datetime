@@ -1,6 +1,9 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// Expose parse_datetime
+pub mod parse_datetime;
+
 use chrono::{Duration, Local, NaiveDate, Utc};
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
