@@ -9,4 +9,4 @@ readme = "README.md"
 
 [dependencies]
 regex = "1.8"
-time = "0.3.20"
+chrono = "0.4"
