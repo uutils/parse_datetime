@@ -326,16 +326,10 @@ mod tests {
     fn test_invalid_input() {
         let result = from_str("foobar");
         println!("{result:?}");
-        match result {
-            Err(ParseDurationError::InvalidInput) => assert!(true),
-            _ => panic!(),
-        }
+        assert_eq!(result, Err(ParseDurationError::InvalidInput));
 
         let result = from_str("invalid 1");
-        match result {
-            Err(ParseDurationError::InvalidInput) => assert!(true),
-            _ => panic!(),
-        }
+        assert_eq!(result, Err(ParseDurationError::InvalidInput));
         // Fails for now with a panic
         /*        let result = from_str("777777777777777771m");
         match result {
