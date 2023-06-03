@@ -89,7 +89,7 @@ impl From<RegexError> for ParseDurationError {
 /// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
 /// ```
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
-    from_str_at_date(Utc::today().naive_utc(), s)
+    from_str_at_date(Utc::now().date_naive(), s)
 }
 
 /// Parses a duration string and returns a `Duration` instance, with the duration
@@ -189,7 +189,7 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
     if captures_processed == 0 {
         Err(ParseDurationError::InvalidInput)
     } else {
-        let time_now = Local::now().date().naive_local();
+        let time_now = Local::now().date_naive();
         let date_duration = date - time_now;
 
         Ok(total_duration + date_duration)
@@ -201,7 +201,7 @@ mod tests {
 
     use super::ParseDurationError;
     use super::{from_str, from_str_at_date};
-    use chrono::{Date, Duration, Local, NaiveDate};
+    use chrono::{Duration, Local, NaiveDate};
 
     #[test]
     fn test_years() {
@@ -328,13 +328,13 @@ mod tests {
         println!("{result:?}");
         match result {
             Err(ParseDurationError::InvalidInput) => assert!(true),
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let result = from_str("invalid 1");
         match result {
             Err(ParseDurationError::InvalidInput) => assert!(true),
-            _ => assert!(false),
+            _ => panic!(),
         }
         // Fails for now with a panic
         /*        let result = from_str("777777777777777771m");
@@ -346,8 +346,8 @@ mod tests {
 
     #[test]
     fn test_from_str_at_date() {
-        let date = NaiveDate::from_ymd(2014, 9, 5);
-        let now = Local::today().naive_local();
+        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
+        let now = Local::now().date_naive();
         let days_diff = (date - now).num_days();
 
         assert_eq!(
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_invalid_input_at_date() {
-        let date = NaiveDate::from_ymd(2014, 9, 5);
+        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
         assert!(matches!(
             from_str_at_date(date, "invalid"),
             Err(ParseDurationError::InvalidInput)

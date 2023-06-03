@@ -1,4 +1,4 @@
-use chrono::{Duration, Local, NaiveDate, Utc};
+use chrono::{Duration, Utc};
 use humantime_to_duration::{from_str, from_str_at_date, ParseDurationError};
 
 #[test]
@@ -128,7 +128,7 @@ fn test_display_should_fail() {
 
 #[test]
 fn test_from_str_at_date_day() {
-    let today = Utc::today().naive_utc();
+    let today = Utc::now().date_naive();
     let yesterday = today - Duration::days(1);
     assert_eq!(
         from_str_at_date(yesterday, "2 days").unwrap(),
@@ -138,7 +138,7 @@ fn test_from_str_at_date_day() {
 
 #[test]
 fn test_invalid_input_at_date() {
-    let today = Utc::today().naive_utc();
+    let today = Utc::now().date_naive();
     let result = from_str_at_date(today, "foobar");
     println!("{result:?}");
     assert_eq!(result, Err(ParseDurationError::InvalidInput));
