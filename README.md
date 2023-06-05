@@ -24,7 +24,7 @@ humantime_to_duration = "0.3.0"
 ```
 
 Then, import the crate and use the `from_str` and `from_str_at_date` functions:
-```
+```rs
 use humantime_to_duration::{from_str, from_str_at_date};
 use chrono::Duration;
 
