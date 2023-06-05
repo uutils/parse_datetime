@@ -1,9 +1,12 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone};
 
 use crate::ParseDurationError;
 
 /// Formats that parse input can take.
-/// Taken from `touch` core util
+/// Taken from `touch` coreutil
 mod format {
     pub(crate) const ISO_8601: &str = "%Y-%m-%d";
     pub(crate) const ISO_8601_NO_SEP: &str = "%Y%m%d";
@@ -32,7 +35,7 @@ mod format {
 /// # Examples
 ///
 /// ```
-/// use chrono::{DateTime, Utc};
+/// use chrono::{DateTime, Utc, TimeZone};
 /// let time = humantime_to_duration::parse_datetime::from_str("2023-06-03 12:00:01Z");
 /// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 03, 12, 00, 01).unwrap());
 /// ```
@@ -144,7 +147,7 @@ mod tests {
     mod iso_8601 {
         use std::env;
 
-        use crate::{parse_datetime::from_str, parse_datetime::tests::TEST_TIME};
+        use crate::{parse_datetime::from_str, parse_datetime::tests::TEST_TIME, ParseDurationError};
 
         #[test]
         fn test_t_sep() {
@@ -177,13 +180,21 @@ mod tests {
             let actual = from_str(dt);
             assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
         }
+
+        #[test]
+        fn invalid_formats() {
+            let invalid_dts = vec!["NotADate", "202104", "202104-12T22:37:47"];
+            for dt in invalid_dts {
+                assert_eq!(from_str(dt), Err(ParseDurationError::InvalidInput));
+            }
+        }
     }
 
     #[cfg(test)]
     mod offsets {
         use chrono::Local;
 
-        use crate::parse_datetime::from_str;
+        use crate::{parse_datetime::from_str, ParseDurationError};
 
         #[test]
         fn test_positive_offsets() {
@@ -210,6 +221,14 @@ mod tests {
             for offset in offsets {
                 let actual = from_str(offset).unwrap();
                 assert_eq!(expected, format!("{}", actual.format("%Y%m%d%H%M%z")));
+            }
+        }
+
+        #[test]
+        fn invalid_offset_format() {
+            let invalid_offsets = vec!["+0700", "UTC+2", "Z-1", "UTC+01005"];
+            for offset in invalid_offsets {
+                assert_eq!(from_str(offset), Err(ParseDurationError::InvalidInput));
             }
         }
     }
