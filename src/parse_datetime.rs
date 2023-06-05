@@ -6,7 +6,7 @@ use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone}
 use crate::ParseDurationError;
 
 /// Formats that parse input can take.
-/// Taken from `touch` coreutil
+/// Taken from `touch` coreutils
 mod format {
     pub(crate) const ISO_8601: &str = "%Y-%m-%d";
     pub(crate) const ISO_8601_NO_SEP: &str = "%Y%m%d";
