@@ -147,7 +147,9 @@ mod tests {
     mod iso_8601 {
         use std::env;
 
-        use crate::{parse_datetime::from_str, parse_datetime::tests::TEST_TIME, ParseDurationError};
+        use crate::{
+            parse_datetime::from_str, parse_datetime::tests::TEST_TIME, ParseDurationError,
+        };
 
         #[test]
         fn test_t_sep() {
