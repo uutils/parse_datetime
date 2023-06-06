@@ -4,11 +4,11 @@
 [![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/humantime_to_duration/blob/main/LICENSE)
 [![CodeCov](https://codecov.io/gh/uutils/humantime_to_duration/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/humantime_to_duration)
 
-A Rust crate for parsing human-readable relative time strings and converting them to a `Duration`.
+A Rust crate for parsing human-readable relative time strings and converting them to a `Duration`, or parsing human-readable datetime strings and converting them to a `DateTime`.
 
 ## Features
 
-- Parses a variety of human-readable time formats.
+- Parses a variety of human-readable and standard time formats.
 - Supports positive and negative durations.
 - Allows for chaining time units (e.g., "1 hour 2 minutes" or "2 days and 2 hours").
 - Calculate durations relative to a specified date.
@@ -39,6 +39,15 @@ assert_eq!(
 );
 ```
 
+For DateTime parsing, import the `parse_datetime` module:
+```
+use humantime_to_duration::parse_datetime::from_str;
+use chrono::{Local, TimeZone};
+
+let dt = from_str("2021-02-14 06:37:47");
+assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap());
+```
+
 ### Supported Formats
 
 The `from_str` and `from_str_at_date` functions support the following formats for relative time:
@@ -56,6 +65,8 @@ The `from_str` and `from_str_at_date` functions support the following formats fo
 
 ## Return Values
 
+### Duration
+
 The `from_str` and `from_str_at_date` functions return:
 
 - `Ok(Duration)` - If the input string can be parsed as a relative time
@@ -63,6 +74,13 @@ The `from_str` and `from_str_at_date` functions return:
 
 This function will return `Err(ParseDurationError::InvalidInput)` if the input string
 cannot be parsed as a relative time.
+
+### parse_datetime
+
+The `from_str` function returns:
+
+- `Ok(DateTime<FixedOffset>)` - If the input string can be prsed as a datetime
+- `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed 
 
 ## Fuzzer
 

@@ -234,4 +234,17 @@ mod tests {
             }
         }
     }
+    
+    /// Used to test example code presented in the README.
+    mod readme_test {
+        use crate::parse_datetime::from_str;
+        use chrono::{TimeZone, Local};
+
+        #[test]
+        fn test_readme_code() {
+            let dt = from_str("2021-02-14 06:37:47");
+            assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap());
+        }
+
+    }
 }
