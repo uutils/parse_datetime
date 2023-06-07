@@ -164,3 +164,27 @@ jobs:
         flags: ${{ steps.vars.outputs.CODECOV_FLAGS }}
         name: codecov-umbrella
         fail_ci_if_error: false
+
+  fuzz:
+    name: Run the fuzzers
+    runs-on: ubuntu-latest
+    env:
+      RUN_FOR: 60
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Install `cargo-fuzz`
+      run: cargo install cargo-fuzz
+    - uses: Swatinem/rust-cache@v2
+    - name: Run from_str for XX seconds
+      shell: bash
+      run: |
+        ## Run it
+        cd fuzz
+        cargo +nightly fuzz run fuzz_from_str -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+    - name: Run fuzz_parse_datetime_from_str for XX seconds
+      shell: bash
+      run: |
+        ## Run it
+        cd fuzz
+        cargo +nightly fuzz run fuzz_parse_datetime_from_str -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
