@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "humantime_to_duration"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "regex",
