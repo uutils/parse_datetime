@@ -146,3 +146,9 @@ fn test_invalid_input_at_date() {
     let result = from_str_at_date(today, "invalid 1r");
     assert_eq!(result, Err(ParseDurationError::InvalidInput));
 }
+
+#[test]
+fn test_large_input() {
+    let result = humantime_to_duration::from_str("8888888888888h");
+    assert_eq!(result, Err(ParseDurationError::InvalidInput));
+}

@@ -8,6 +8,7 @@ use chrono::{Duration, Local, NaiveDate, Utc};
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::panic;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDurationError {
@@ -157,7 +158,7 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
             is_ago = true;
         }
 
-        let duration = match unit {
+        let duration = panic::catch_unwind(|| match unit {
             "years" | "year" => Duration::days(value * 365),
             "months" | "month" => Duration::days(value * 30),
             "fortnights" | "fortnight" => Duration::weeks(value * 2),
@@ -169,8 +170,10 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
             "yesterday" => Duration::days(-1),
             "tomorrow" => Duration::days(1),
             "now" | "today" => Duration::zero(),
-            _ => return Err(ParseDurationError::InvalidInput),
-        };
+            _ => panic!("Invalid Input"),
+        })
+        .or(Err(ParseDurationError::InvalidInput))?;
+
         let neg_duration = -duration;
         total_duration =
             match total_duration.checked_add(if is_ago { &neg_duration } else { &duration }) {
