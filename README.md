@@ -40,7 +40,7 @@ assert_eq!(
 ```
 
 For DateTime parsing, import the `parse_datetime` module:
-```
+```rs
 use humantime_to_duration::parse_datetime::from_str;
 use chrono::{Local, TimeZone};
 

@@ -20,3 +20,9 @@ name = "fuzz_from_str"
 path = "fuzz_targets/from_str.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_parse_datetime_from_str"
+path = "fuzz_targets/parse_datetime_from_str.rs"
+test = false
+doc = false
