@@ -50,7 +50,7 @@ impl From<RegexError> for ParseDurationError {
 ///
 /// ```
 /// use chrono::Duration;
-/// let duration = humantime_to_duration::from_str("+3 days");
+/// let duration = parse_datetime::from_str("+3 days");
 /// assert_eq!(duration.unwrap(), Duration::days(3));
 /// ```
 ///
@@ -85,7 +85,7 @@ impl From<RegexError> for ParseDurationError {
 ///
 /// ```
 /// use chrono::Duration;
-/// use humantime_to_duration::{from_str, ParseDurationError};
+/// use parse_datetime::{from_str, ParseDurationError};
 ///
 /// assert_eq!(from_str("1 hour, 30 minutes").unwrap(), Duration::minutes(90));
 /// assert_eq!(from_str("tomorrow").unwrap(), Duration::days(1));
@@ -112,7 +112,7 @@ pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
 ///
 /// ```
 /// use chrono::{Duration, NaiveDate, Utc, Local};
-/// use humantime_to_duration::{from_str_at_date, ParseDurationError};
+/// use parse_datetime::{from_str_at_date, ParseDurationError};
 /// let today = Local::now().date().naive_local();
 /// let yesterday = today - Duration::days(1);
 /// assert_eq!(

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use humantime_to_duration::{from_str, from_str_at_date, ParseDurationError};
+use parse_datetime::{from_str, from_str_at_date, ParseDurationError};
 
 #[test]
 fn test_invalid_input() {

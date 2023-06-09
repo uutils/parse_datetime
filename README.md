@@ -1,8 +1,8 @@
-# humantime_to_duration
+# parse_datetime
 
-[![Crates.io](https://img.shields.io/crates/v/humantime_to_duration.svg)](https://crates.io/crates/humantime_to_duration)
-[![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/humantime_to_duration/blob/main/LICENSE)
-[![CodeCov](https://codecov.io/gh/uutils/humantime_to_duration/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/humantime_to_duration)
+[![Crates.io](https://img.shields.io/crates/v/parse_datetime.svg)](https://crates.io/crates/parse_datetime)
+[![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/parse_datetime/blob/main/LICENSE)
+[![CodeCov](https://codecov.io/gh/uutils/parse_datetime/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/parse_datetime)
 
 A Rust crate for parsing human-readable relative time strings and converting them to a `Duration`, or parsing human-readable datetime strings and converting them to a `DateTime`.
 
@@ -20,12 +20,12 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-humantime_to_duration = "0.3.0"
+parse_datetime = "0.3.0"
 ```
 
 Then, import the crate and use the `from_str` and `from_str_at_date` functions:
 ```rs
-use humantime_to_duration::{from_str, from_str_at_date};
+use parse_datetime::{from_str, from_str_at_date};
 use chrono::Duration;
 
 let duration = from_str("+3 days");
@@ -41,7 +41,7 @@ assert_eq!(
 
 For DateTime parsing, import the `parse_datetime` module:
 ```rs
-use humantime_to_duration::parse_datetime::from_str;
+use parse_datetime::parse_datetime::from_str;
 use chrono::{Local, TimeZone};
 
 let dt = from_str("2021-02-14 06:37:47");

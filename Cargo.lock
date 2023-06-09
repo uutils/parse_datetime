@@ -69,14 +69,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
-name = "humantime_to_duration"
-version = "0.3.1"
-dependencies = [
- "chrono",
- "regex",
-]
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -140,6 +132,14 @@ name = "once_cell"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
+
+[[package]]
+name = "parse_datetime"
+version = "0.3.1"
+dependencies = [
+ "chrono",
+ "regex",
+]
 
 [[package]]
 name = "proc-macro2"

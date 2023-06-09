@@ -85,8 +85,8 @@ name = "fuzz_from_str"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "humantime_to_duration",
  "libfuzzer-sys",
+ "parse_datetime",
  "rand",
  "regex",
 ]
@@ -100,14 +100,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
-]
-
-[[package]]
-name = "humantime_to_duration"
-version = "0.3.1"
-dependencies = [
- "chrono",
- "regex",
 ]
 
 [[package]]
@@ -194,6 +186,14 @@ name = "once_cell"
 version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7e5500299e16ebb147ae15a00a942af264cf3688f47923b8fc2cd5858f23ad3"
+
+[[package]]
+name = "parse_datetime"
+version = "0.3.1"
+dependencies = [
+ "chrono",
+ "regex",
+]
 
 [[package]]
 name = "ppv-lite86"
