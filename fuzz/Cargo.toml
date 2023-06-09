@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 regex = "1.8.4"
 chrono = "0.4"
 
-[dependencies.humantime_to_duration]
+[dependencies.parse_datetime]
 path = "../"
 
 [[bin]]

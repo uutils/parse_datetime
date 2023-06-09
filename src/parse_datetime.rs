@@ -36,7 +36,7 @@ mod format {
 ///
 /// ```
 /// use chrono::{DateTime, Utc, TimeZone};
-/// let time = humantime_to_duration::parse_datetime::from_str("2023-06-03 12:00:01Z");
+/// let time = parse_datetime::parse_datetime::from_str("2023-06-03 12:00:01Z");
 /// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 03, 12, 00, 01).unwrap());
 /// ```
 ///

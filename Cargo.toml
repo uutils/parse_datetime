@@ -1,10 +1,10 @@
 [package]
-name = "humantime_to_duration"
+name = "parse_datetime"
 description = " parsing human-readable relative time strings and converting them to a Duration"
 version = "0.3.1"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/uutils/humantime_to_duration"
+repository = "https://github.com/uutils/parse_datetime"
 readme = "README.md"
 
 [dependencies]
