@@ -80,7 +80,7 @@ cannot be parsed as a relative time.
 The `from_str` function returns:
 
 - `Ok(DateTime<FixedOffset>)` - If the input string can be prsed as a datetime
-- `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed 
+- `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed
 
 ## Fuzzer
 
@@ -92,3 +92,8 @@ $ cargo fuzz run fuzz_from_str
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Note
+
+At some point, this crate was called humantime_to_duration.
+It has been renamed to cover more cases.
