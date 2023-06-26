@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn some_items() {
         let result =
-            parse("TZ=\"Europe/Amsterdam\" @123.456 14nov2022 11/14 12:34:45.789123456+01:30 11pm");
+            parse("TZ=\"Europe/Amsterdam\" @123.456 14nov2022 11/14 12:34:56.789123456+01:30 11pm");
         assert_eq!(
             result,
             Ok(vec![
