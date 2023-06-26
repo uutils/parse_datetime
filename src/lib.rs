@@ -124,6 +124,7 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
+        (\s*(?P<direction>next|last)?\s*)?
         (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
         (\s*(?P<separator>and|,)?\s*)?
         (\s*(?P<ago>ago)?)?",
@@ -148,6 +149,13 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
                 .parse::<i64>()
                 .map_err(|_| ParseDurationError::InvalidInput)?
         };
+
+        if let Some(direction) = capture.name("direction") {
+            if direction.as_str() == "last" {
+                is_ago = true;
+            }
+        }
+
         let unit = capture
             .name("unit")
             .ok_or(ParseDurationError::InvalidInput)?
@@ -365,5 +373,13 @@ mod tests {
             from_str_at_date(date, "invalid"),
             Err(ParseDurationError::InvalidInput)
         ));
+    }
+
+    #[test]
+    fn test_direction() {
+        assert_eq!(from_str("last hour").unwrap(), Duration::seconds(-3600));
+        assert_eq!(from_str("next year").unwrap(), Duration::days(365));
+        assert_eq!(from_str("next week").unwrap(), Duration::days(7));
+        assert_eq!(from_str("last month").unwrap(), Duration::days(-30));
     }
 }
