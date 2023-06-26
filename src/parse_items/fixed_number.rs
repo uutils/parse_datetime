@@ -1,3 +1,6 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use nom::combinator::all_consuming;
 use nom::{bytes::complete::take, character::complete, combinator::map_parser, Parser};
 

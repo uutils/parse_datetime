@@ -1,3 +1,6 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use nom::branch::alt;
 use nom::bytes::complete::{escaped_transform, tag};
 use nom::character::complete::none_of;

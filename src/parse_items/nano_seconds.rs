@@ -1,3 +1,6 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use nom::bytes::complete::take_while1;
 use nom::character::complete;
 use nom::character::complete::one_of;

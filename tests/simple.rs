@@ -1,3 +1,6 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use chrono::{Duration, Utc};
 use parse_datetime::{from_str, from_str_at_date, ParseDurationError};
 
