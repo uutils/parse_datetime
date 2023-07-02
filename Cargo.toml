@@ -10,3 +10,4 @@ readme = "README.md"
 [dependencies]
 regex = "1.8"
 chrono = { version="0.4", default-features=false, features=["std", "alloc", "clock"] }
+nom = "7.1"

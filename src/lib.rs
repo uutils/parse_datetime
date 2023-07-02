@@ -3,6 +3,7 @@
 
 // Expose parse_datetime
 pub mod parse_datetime;
+pub mod parse_items;
 
 use chrono::{Duration, Local, NaiveDate, Utc};
 use regex::{Error as RegexError, Regex};
