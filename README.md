@@ -58,6 +58,7 @@ The `from_str` and `from_str_at_date` functions support the following formats fo
 - "yesterday"
 - "tomorrow"
 - use "ago" for the past
+- use "next" or "last" with `unit` (e.g., "next week", "last year")
 - combined units with "and" or "," (e.g., "2 years and 1 month", "1 day, 2 hours" or "2 weeks 1 second")
 
 `num` can be a positive or negative integer.
