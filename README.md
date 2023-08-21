@@ -80,7 +80,7 @@ cannot be parsed as a relative time.
 
 The `from_str` function returns:
 
-- `Ok(DateTime<FixedOffset>)` - If the input string can be prsed as a datetime
+- `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a datetime
 - `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed
 
 ## Fuzzer
