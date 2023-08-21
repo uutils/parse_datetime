@@ -190,6 +190,14 @@ mod tests {
                 assert_eq!(from_str(dt), Err(ParseDurationError::InvalidInput));
             }
         }
+
+        #[test]
+        fn test_epoch_seconds() {
+            env::set_var("TZ", "UTC");
+            let dt = "@1613371067";
+            let actual = from_str(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
     }
 
     #[cfg(test)]
