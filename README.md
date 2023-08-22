@@ -4,7 +4,7 @@
 [![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/parse_datetime/blob/main/LICENSE)
 [![CodeCov](https://codecov.io/gh/uutils/parse_datetime/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/parse_datetime)
 
-A Rust crate for parsing human-readable relative time strings and converting them to a `Duration`, or parsing human-readable datetime strings and converting them to a `DateTime`.
+A Rust crate for parsing human-readable relative time strings and human-readable datetime strings and converting them to a `DateTime`.
 
 ## Features
 
@@ -23,23 +23,23 @@ Add this to your `Cargo.toml`:
 parse_datetime = "0.4.0"
 ```
 
-Then, import the crate and use the `from_str` and `from_str_at_date` functions:
+Then, import the crate and use the `parse_datetime_at_date` function:
+
 ```rs
-use parse_datetime::{from_str, from_str_at_date};
-use chrono::Duration;
+use chrono::{Duration, Local};
+use parse_datetime::parse_datetime_at_date;
 
-let duration = from_str("+3 days");
-assert_eq!(duration.unwrap(), Duration::days(3));
+let now = Local::now();
+let after = parse_datetime_at_date(now, "+3 days");
 
-let today = Utc::today().naive_utc();
-let yesterday = today - Duration::days(1);
 assert_eq!(
-    from_str_at_date(yesterday, "2 days").unwrap(),
-    Duration::days(1)
+  (now + Duration::days(3)).naive_utc(),
+  after.unwrap().naive_utc()
 );
 ```
 
 For DateTime parsing, import the `parse_datetime` module:
+
 ```rs
 use parse_datetime::parse_datetime::from_str;
 use chrono::{Local, TimeZone};
@@ -50,7 +50,7 @@ assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap())
 
 ### Supported Formats
 
-The `from_str` and `from_str_at_date` functions support the following formats for relative time:
+The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the ollowing relative times:
 
 - `num` `unit` (e.g., "-1 hour", "+3 days")
 - `unit` (e.g., "hour", "day")
@@ -60,34 +60,28 @@ The `from_str` and `from_str_at_date` functions support the following formats fo
 - use "ago" for the past
 - use "next" or "last" with `unit` (e.g., "next week", "last year")
 - combined units with "and" or "," (e.g., "2 years and 1 month", "1 day, 2 hours" or "2 weeks 1 second")
+- unix timestamps (for example "@0" "@1344000")
 
 `num` can be a positive or negative integer.
 `unit` can be one of the following: "fortnight", "week", "day", "hour", "minute", "min", "second", "sec" and their plural forms.
 
 ## Return Values
 
-### Duration
+### parse_datetime and parse_datetime_at_date
 
-The `from_str` and `from_str_at_date` functions return:
-
-- `Ok(Duration)` - If the input string can be parsed as a relative time
-- `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
-
-This function will return `Err(ParseDurationError::InvalidInput)` if the input string
-cannot be parsed as a relative time.
-
-### parse_datetime
-
-The `from_str` function returns:
+The `parse_datetime` and `parse_datetime_at_date` function return:
 
 - `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a datetime
-- `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed
+- `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed
 
 ## Fuzzer
 
 To run the fuzzer:
+
 ```
-$ cargo fuzz run fuzz_from_str
+$ cd fuzz
+$ cargo install cargo-fuzz
+$ cargo +nightly fuzz run fuzz_parse_datetime
 ```
 
 ## License

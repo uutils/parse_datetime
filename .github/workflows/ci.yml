@@ -181,10 +181,4 @@ jobs:
       run: |
         ## Run it
         cd fuzz
-        cargo +nightly fuzz run fuzz_from_str -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
-    - name: Run fuzz_parse_datetime_from_str for XX seconds
-      shell: bash
-      run: |
-        ## Run it
-        cd fuzz
-        cargo +nightly fuzz run fuzz_parse_datetime_from_str -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+        cargo +nightly fuzz run fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0

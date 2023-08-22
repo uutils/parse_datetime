@@ -1,27 +1,37 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
-
-// Expose parse_datetime
-pub mod parse_datetime;
-
-use chrono::{Duration, Local, NaiveDate, Utc};
-use regex::{Error as RegexError, Regex};
+//! A Rust crate for parsing human-readable relative time strings and human-readable datetime strings and converting them to a `DateTime`.
+//! The function supports the following formats for time:
+//!
+//! * ISO formats
+//! * timezone offsets, e.g., "UTC-0100"
+//! * unix timestamps, e.g., "@12"
+//! * relative time to now, e.g. "+1 hour"
+//!
+use regex::Error as RegexError;
 use std::error::Error;
 use std::fmt::{self, Display};
 
+// Expose parse_datetime
+mod parse_relative_time;
+
+use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone};
+
+use parse_relative_time::parse_relative_time;
+
 #[derive(Debug, PartialEq)]
-pub enum ParseDurationError {
+pub enum ParseDateTimeError {
     InvalidRegex(RegexError),
     InvalidInput,
 }
 
-impl Display for ParseDurationError {
+impl Display for ParseDateTimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseDurationError::InvalidRegex(err) => {
+            Self::InvalidRegex(err) => {
                 write!(f, "Invalid regex for time pattern: {err}")
             }
-            ParseDurationError::InvalidInput => {
+            Self::InvalidInput => {
                 write!(
                     f,
                     "Invalid input string: cannot be parsed as a relative time"
@@ -31,355 +41,364 @@ impl Display for ParseDurationError {
     }
 }
 
-impl Error for ParseDurationError {}
+impl Error for ParseDateTimeError {}
 
-impl From<RegexError> for ParseDurationError {
+impl From<RegexError> for ParseDateTimeError {
     fn from(err: RegexError) -> Self {
-        ParseDurationError::InvalidRegex(err)
+        Self::InvalidRegex(err)
     }
 }
 
-/// Parses a relative time string and returns a `Duration` representing the
-/// relative time.
+/// Formats that parse input can take.
+/// Taken from `touch` coreutils
+mod format {
+    pub const ISO_8601: &str = "%Y-%m-%d";
+    pub const ISO_8601_NO_SEP: &str = "%Y%m%d";
+    pub const POSIX_LOCALE: &str = "%a %b %e %H:%M:%S %Y";
+    pub const YYYYMMDDHHMM_DOT_SS: &str = "%Y%m%d%H%M.%S";
+    pub const YYYYMMDDHHMMSS: &str = "%Y-%m-%d %H:%M:%S.%f";
+    pub const YYYYMMDDHHMMS: &str = "%Y-%m-%d %H:%M:%S";
+    pub const YYYY_MM_DD_HH_MM: &str = "%Y-%m-%d %H:%M";
+    pub const YYYYMMDDHHMM: &str = "%Y%m%d%H%M";
+    pub const YYYYMMDDHHMM_OFFSET: &str = "%Y%m%d%H%M %z";
+    pub const YYYYMMDDHHMM_UTC_OFFSET: &str = "%Y%m%d%H%MUTC%z";
+    pub const YYYYMMDDHHMM_ZULU_OFFSET: &str = "%Y%m%d%H%MZ%z";
+    pub const YYYYMMDDHHMM_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M %z";
+    pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
+    pub const UTC_OFFSET: &str = "UTC%#z";
+    pub const ZULU_OFFSET: &str = "Z%#z";
+}
+
+/// Parses a time string and returns a `DateTime` representing the
+/// absolute time of the string.
 ///
 /// # Arguments
 ///
-/// * `s` - A string slice representing the relative time.
+/// * `s` - A string slice representing the time.
 ///
 /// # Examples
 ///
 /// ```
-/// use chrono::Duration;
-/// let duration = parse_datetime::from_str("+3 days");
-/// assert_eq!(duration.unwrap(), Duration::days(3));
+/// use chrono::{DateTime, Utc, TimeZone};
+/// let time = parse_datetime::parse_datetime("2023-06-03 12:00:01Z");
+/// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 03, 12, 00, 01).unwrap());
 /// ```
 ///
-/// # Supported formats
-///
-/// The function supports the following formats for relative time:
-///
-/// * `num` `unit` (e.g., "-1 hour", "+3 days")
-/// * `unit` (e.g., "hour", "day")
-/// * "now" or "today"
-/// * "yesterday"
-/// * "tomorrow"
-/// * use "ago" for the past
-///
-/// `[num]` can be a positive or negative integer.
-/// [unit] can be one of the following: "fortnight", "week", "day", "hour",
-/// "minute", "min", "second", "sec" and their plural forms.
-///
-/// It is also possible to pass "1 hour 2 minutes" or "2 days and 2 hours"
 ///
 /// # Returns
 ///
-/// * `Ok(Duration)` - If the input string can be parsed as a relative time
-/// * `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
+/// * `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a relative time
 ///
 /// # Errors
 ///
-/// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
 /// cannot be parsed as a relative time.
-///
-/// # Examples
-///
-/// ```
-/// use chrono::Duration;
-/// use parse_datetime::{from_str, ParseDurationError};
-///
-/// assert_eq!(from_str("1 hour, 30 minutes").unwrap(), Duration::minutes(90));
-/// assert_eq!(from_str("tomorrow").unwrap(), Duration::days(1));
-/// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
-/// ```
-pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
-    from_str_at_date(Utc::now().date_naive(), s)
+pub fn parse_datetime<S: AsRef<str> + Clone>(
+    s: S,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    parse_datetime_at_date(Local::now(), s)
 }
 
-/// Parses a duration string and returns a `Duration` instance, with the duration
-/// calculated from the specified date.
+/// Parses a time string at a specific date and returns a `DateTime` representing the
+/// absolute time of the string.
 ///
 /// # Arguments
 ///
-/// * `date` - A `Date` instance representing the base date for the calculation
-/// * `s` - A string slice representing the relative time.
-///
-/// # Errors
-///
-/// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
-/// cannot be parsed as a relative time.
+/// * date - The date represented in local time
+/// * `s` - A string slice representing the time.
 ///
 /// # Examples
 ///
 /// ```
-/// use chrono::{Duration, NaiveDate, Utc, Local};
-/// use parse_datetime::{from_str_at_date, ParseDurationError};
-/// let today = Local::now().date().naive_local();
-/// let yesterday = today - Duration::days(1);
-/// assert_eq!(
-///     from_str_at_date(yesterday, "2 days").unwrap(),
-///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
-/// );
+/// use chrono::{Duration, Local};
+/// use parse_datetime::parse_datetime_at_date;
+///
+///  let now = Local::now();
+///  let after = parse_datetime_at_date(now, "+3 days");
+///
+///  assert_eq!(
+///    (now + Duration::days(3)).naive_utc(),
+///    after.unwrap().naive_utc()
+///  );
 /// ```
-pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurationError> {
-    let time_pattern: Regex = Regex::new(
-        r"(?x)
-        (?:(?P<value>[-+]?\d*)\s*)?
-        (\s*(?P<direction>next|last)?\s*)?
-        (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
-        (\s*(?P<separator>and|,)?\s*)?
-        (\s*(?P<ago>ago)?)?",
-    )?;
+///
+/// # Returns
+///
+/// * `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a relative time
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
+pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
+    date: DateTime<Local>,
+    s: S,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    // TODO: Replace with a proper customiseable parsing solution using `nom`, `grmtools`, or
+    // similar
 
-    let mut total_duration = Duration::seconds(0);
-    let mut is_ago = s.contains(" ago");
-    let mut captures_processed = 0;
-    let mut total_length = 0;
+    // Formats with offsets don't require NaiveDateTime workaround
+    for fmt in [
+        format::YYYYMMDDHHMM_OFFSET,
+        format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
+        format::YYYYMMDDHHMM_UTC_OFFSET,
+        format::YYYYMMDDHHMM_ZULU_OFFSET,
+    ] {
+        if let Ok(parsed) = DateTime::parse_from_str(s.as_ref(), fmt) {
+            return Ok(parsed);
+        }
+    }
 
-    for capture in time_pattern.captures_iter(s) {
-        captures_processed += 1;
-
-        let value_str = capture
-            .name("value")
-            .ok_or(ParseDurationError::InvalidInput)?
-            .as_str();
-        let value = if value_str.is_empty() {
-            1
-        } else {
-            value_str
-                .parse::<i64>()
-                .map_err(|_| ParseDurationError::InvalidInput)?
-        };
-
-        if let Some(direction) = capture.name("direction") {
-            if direction.as_str() == "last" {
-                is_ago = true;
+    // Parse formats with no offset, assume local time
+    for fmt in [
+        format::YYYYMMDDHHMMS_T_SEP,
+        format::YYYYMMDDHHMM,
+        format::YYYYMMDDHHMMS,
+        format::YYYYMMDDHHMMSS,
+        format::YYYY_MM_DD_HH_MM,
+        format::YYYYMMDDHHMM_DOT_SS,
+        format::POSIX_LOCALE,
+    ] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(s.as_ref(), fmt) {
+            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+                return Ok(dt);
             }
         }
+    }
 
-        let unit = capture
-            .name("unit")
-            .ok_or(ParseDurationError::InvalidInput)?
-            .as_str();
-
-        if capture.name("ago").is_some() {
-            is_ago = true;
-        }
-
-        let duration = match unit {
-            "years" | "year" => Duration::days(value * 365),
-            "months" | "month" => Duration::days(value * 30),
-            "fortnights" | "fortnight" => Duration::weeks(value * 2),
-            "weeks" | "week" => Duration::weeks(value),
-            "days" | "day" => Duration::days(value),
-            "hours" | "hour" | "h" => Duration::hours(value),
-            "minutes" | "minute" | "mins" | "min" | "m" => Duration::minutes(value),
-            "seconds" | "second" | "secs" | "sec" | "s" => Duration::seconds(value),
-            "yesterday" => Duration::days(-1),
-            "tomorrow" => Duration::days(1),
-            "now" | "today" => Duration::zero(),
-            _ => return Err(ParseDurationError::InvalidInput),
-        };
-        let neg_duration = -duration;
-        total_duration =
-            match total_duration.checked_add(if is_ago { &neg_duration } else { &duration }) {
-                Some(duration) => duration,
-                None => return Err(ParseDurationError::InvalidInput),
-            };
-
-        // Calculate the total length of the matched substring
-        if let Some(m) = capture.get(0) {
-            total_length += m.end() - m.start();
+    // Parse epoch seconds
+    if s.as_ref().bytes().next() == Some(b'@') {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(&s.as_ref()[1..], "%s") {
+            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+                return Ok(dt);
+            }
         }
     }
 
-    // Check if the entire input string has been captured
-    if total_length != s.len() {
-        return Err(ParseDurationError::InvalidInput);
+    let ts = s.as_ref().to_owned() + "0000";
+    // Parse date only formats - assume midnight local timezone
+    for fmt in [format::ISO_8601, format::ISO_8601_NO_SEP] {
+        let f = fmt.to_owned() + "%H%M";
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts, &f) {
+            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+                return Ok(dt);
+            }
+        }
     }
 
-    if captures_processed == 0 {
-        Err(ParseDurationError::InvalidInput)
-    } else {
-        let time_now = Local::now().date_naive();
-        let date_duration = date - time_now;
+    // Parse offsets. chrono doesn't provide any functionality to parse
+    // offsets, so instead we replicate parse_date behaviour by getting
+    // the current date with local, and create a date time string at midnight,
+    // before trying offset suffixes
+    let ts = format!("{}", date.format("%Y%m%d")) + "0000" + s.as_ref();
+    for fmt in [format::UTC_OFFSET, format::ZULU_OFFSET] {
+        let f = format::YYYYMMDDHHMM.to_owned() + fmt;
+        if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
+            return Ok(parsed);
+        }
+    }
 
-        Ok(total_duration + date_duration)
+    // Parse relative time.
+    if let Ok(relative_time) = parse_relative_time(s.as_ref()) {
+        let current_time = DateTime::<FixedOffset>::from(date);
+
+        if let Some(date_time) = current_time.checked_add_signed(relative_time) {
+            return Ok(date_time);
+        }
+    }
+
+    // Default parse and failure
+    s.as_ref()
+        .parse()
+        .map_err(|_| (ParseDateTimeError::InvalidInput))
+}
+
+// Convert NaiveDateTime to DateTime<FixedOffset> by assuming the offset
+// is local time
+fn naive_dt_to_fixed_offset(
+    local: DateTime<Local>,
+    dt: NaiveDateTime,
+) -> Result<DateTime<FixedOffset>, ()> {
+    match local.offset().from_local_datetime(&dt) {
+        LocalResult::Single(dt) => Ok(dt),
+        _ => Err(()),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    static TEST_TIME: i64 = 1613371067;
 
-    use super::ParseDurationError;
-    use super::{from_str, from_str_at_date};
-    use chrono::{Duration, Local, NaiveDate};
+    #[cfg(test)]
+    mod iso_8601 {
+        use std::env;
 
-    #[test]
-    fn test_years() {
-        assert_eq!(from_str("1 year").unwrap(), Duration::seconds(31_536_000));
-        assert_eq!(
-            from_str("-2 years").unwrap(),
-            Duration::seconds(-63_072_000)
-        );
-        assert_eq!(
-            from_str("2 years ago").unwrap(),
-            Duration::seconds(-63_072_000)
-        );
-        assert_eq!(from_str("year").unwrap(), Duration::seconds(31_536_000));
+        use crate::ParseDateTimeError;
+        use crate::{parse_datetime, tests::TEST_TIME};
+
+        #[test]
+        fn test_t_sep() {
+            env::set_var("TZ", "UTC");
+            let dt = "2021-02-15T06:37:47";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn test_space_sep() {
+            env::set_var("TZ", "UTC");
+            let dt = "2021-02-15 06:37:47";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn test_space_sep_offset() {
+            env::set_var("TZ", "UTC");
+            let dt = "2021-02-14 22:37:47 -0800";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn test_t_sep_offset() {
+            env::set_var("TZ", "UTC");
+            let dt = "2021-02-14T22:37:47 -0800";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn invalid_formats() {
+            let invalid_dts = vec!["NotADate", "202104", "202104-12T22:37:47"];
+            for dt in invalid_dts {
+                assert_eq!(parse_datetime(dt), Err(ParseDateTimeError::InvalidInput));
+            }
+        }
+
+        #[test]
+        fn test_epoch_seconds() {
+            env::set_var("TZ", "UTC");
+            let dt = "@1613371067";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
     }
 
-    #[test]
-    fn test_months() {
-        assert_eq!(from_str("1 month").unwrap(), Duration::seconds(2_592_000));
-        assert_eq!(
-            from_str("1 month and 2 weeks").unwrap(),
-            Duration::seconds(3_801_600)
-        );
-        assert_eq!(
-            from_str("1 month and 2 weeks ago").unwrap(),
-            Duration::seconds(-3_801_600)
-        );
-        assert_eq!(from_str("2 months").unwrap(), Duration::seconds(5_184_000));
-        assert_eq!(from_str("month").unwrap(), Duration::seconds(2_592_000));
+    #[cfg(test)]
+    mod offsets {
+        use chrono::Local;
+
+        use crate::parse_datetime;
+        use crate::ParseDateTimeError;
+
+        #[test]
+        fn test_positive_offsets() {
+            let offsets = vec![
+                "UTC+07:00",
+                "UTC+0700",
+                "UTC+07",
+                "Z+07:00",
+                "Z+0700",
+                "Z+07",
+            ];
+
+            let expected = format!("{}{}", Local::now().format("%Y%m%d"), "0000+0700");
+            for offset in offsets {
+                let actual = parse_datetime(offset).unwrap();
+                assert_eq!(expected, format!("{}", actual.format("%Y%m%d%H%M%z")));
+            }
+        }
+
+        #[test]
+        fn test_partial_offset() {
+            let offsets = vec!["UTC+00:15", "UTC+0015", "Z+00:15", "Z+0015"];
+            let expected = format!("{}{}", Local::now().format("%Y%m%d"), "0000+0015");
+            for offset in offsets {
+                let actual = parse_datetime(offset).unwrap();
+                assert_eq!(expected, format!("{}", actual.format("%Y%m%d%H%M%z")));
+            }
+        }
+
+        #[test]
+        fn invalid_offset_format() {
+            let invalid_offsets = vec!["+0700", "UTC+2", "Z-1", "UTC+01005"];
+            for offset in invalid_offsets {
+                assert_eq!(
+                    parse_datetime(offset),
+                    Err(ParseDateTimeError::InvalidInput)
+                );
+            }
+        }
     }
 
-    #[test]
-    fn test_fortnights() {
-        assert_eq!(
-            from_str("1 fortnight").unwrap(),
-            Duration::seconds(1_209_600)
-        );
-        assert_eq!(
-            from_str("3 fortnights").unwrap(),
-            Duration::seconds(3_628_800)
-        );
-        assert_eq!(from_str("fortnight").unwrap(), Duration::seconds(1_209_600));
+    #[cfg(test)]
+    mod relative_time {
+        use crate::parse_datetime;
+        #[test]
+        fn test_positive_offsets() {
+            let relative_times = vec![
+                "today",
+                "yesterday",
+                "1 minute",
+                "3 hours",
+                "1 year 3 months",
+            ];
+
+            for relative_time in relative_times {
+                assert_eq!(parse_datetime(relative_time).is_ok(), true);
+            }
+        }
     }
 
-    #[test]
-    fn test_weeks() {
-        assert_eq!(from_str("1 week").unwrap(), Duration::seconds(604_800));
-        assert_eq!(
-            from_str("1 week 3 days").unwrap(),
-            Duration::seconds(864_000)
-        );
-        assert_eq!(
-            from_str("1 week 3 days ago").unwrap(),
-            Duration::seconds(-864_000)
-        );
-        assert_eq!(from_str("-2 weeks").unwrap(), Duration::seconds(-1_209_600));
-        assert_eq!(
-            from_str("2 weeks ago").unwrap(),
-            Duration::seconds(-1_209_600)
-        );
-        assert_eq!(from_str("week").unwrap(), Duration::seconds(604_800));
+    #[cfg(test)]
+    mod timestamp {
+        use crate::parse_datetime;
+        use chrono::{TimeZone, Utc};
+
+        #[test]
+        fn test_positive_offsets() {
+            let offsets: Vec<i64> = vec![
+                0, 1, 2, 10, 100, 150, 2000, 1234400000, 1334400000, 1692582913, 2092582910,
+            ];
+
+            for offset in offsets {
+                let time = Utc.timestamp_opt(offset, 0).unwrap();
+                let dt = parse_datetime(format!("@{}", offset));
+                assert_eq!(dt.unwrap(), time);
+            }
+        }
     }
 
-    #[test]
-    fn test_days() {
-        assert_eq!(from_str("1 day").unwrap(), Duration::seconds(86400));
-        assert_eq!(from_str("2 days ago").unwrap(), Duration::seconds(-172_800));
-        assert_eq!(from_str("-2 days").unwrap(), Duration::seconds(-172_800));
-        assert_eq!(from_str("day").unwrap(), Duration::seconds(86400));
+    /// Used to test example code presented in the README.
+    mod readme_test {
+        use crate::parse_datetime;
+        use chrono::{Local, TimeZone};
+
+        #[test]
+        fn test_readme_code() {
+            let dt = parse_datetime("2021-02-14 06:37:47");
+            assert_eq!(
+                dt.unwrap(),
+                Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap()
+            );
+        }
     }
 
-    #[test]
-    fn test_hours() {
-        assert_eq!(from_str("1 hour").unwrap(), Duration::seconds(3600));
-        assert_eq!(from_str("1 hour ago").unwrap(), Duration::seconds(-3600));
-        assert_eq!(from_str("-2 hours").unwrap(), Duration::seconds(-7200));
-        assert_eq!(from_str("hour").unwrap(), Duration::seconds(3600));
-    }
+    mod invalid_test {
+        use crate::parse_datetime;
+        use crate::ParseDateTimeError;
 
-    #[test]
-    fn test_minutes() {
-        assert_eq!(from_str("1 minute").unwrap(), Duration::seconds(60));
-        assert_eq!(from_str("2 minutes").unwrap(), Duration::seconds(120));
-        assert_eq!(from_str("min").unwrap(), Duration::seconds(60));
-    }
+        #[test]
+        fn test_invalid_input() {
+            let result = parse_datetime("foobar");
+            println!("{result:?}");
+            assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
 
-    #[test]
-    fn test_seconds() {
-        assert_eq!(from_str("1 second").unwrap(), Duration::seconds(1));
-        assert_eq!(from_str("2 seconds").unwrap(), Duration::seconds(2));
-        assert_eq!(from_str("sec").unwrap(), Duration::seconds(1));
-    }
-
-    #[test]
-    fn test_relative_days() {
-        assert_eq!(from_str("now").unwrap(), Duration::seconds(0));
-        assert_eq!(from_str("today").unwrap(), Duration::seconds(0));
-        assert_eq!(from_str("yesterday").unwrap(), Duration::seconds(-86400));
-        assert_eq!(from_str("tomorrow").unwrap(), Duration::seconds(86400));
-    }
-
-    #[test]
-    fn test_no_spaces() {
-        assert_eq!(from_str("-1hour").unwrap(), Duration::hours(-1));
-        assert_eq!(from_str("+3days").unwrap(), Duration::days(3));
-        assert_eq!(from_str("2weeks").unwrap(), Duration::weeks(2));
-        assert_eq!(
-            from_str("2weeks 1hour").unwrap(),
-            Duration::seconds(1_213_200)
-        );
-        assert_eq!(
-            from_str("2weeks 1hour ago").unwrap(),
-            Duration::seconds(-1_213_200)
-        );
-        assert_eq!(from_str("+4months").unwrap(), Duration::days(4 * 30));
-        assert_eq!(from_str("-2years").unwrap(), Duration::days(-2 * 365));
-        assert_eq!(from_str("15minutes").unwrap(), Duration::minutes(15));
-        assert_eq!(from_str("-30seconds").unwrap(), Duration::seconds(-30));
-        assert_eq!(from_str("30seconds ago").unwrap(), Duration::seconds(-30));
-    }
-
-    #[test]
-    fn test_invalid_input() {
-        let result = from_str("foobar");
-        println!("{result:?}");
-        assert_eq!(result, Err(ParseDurationError::InvalidInput));
-
-        let result = from_str("invalid 1");
-        assert_eq!(result, Err(ParseDurationError::InvalidInput));
-        // Fails for now with a panic
-        /*        let result = from_str("777777777777777771m");
-        match result {
-            Err(ParseDurationError::InvalidInput) => assert!(true),
-            _ => assert!(false),
-        }*/
-    }
-
-    #[test]
-    fn test_from_str_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        let now = Local::now().date_naive();
-        let days_diff = (date - now).num_days();
-
-        assert_eq!(
-            from_str_at_date(date, "1 day").unwrap(),
-            Duration::days(days_diff + 1)
-        );
-
-        assert_eq!(
-            from_str_at_date(date, "2 hours").unwrap(),
-            Duration::days(days_diff) + Duration::hours(2)
-        );
-    }
-
-    #[test]
-    fn test_invalid_input_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        assert!(matches!(
-            from_str_at_date(date, "invalid"),
-            Err(ParseDurationError::InvalidInput)
-        ));
-    }
-
-    #[test]
-    fn test_direction() {
-        assert_eq!(from_str("last hour").unwrap(), Duration::seconds(-3600));
-        assert_eq!(from_str("next year").unwrap(), Duration::days(365));
-        assert_eq!(from_str("next week").unwrap(), Duration::days(7));
-        assert_eq!(from_str("last month").unwrap(), Duration::days(-30));
+            let result = parse_datetime("invalid 1");
+            assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
+        }
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "fuzz_from_str"
+name = "fuzz_parse_datetime"
 version = "0.1.0"
 edition = "2018"
 
@@ -16,13 +16,7 @@ chrono = "0.4"
 path = "../"
 
 [[bin]]
-name = "fuzz_from_str"
-path = "fuzz_targets/from_str.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "fuzz_parse_datetime_from_str"
-path = "fuzz_targets/parse_datetime_from_str.rs"
+name = "fuzz_parse_datetime"
+path = "fuzz_targets/parse_datetime.rs"
 test = false
 doc = false
