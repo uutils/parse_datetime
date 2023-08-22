@@ -243,6 +243,25 @@ mod tests {
         }
     }
 
+    #[cfg(test)]
+    mod timestamp {
+        use crate::parse_datetime::from_str;
+        use chrono::{TimeZone, Utc};
+
+        #[test]
+        fn test_positive_offsets() {
+            let offsets: Vec<i64> = vec![
+                0, 1, 2, 10, 100, 150, 2000, 1234400000, 1334400000, 1692582913, 2092582910,
+            ];
+
+            for offset in offsets {
+                let time = Utc.timestamp(offset, 0);
+                let dt = from_str(format!("@{}", offset));
+                assert_eq!(dt.unwrap(), time);
+            }
+        }
+    }
+
     /// Used to test example code presented in the README.
     mod readme_test {
         use crate::parse_datetime::from_str;
