@@ -190,6 +190,14 @@ mod tests {
                 assert_eq!(from_str(dt), Err(ParseDurationError::InvalidInput));
             }
         }
+
+        #[test]
+        fn test_epoch_seconds() {
+            env::set_var("TZ", "UTC");
+            let dt = "@1613371067";
+            let actual = from_str(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
     }
 
     #[cfg(test)]
@@ -231,6 +239,25 @@ mod tests {
             let invalid_offsets = vec!["+0700", "UTC+2", "Z-1", "UTC+01005"];
             for offset in invalid_offsets {
                 assert_eq!(from_str(offset), Err(ParseDurationError::InvalidInput));
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod timestamp {
+        use crate::parse_datetime::from_str;
+        use chrono::{TimeZone, Utc};
+
+        #[test]
+        fn test_positive_offsets() {
+            let offsets: Vec<i64> = vec![
+                0, 1, 2, 10, 100, 150, 2000, 1234400000, 1334400000, 1692582913, 2092582910,
+            ];
+
+            for offset in offsets {
+                let time = Utc.timestamp(offset, 0);
+                let dt = from_str(format!("@{}", offset));
+                assert_eq!(dt.unwrap(), time);
             }
         }
     }
