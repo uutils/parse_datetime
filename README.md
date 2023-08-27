@@ -23,34 +23,22 @@ Add this to your `Cargo.toml`:
 parse_datetime = "0.4.0"
 ```
 
-Then, import the crate and use the `from_str` and `from_str_at_date` functions:
+Then, import the crate and use the `add_relative_str` function:
+
 ```rs
-use parse_datetime::{from_str, from_str_at_date};
-use chrono::Duration;
-
-let duration = from_str("+3 days");
-assert_eq!(duration.unwrap(), Duration::days(3));
-
-let today = Utc::today().naive_utc();
-let yesterday = today - Duration::days(1);
+use chrono::{DateTime, Utc};
+use parse_datetime::{add_relative_str};
+let date: DateTime<Utc> = "2014-09-05 15:43:21Z".parse::<DateTime<Utc>>().unwrap();
 assert_eq!(
-    from_str_at_date(yesterday, "2 days").unwrap(),
-    Duration::days(1)
+    add_relative_str(date, "4 months 25 days").unwrap().to_string(),
+    "2015-01-30 15:43:21 UTC"
 );
-```
 
-For DateTime parsing, import the `parse_datetime` module:
-```rs
-use parse_datetime::parse_datetime::from_str;
-use chrono::{Local, TimeZone};
-
-let dt = from_str("2021-02-14 06:37:47");
-assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap());
 ```
 
 ### Supported Formats
 
-The `from_str` and `from_str_at_date` functions support the following formats for relative time:
+The `add_relative_str` function supports the following formats for relative time:
 
 - `num` `unit` (e.g., "-1 hour", "+3 days")
 - `unit` (e.g., "hour", "day")
@@ -64,28 +52,20 @@ The `from_str` and `from_str_at_date` functions support the following formats fo
 `num` can be a positive or negative integer.
 `unit` can be one of the following: "fortnight", "week", "day", "hour", "minute", "min", "second", "sec" and their plural forms.
 
-## Return Values
+### Return Values
 
-### Duration
+The `add_relative_str` function returns:
 
-The `from_str` and `from_str_at_date` functions return:
-
-- `Ok(Duration)` - If the input string can be parsed as a relative time
+- `Ok(DateTime<Tz>)` - If the input string can be parsed as a relative time
 - `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
 
 This function will return `Err(ParseDurationError::InvalidInput)` if the input string
 cannot be parsed as a relative time.
 
-### parse_datetime
-
-The `from_str` function returns:
-
-- `Ok(DateTime<FixedOffset>)` - If the input string can be prsed as a datetime
-- `Err(ParseDurationError::InvalidInput)` - If the input string cannot be parsed
-
 ## Fuzzer
 
 To run the fuzzer:
+
 ```
 $ cargo fuzz run fuzz_from_str
 ```
