@@ -4,7 +4,7 @@
 // Expose parse_datetime
 pub mod parse_datetime;
 
-use chrono::{Duration, Local, NaiveDate, Utc};
+use chrono::{Duration, Local, NaiveDate};
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -92,7 +92,7 @@ impl From<RegexError> for ParseDurationError {
 /// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
 /// ```
 pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
-    from_str_at_date(Utc::now().date_naive(), s)
+    from_str_at_date(Local::now().date_naive(), s)
 }
 
 /// Parses a duration string and returns a `Duration` instance, with the duration

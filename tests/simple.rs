@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local, Utc};
 use parse_datetime::{from_str, from_str_at_date, ParseDurationError};
 
 #[test]
@@ -128,7 +128,7 @@ fn test_display_should_fail() {
 
 #[test]
 fn test_from_str_at_date_day() {
-    let today = Utc::now().date_naive();
+    let today = Local::now().date_naive();
     let yesterday = today - Duration::days(1);
     assert_eq!(
         from_str_at_date(yesterday, "2 days").unwrap(),
