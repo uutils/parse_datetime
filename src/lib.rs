@@ -4,7 +4,7 @@
 // Expose parse_datetime
 pub mod parse_datetime;
 
-use chrono::{Duration, Local, NaiveDate, Utc};
+use chrono::{DateTime, Days, Duration, Months, TimeZone};
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -39,20 +39,12 @@ impl From<RegexError> for ParseDurationError {
     }
 }
 
-/// Parses a relative time string and returns a `Duration` representing the
-/// relative time.
+/// Adds a relative duration to the given date and returns the obtained date.
 ///
 /// # Arguments
 ///
+/// * `date` - A `DateTime` instance representing the base date for the calculation
 /// * `s` - A string slice representing the relative time.
-///
-/// # Examples
-///
-/// ```
-/// use chrono::Duration;
-/// let duration = parse_datetime::from_str("+3 days");
-/// assert_eq!(duration.unwrap(), Duration::days(3));
-/// ```
 ///
 /// # Supported formats
 ///
@@ -71,11 +63,6 @@ impl From<RegexError> for ParseDurationError {
 ///
 /// It is also possible to pass "1 hour 2 minutes" or "2 days and 2 hours"
 ///
-/// # Returns
-///
-/// * `Ok(Duration)` - If the input string can be parsed as a relative time
-/// * `Err(ParseDurationError)` - If the input string cannot be parsed as a relative time
-///
 /// # Errors
 ///
 /// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
@@ -84,43 +71,18 @@ impl From<RegexError> for ParseDurationError {
 /// # Examples
 ///
 /// ```
-/// use chrono::Duration;
-/// use parse_datetime::{from_str, ParseDurationError};
-///
-/// assert_eq!(from_str("1 hour, 30 minutes").unwrap(), Duration::minutes(90));
-/// assert_eq!(from_str("tomorrow").unwrap(), Duration::days(1));
-/// assert!(matches!(from_str("invalid"), Err(ParseDurationError::InvalidInput)));
-/// ```
-pub fn from_str(s: &str) -> Result<Duration, ParseDurationError> {
-    from_str_at_date(Utc::now().date_naive(), s)
-}
-
-/// Parses a duration string and returns a `Duration` instance, with the duration
-/// calculated from the specified date.
-///
-/// # Arguments
-///
-/// * `date` - A `Date` instance representing the base date for the calculation
-/// * `s` - A string slice representing the relative time.
-///
-/// # Errors
-///
-/// This function will return `Err(ParseDurationError::InvalidInput)` if the input string
-/// cannot be parsed as a relative time.
-///
-/// # Examples
-///
-/// ```
-/// use chrono::{Duration, NaiveDate, Utc, Local};
-/// use parse_datetime::{from_str_at_date, ParseDurationError};
-/// let today = Local::now().date().naive_local();
-/// let yesterday = today - Duration::days(1);
+/// use chrono::{DateTime, Utc};
+/// use parse_datetime::{add_relative_str};
+/// let date: DateTime<Utc> = "2014-09-05 15:43:21Z".parse::<DateTime<Utc>>().unwrap();
 /// assert_eq!(
-///     from_str_at_date(yesterday, "2 days").unwrap(),
-///     Duration::days(1) // 1 day from the specified date + 1 day from the input string
+///     add_relative_str(date, "4 months 25 days").unwrap().to_string(),
+///     "2015-01-30 15:43:21 UTC"
 /// );
 /// ```
-pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurationError> {
+pub fn add_relative_str<Tz>(date: DateTime<Tz>, s: &str) -> Result<DateTime<Tz>, ParseDurationError>
+where
+    Tz: TimeZone,
+{
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -130,7 +92,7 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
         (\s*(?P<ago>ago)?)?",
     )?;
 
-    let mut total_duration = Duration::seconds(0);
+    let mut date = date.clone();
     let mut is_ago = s.contains(" ago");
     let mut captures_processed = 0;
     let mut total_length = 0;
@@ -164,27 +126,37 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
         if capture.name("ago").is_some() {
             is_ago = true;
         }
+        let value = if is_ago { -value } else { value };
 
-        let duration = match unit {
-            "years" | "year" => Duration::days(value * 365),
-            "months" | "month" => Duration::days(value * 30),
-            "fortnights" | "fortnight" => Duration::weeks(value * 2),
-            "weeks" | "week" => Duration::weeks(value),
-            "days" | "day" => Duration::days(value),
-            "hours" | "hour" | "h" => Duration::hours(value),
-            "minutes" | "minute" | "mins" | "min" | "m" => Duration::minutes(value),
-            "seconds" | "second" | "secs" | "sec" | "s" => Duration::seconds(value),
-            "yesterday" => Duration::days(-1),
-            "tomorrow" => Duration::days(1),
-            "now" | "today" => Duration::zero(),
+        let add_months = |date: DateTime<Tz>, months: i64| {
+            if months.is_negative() {
+                date - Months::new(months.unsigned_abs() as u32)
+            } else {
+                date + Months::new(months.unsigned_abs() as u32)
+            }
+        };
+        let add_days = |date: DateTime<Tz>, days: i64| {
+            if days.is_negative() {
+                date - Days::new(days.unsigned_abs())
+            } else {
+                date + Days::new(days.unsigned_abs())
+            }
+        };
+
+        date = match unit {
+            "years" | "year" => add_months(date, 12 * value),
+            "months" | "month" => add_months(date, value),
+            "fortnights" | "fortnight" => add_days(date, 14 * value),
+            "weeks" | "week" => add_days(date, 7 * value),
+            "days" | "day" => add_days(date, value),
+            "hours" | "hour" | "h" => date + Duration::hours(value),
+            "minutes" | "minute" | "mins" | "min" | "m" => date + Duration::minutes(value),
+            "seconds" | "second" | "secs" | "sec" | "s" => date + Duration::seconds(value),
+            "yesterday" => add_days(date, -1),
+            "tomorrow" => add_days(date, 1),
+            "now" | "today" => date,
             _ => return Err(ParseDurationError::InvalidInput),
         };
-        let neg_duration = -duration;
-        total_duration =
-            match total_duration.checked_add(if is_ago { &neg_duration } else { &duration }) {
-                Some(duration) => duration,
-                None => return Err(ParseDurationError::InvalidInput),
-            };
 
         // Calculate the total length of the matched substring
         if let Some(m) = capture.get(0) {
@@ -200,149 +172,113 @@ pub fn from_str_at_date(date: NaiveDate, s: &str) -> Result<Duration, ParseDurat
     if captures_processed == 0 {
         Err(ParseDurationError::InvalidInput)
     } else {
-        let time_now = Local::now().date_naive();
-        let date_duration = date - time_now;
-
-        Ok(total_duration + date_duration)
+        Ok(date)
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use super::add_relative_str;
     use super::ParseDurationError;
-    use super::{from_str, from_str_at_date};
-    use chrono::{Duration, Local, NaiveDate};
+    use chrono::{DateTime, Utc};
 
     #[test]
     fn test_years() {
-        assert_eq!(from_str("1 year").unwrap(), Duration::seconds(31_536_000));
-        assert_eq!(
-            from_str("-2 years").unwrap(),
-            Duration::seconds(-63_072_000)
-        );
-        assert_eq!(
-            from_str("2 years ago").unwrap(),
-            Duration::seconds(-63_072_000)
-        );
-        assert_eq!(from_str("year").unwrap(), Duration::seconds(31_536_000));
+        assert_add_relative_str_eq("1 year", "2015-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("-2 years", "2012-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("2 years ago", "2012-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("year", "2015-09-05 15:43:21 UTC");
     }
 
     #[test]
     fn test_months() {
-        assert_eq!(from_str("1 month").unwrap(), Duration::seconds(2_592_000));
-        assert_eq!(
-            from_str("1 month and 2 weeks").unwrap(),
-            Duration::seconds(3_801_600)
-        );
-        assert_eq!(
-            from_str("1 month and 2 weeks ago").unwrap(),
-            Duration::seconds(-3_801_600)
-        );
-        assert_eq!(from_str("2 months").unwrap(), Duration::seconds(5_184_000));
-        assert_eq!(from_str("month").unwrap(), Duration::seconds(2_592_000));
+        assert_add_relative_str_eq("1 month", "2014-10-05 15:43:21 UTC");
+        assert_add_relative_str_eq("1 month and 2 weeks", "2014-10-19 15:43:21 UTC");
+        assert_add_relative_str_eq("1 month and 2 weeks ago", "2014-07-22 15:43:21 UTC");
+        assert_add_relative_str_eq("2 months", "2014-11-05 15:43:21 UTC");
+        assert_add_relative_str_eq("month", "2014-10-05 15:43:21 UTC");
     }
 
     #[test]
     fn test_fortnights() {
-        assert_eq!(
-            from_str("1 fortnight").unwrap(),
-            Duration::seconds(1_209_600)
-        );
-        assert_eq!(
-            from_str("3 fortnights").unwrap(),
-            Duration::seconds(3_628_800)
-        );
-        assert_eq!(from_str("fortnight").unwrap(), Duration::seconds(1_209_600));
+        assert_add_relative_str_eq("1 fortnight", "2014-09-19 15:43:21 UTC");
+        assert_add_relative_str_eq("3 fortnights", "2014-10-17 15:43:21 UTC");
+        assert_add_relative_str_eq("fortnight", "2014-09-19 15:43:21 UTC");
     }
 
     #[test]
     fn test_weeks() {
-        assert_eq!(from_str("1 week").unwrap(), Duration::seconds(604_800));
-        assert_eq!(
-            from_str("1 week 3 days").unwrap(),
-            Duration::seconds(864_000)
-        );
-        assert_eq!(
-            from_str("1 week 3 days ago").unwrap(),
-            Duration::seconds(-864_000)
-        );
-        assert_eq!(from_str("-2 weeks").unwrap(), Duration::seconds(-1_209_600));
-        assert_eq!(
-            from_str("2 weeks ago").unwrap(),
-            Duration::seconds(-1_209_600)
-        );
-        assert_eq!(from_str("week").unwrap(), Duration::seconds(604_800));
+        assert_add_relative_str_eq("1 week", "2014-09-12 15:43:21 UTC");
+        assert_add_relative_str_eq("1 week 3 days", "2014-09-15 15:43:21 UTC");
+        assert_add_relative_str_eq("1 week 3 days ago", "2014-08-26 15:43:21 UTC");
+        assert_add_relative_str_eq("-2 weeks", "2014-08-22 15:43:21 UTC");
+        assert_add_relative_str_eq("2 weeks ago", "2014-08-22 15:43:21 UTC");
+        assert_add_relative_str_eq("week", "2014-09-12 15:43:21 UTC");
     }
 
     #[test]
     fn test_days() {
-        assert_eq!(from_str("1 day").unwrap(), Duration::seconds(86400));
-        assert_eq!(from_str("2 days ago").unwrap(), Duration::seconds(-172_800));
-        assert_eq!(from_str("-2 days").unwrap(), Duration::seconds(-172_800));
-        assert_eq!(from_str("day").unwrap(), Duration::seconds(86400));
+        assert_add_relative_str_eq("1 day", "2014-09-06 15:43:21 UTC");
+        assert_add_relative_str_eq("2 days ago", "2014-09-03 15:43:21 UTC");
+        assert_add_relative_str_eq("-2 days", "2014-09-03 15:43:21 UTC");
+        assert_add_relative_str_eq("day", "2014-09-06 15:43:21 UTC");
     }
 
     #[test]
     fn test_hours() {
-        assert_eq!(from_str("1 hour").unwrap(), Duration::seconds(3600));
-        assert_eq!(from_str("1 hour ago").unwrap(), Duration::seconds(-3600));
-        assert_eq!(from_str("-2 hours").unwrap(), Duration::seconds(-7200));
-        assert_eq!(from_str("hour").unwrap(), Duration::seconds(3600));
+        assert_add_relative_str_eq("1 hour", "2014-09-05 16:43:21 UTC");
+        assert_add_relative_str_eq("1 hour ago", "2014-09-05 14:43:21 UTC");
+        assert_add_relative_str_eq("-2 hours", "2014-09-05 13:43:21 UTC");
+        assert_add_relative_str_eq("hour", "2014-09-05 16:43:21 UTC");
     }
 
     #[test]
     fn test_minutes() {
-        assert_eq!(from_str("1 minute").unwrap(), Duration::seconds(60));
-        assert_eq!(from_str("2 minutes").unwrap(), Duration::seconds(120));
-        assert_eq!(from_str("min").unwrap(), Duration::seconds(60));
+        assert_add_relative_str_eq("1 minute", "2014-09-05 15:44:21 UTC");
+        assert_add_relative_str_eq("2 minutes", "2014-09-05 15:45:21 UTC");
+        assert_add_relative_str_eq("min", "2014-09-05 15:44:21 UTC");
     }
 
     #[test]
     fn test_seconds() {
-        assert_eq!(from_str("1 second").unwrap(), Duration::seconds(1));
-        assert_eq!(from_str("2 seconds").unwrap(), Duration::seconds(2));
-        assert_eq!(from_str("sec").unwrap(), Duration::seconds(1));
+        assert_add_relative_str_eq("1 second", "2014-09-05 15:43:22 UTC");
+        assert_add_relative_str_eq("2 seconds", "2014-09-05 15:43:23 UTC");
+        assert_add_relative_str_eq("sec", "2014-09-05 15:43:22 UTC");
     }
 
     #[test]
     fn test_relative_days() {
-        assert_eq!(from_str("now").unwrap(), Duration::seconds(0));
-        assert_eq!(from_str("today").unwrap(), Duration::seconds(0));
-        assert_eq!(from_str("yesterday").unwrap(), Duration::seconds(-86400));
-        assert_eq!(from_str("tomorrow").unwrap(), Duration::seconds(86400));
+        assert_add_relative_str_eq("now", "2014-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("today", "2014-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("yesterday", "2014-09-04 15:43:21 UTC");
+        assert_add_relative_str_eq("tomorrow", "2014-09-06 15:43:21 UTC");
     }
 
     #[test]
     fn test_no_spaces() {
-        assert_eq!(from_str("-1hour").unwrap(), Duration::hours(-1));
-        assert_eq!(from_str("+3days").unwrap(), Duration::days(3));
-        assert_eq!(from_str("2weeks").unwrap(), Duration::weeks(2));
-        assert_eq!(
-            from_str("2weeks 1hour").unwrap(),
-            Duration::seconds(1_213_200)
-        );
-        assert_eq!(
-            from_str("2weeks 1hour ago").unwrap(),
-            Duration::seconds(-1_213_200)
-        );
-        assert_eq!(from_str("+4months").unwrap(), Duration::days(4 * 30));
-        assert_eq!(from_str("-2years").unwrap(), Duration::days(-2 * 365));
-        assert_eq!(from_str("15minutes").unwrap(), Duration::minutes(15));
-        assert_eq!(from_str("-30seconds").unwrap(), Duration::seconds(-30));
-        assert_eq!(from_str("30seconds ago").unwrap(), Duration::seconds(-30));
+        assert_add_relative_str_eq("-1hour", "2014-09-05 14:43:21 UTC");
+        assert_add_relative_str_eq("+3days", "2014-09-08 15:43:21 UTC");
+        assert_add_relative_str_eq("2weeks", "2014-09-19 15:43:21 UTC");
+        assert_add_relative_str_eq("2weeks 1hour", "2014-09-19 16:43:21 UTC");
+        assert_add_relative_str_eq("2weeks 1hour ago", "2014-08-22 14:43:21 UTC");
+        assert_add_relative_str_eq("+4months", "2015-01-05 15:43:21 UTC");
+        assert_add_relative_str_eq("-2years", "2012-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("15minutes", "2014-09-05 15:58:21 UTC");
+        assert_add_relative_str_eq("-30seconds", "2014-09-05 15:42:51 UTC");
+        assert_add_relative_str_eq("30seconds ago", "2014-09-05 15:42:51 UTC");
     }
 
     #[test]
     fn test_invalid_input() {
-        let result = from_str("foobar");
-        println!("{result:?}");
+        let date: DateTime<Utc> = "2014-09-05 15:43:21Z".parse::<DateTime<Utc>>().unwrap();
+        let result = add_relative_str(date, "foobar");
         assert_eq!(result, Err(ParseDurationError::InvalidInput));
 
-        let result = from_str("invalid 1");
+        let result = add_relative_str(date, "invalid 1");
         assert_eq!(result, Err(ParseDurationError::InvalidInput));
         // Fails for now with a panic
-        /*        let result = from_str("777777777777777771m");
+        /*        let result = add_relative_str(date, "777777777777777771m");
         match result {
             Err(ParseDurationError::InvalidInput) => assert!(true),
             _ => assert!(false),
@@ -350,36 +286,44 @@ mod tests {
     }
 
     #[test]
-    fn test_from_str_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        let now = Local::now().date_naive();
-        let days_diff = (date - now).num_days();
-
-        assert_eq!(
-            from_str_at_date(date, "1 day").unwrap(),
-            Duration::days(days_diff + 1)
+    fn test_add_relative_str() {
+        assert_add_relative_str_eq("0 seconds", "2014-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("1 day", "2014-09-06 15:43:21 UTC");
+        assert_add_relative_str_eq("2 hours", "2014-09-05 17:43:21 UTC");
+        assert_add_relative_str_eq("1 year ago", "2013-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("1 year", "2015-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("4 years", "2018-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("2 months ago", "2014-07-05 15:43:21 UTC");
+        assert_add_relative_str_eq("15 days ago", "2014-08-21 15:43:21 UTC");
+        assert_add_relative_str_eq("1 week ago", "2014-08-29 15:43:21 UTC");
+        assert_add_relative_str_eq("5 hours ago", "2014-09-05 10:43:21 UTC");
+        assert_add_relative_str_eq("30 minutes ago", "2014-09-05 15:13:21 UTC");
+        assert_add_relative_str_eq("10 seconds", "2014-09-05 15:43:31 UTC");
+        assert_add_relative_str_eq("last hour", "2014-09-05 14:43:21 UTC");
+        assert_add_relative_str_eq("next year", "2015-09-05 15:43:21 UTC");
+        assert_add_relative_str_eq("next week", "2014-09-12 15:43:21 UTC");
+        assert_add_relative_str_eq("last month", "2014-08-05 15:43:21 UTC");
+        assert_add_relative_str_eq("4 months 25 days", "2015-01-30 15:43:21 UTC");
+        assert_add_relative_str_eq("4 months 25 days 1 month", "2015-02-28 15:43:21 UTC");
+        assert_add_relative_str_eq(
+            "1 year 2 months 4 weeks 3 days and 2 seconds",
+            "2015-12-06 15:43:23 UTC",
         );
-
-        assert_eq!(
-            from_str_at_date(date, "2 hours").unwrap(),
-            Duration::days(days_diff) + Duration::hours(2)
+        assert_add_relative_str_eq(
+            "1 year 2 months 4 weeks 3 days and 2 seconds ago",
+            "2013-06-04 15:43:19 UTC",
         );
     }
 
-    #[test]
-    fn test_invalid_input_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        assert!(matches!(
-            from_str_at_date(date, "invalid"),
-            Err(ParseDurationError::InvalidInput)
-        ));
-    }
-
-    #[test]
-    fn test_direction() {
-        assert_eq!(from_str("last hour").unwrap(), Duration::seconds(-3600));
-        assert_eq!(from_str("next year").unwrap(), Duration::days(365));
-        assert_eq!(from_str("next week").unwrap(), Duration::days(7));
-        assert_eq!(from_str("last month").unwrap(), Duration::days(-30));
+    /// Adds the given relative string to the date `2014-09-05 15:43:21 UTC` and compares it with the expected result.
+    fn assert_add_relative_str_eq(str: &str, expected: &str) {
+        let date: DateTime<Utc> = "2014-09-05 15:43:21 UTC".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(
+            (add_relative_str(date, str).unwrap()).to_string(),
+            expected,
+            "'{}' relative from {}",
+            str,
+            date
+        );
     }
 }
