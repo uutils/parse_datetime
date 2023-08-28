@@ -255,7 +255,7 @@ mod tests {
             ];
 
             for offset in offsets {
-                let time = Utc.timestamp(offset, 0);
+                let time = Utc.timestamp_opt(offset, 0).unwrap();
                 let dt = from_str(format!("@{}", offset));
                 assert_eq!(dt.unwrap(), time);
             }
