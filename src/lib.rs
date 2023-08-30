@@ -14,10 +14,12 @@ use std::fmt::{self, Display};
 
 // Expose parse_datetime
 mod parse_relative_time;
+mod parse_timestamp;
 
 use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone};
 
 use parse_relative_time::parse_relative_time;
+use parse_timestamp::parse_timestamp;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDateTimeError {
@@ -169,9 +171,9 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     }
 
     // Parse epoch seconds
-    if s.as_ref().bytes().next() == Some(b'@') {
-        if let Ok(parsed) = NaiveDateTime::parse_from_str(&s.as_ref()[1..], "%s") {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+    if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
+        if let Some(timestamp_date) = NaiveDateTime::from_timestamp_opt(timestamp, 0) {
+            if let Ok(dt) = naive_dt_to_fixed_offset(date, timestamp_date) {
                 return Ok(dt);
             }
         }
@@ -359,14 +361,20 @@ mod tests {
         use chrono::{TimeZone, Utc};
 
         #[test]
-        fn test_positive_offsets() {
+        fn test_positive_and_negative_offsets() {
             let offsets: Vec<i64> = vec![
                 0, 1, 2, 10, 100, 150, 2000, 1234400000, 1334400000, 1692582913, 2092582910,
             ];
 
             for offset in offsets {
+                // positive offset
                 let time = Utc.timestamp_opt(offset, 0).unwrap();
                 let dt = parse_datetime(format!("@{}", offset));
+                assert_eq!(dt.unwrap(), time);
+
+                // negative offset
+                let time = Utc.timestamp_opt(-offset, 0).unwrap();
+                let dt = parse_datetime(format!("@-{}", offset));
                 assert_eq!(dt.unwrap(), time);
             }
         }
