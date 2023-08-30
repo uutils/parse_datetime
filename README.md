@@ -50,7 +50,7 @@ assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap())
 
 ### Supported Formats
 
-The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the ollowing relative times:
+The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the following relative times:
 
 - `num` `unit` (e.g., "-1 hour", "+3 days")
 - `unit` (e.g., "hour", "day")
