@@ -79,7 +79,7 @@ checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
 name = "fuzz_parse_datetime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "libfuzzer-sys",
@@ -186,7 +186,7 @@ checksum = "b7e5500299e16ebb147ae15a00a942af264cf3688f47923b8fc2cd5858f23ad3"
 
 [[package]]
 name = "parse_datetime"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "regex",
