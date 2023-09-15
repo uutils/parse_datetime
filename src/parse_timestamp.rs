@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(parse_timestamp("@+4"), Ok(4));
         assert_eq!(parse_timestamp("@0"), Ok(0));
 
-        // gnu date acceppts numbers signs and uses the last sign
+        // gnu date accepts numbers signs and uses the last sign
         assert_eq!(parse_timestamp("@---+12"), Ok(12));
         assert_eq!(parse_timestamp("@+++-12"), Ok(-12));
         assert_eq!(parse_timestamp("@+----+12"), Ok(12));
