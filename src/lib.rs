@@ -16,7 +16,12 @@ use std::fmt::{self, Display};
 mod parse_relative_time;
 mod parse_timestamp;
 
-use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone};
+mod parse_weekday;
+
+use chrono::{
+    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone,
+    Timelike,
+};
 
 use parse_relative_time::parse_relative_time;
 use parse_timestamp::parse_timestamp;
@@ -168,6 +173,27 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
                 return Ok(dt);
             }
         }
+    }
+
+    // parse weekday
+    if let Some(weekday) = parse_weekday::parse_weekday(s.as_ref()) {
+        let mut beginning_of_day = date
+            .with_hour(0)
+            .unwrap()
+            .with_minute(0)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+
+        while beginning_of_day.weekday() != weekday {
+            beginning_of_day += Duration::days(1);
+        }
+
+        let dt = DateTime::<FixedOffset>::from(beginning_of_day);
+
+        return Ok(dt);
     }
 
     // Parse epoch seconds
@@ -352,6 +378,56 @@ mod tests {
             for relative_time in relative_times {
                 assert_eq!(parse_datetime(relative_time).is_ok(), true);
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod weekday {
+        use chrono::{DateTime, Local, TimeZone};
+
+        use crate::parse_datetime_at_date;
+
+        fn get_formatted_date(date: DateTime<Local>, weekday: &str) -> String {
+            let result = parse_datetime_at_date(date, weekday).unwrap();
+
+            return result.format("%F %T %f").to_string();
+        }
+        #[test]
+        fn test_weekday() {
+            // add some constant hours and minutes and seconds to check its reset
+            let date = Local.with_ymd_and_hms(2023, 02, 28, 10, 12, 3).unwrap();
+
+            // 2023-2-28 is tuesday
+            assert_eq!(
+                get_formatted_date(date, "tuesday"),
+                "2023-02-28 00:00:00 000000000"
+            );
+
+            // 2023-3-01 is wednesday
+            assert_eq!(
+                get_formatted_date(date, "wed"),
+                "2023-03-01 00:00:00 000000000"
+            );
+
+            assert_eq!(
+                get_formatted_date(date, "thu"),
+                "2023-03-02 00:00:00 000000000"
+            );
+
+            assert_eq!(
+                get_formatted_date(date, "fri"),
+                "2023-03-03 00:00:00 000000000"
+            );
+
+            assert_eq!(
+                get_formatted_date(date, "sat"),
+                "2023-03-04 00:00:00 000000000"
+            );
+
+            assert_eq!(
+                get_formatted_date(date, "sun"),
+                "2023-03-05 00:00:00 000000000"
+            );
         }
     }
 
