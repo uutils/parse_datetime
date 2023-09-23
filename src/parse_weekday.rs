@@ -13,7 +13,7 @@ macro_rules! tag_match {
     };
 }
 
-pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
+pub fn parse_weekday(s: &str) -> Option<Weekday> {
     let s = s.trim().to_lowercase();
     let s = s.as_str();
 
