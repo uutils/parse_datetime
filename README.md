@@ -60,6 +60,17 @@ use parse_datetime::parse_timpestamp;
 let ts = parse_timestamp("@1234").unwrap();
 assert_eq!(ts, 1234);
 ```
+
+For weekday parsing, import the `parse_weekday` module:
+
+```rs
+use chrono::{Local, TimeZone};
+use parse_datetime::parse_weekday;
+
+let mon = parse_weekday("monday").unwrap();
+assert_eq!(mon, Weekday::Mon);
+```
+
 ### Supported Formats
 
 The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the following relative times:
