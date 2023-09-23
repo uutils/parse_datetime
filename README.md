@@ -41,13 +41,25 @@ assert_eq!(
 For DateTime parsing, import the `parse_datetime` module:
 
 ```rs
-use parse_datetime::parse_datetime::from_str;
 use chrono::{Local, TimeZone};
+use parse_datetime::parse_relative_time;
 
-let dt = from_str("2021-02-14 06:37:47");
-assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap());
+let one_minute = parse_relative_time("1 minute").unwrap();
+assert_eq!(
+  one_minute,
+  Duration::seconds(60)
+);
 ```
 
+For timestamp parsing, import the `parse_timpestamp` module:
+
+```rs
+use chrono::{Local, TimeZone};
+use parse_datetime::parse_timpestamp;
+
+let ts = parse_timestamp("@1234").unwrap();
+assert_eq!(ts, 1234);
+```
 ### Supported Formats
 
 The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the following relative times:
