@@ -49,7 +49,7 @@ impl<'a> From<NomError<'a>> for ParseTimestampError {
     }
 }
 
-pub(crate) fn parse_timestamp(s: &str) -> Result<i64, ParseTimestampError> {
+pub fn parse_timestamp(s: &str) -> Result<i64, ParseTimestampError> {
     let s = s.trim().to_lowercase();
     let s = s.as_str();
 
