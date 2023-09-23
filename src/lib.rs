@@ -12,11 +12,11 @@ use regex::Error as RegexError;
 use std::error::Error;
 use std::fmt::{self, Display};
 
-// Expose parse_datetime
-mod parse_relative_time;
-mod parse_timestamp;
+// Expose other features from this crate
+pub mod parse_relative_time;
+pub mod parse_timestamp;
 
-mod parse_weekday;
+pub mod parse_weekday;
 
 use chrono::{
     DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone,
