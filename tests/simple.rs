@@ -1,3 +1,6 @@
+// For the full copyright and license information, please view the LICENSE
+// file that was distributed with this source code.
+
 use chrono::{Duration, Local, Weekday};
 use parse_datetime::{
     parse_datetime_at_date, parse_relative_time::parse_relative_time,
