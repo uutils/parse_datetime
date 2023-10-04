@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use crate::ParseDateTimeError;
-use chrono::{Duration, Local, NaiveDate, Utc};
+use chrono::{Duration, Local, NaiveDate};
 use regex::Regex;
 /// Parses a relative time string and returns a `Duration` representing the
 /// relative time.
@@ -40,26 +40,6 @@ use regex::Regex;
 ///
 /// ```
 pub fn parse_relative_time(s: &str) -> Result<Duration, ParseDateTimeError> {
-    parse_relative_time_at_date(Utc::now().date_naive(), s)
-}
-
-/// Parses a duration string and returns a `Duration` instance, with the duration
-/// calculated from the specified date.
-///
-/// # Arguments
-///
-/// * `date` - A `Date` instance representing the base date for the calculation
-/// * `s` - A string slice representing the relative time.
-///
-/// # Errors
-///
-/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
-/// cannot be parsed as a relative time.
-/// ```
-pub fn parse_relative_time_at_date(
-    date: NaiveDate,
-    s: &str,
-) -> Result<Duration, ParseDateTimeError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -139,11 +119,31 @@ pub fn parse_relative_time_at_date(
     if captures_processed == 0 {
         Err(ParseDateTimeError::InvalidInput)
     } else {
-        let time_now = Local::now().date_naive();
-        let date_duration = date - time_now;
-
-        Ok(total_duration + date_duration)
+        Ok(total_duration)
     }
+}
+
+/// Parses a duration string and returns a `Duration` instance, with the duration
+/// calculated from the specified date.
+///
+/// # Arguments
+///
+/// * `date` - A `Date` instance representing the base date for the calculation
+/// * `s` - A string slice representing the relative time.
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
+/// ```
+pub fn parse_relative_time_at_date(
+    date: NaiveDate,
+    s: &str,
+) -> Result<Duration, ParseDateTimeError> {
+    let total_duration = parse_relative_time(s)?;
+    let time_now = Local::now().date_naive();
+    let date_duration = date - time_now;
+    Ok(total_duration + date_duration)
 }
 
 #[cfg(test)]
