@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use crate::ParseDateTimeError;
-use chrono::{Duration, Local, NaiveDate};
+use chrono::Duration;
 use regex::Regex;
 /// Parses a relative time string and returns a `Duration` representing the
 /// relative time.
@@ -123,35 +123,12 @@ pub fn parse_relative_time(s: &str) -> Result<Duration, ParseDateTimeError> {
     }
 }
 
-/// Parses a duration string and returns a `Duration` instance, with the duration
-/// calculated from the specified date.
-///
-/// # Arguments
-///
-/// * `date` - A `Date` instance representing the base date for the calculation
-/// * `s` - A string slice representing the relative time.
-///
-/// # Errors
-///
-/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
-/// cannot be parsed as a relative time.
-/// ```
-pub fn parse_relative_time_at_date(
-    date: NaiveDate,
-    s: &str,
-) -> Result<Duration, ParseDateTimeError> {
-    let total_duration = parse_relative_time(s)?;
-    let time_now = Local::now().date_naive();
-    let date_duration = date - time_now;
-    Ok(total_duration + date_duration)
-}
-
 #[cfg(test)]
 mod tests {
 
+    use super::parse_relative_time;
     use super::ParseDateTimeError;
-    use super::{parse_relative_time, parse_relative_time_at_date};
-    use chrono::{Duration, Local, NaiveDate, Utc};
+    use chrono::Duration;
 
     #[test]
     fn test_years() {
@@ -373,32 +350,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_relative_time_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        let now = Local::now().date_naive();
-        let days_diff = (date - now).num_days();
-
-        assert_eq!(
-            parse_relative_time_at_date(date, "1 day").unwrap(),
-            Duration::days(days_diff + 1)
-        );
-
-        assert_eq!(
-            parse_relative_time_at_date(date, "2 hours").unwrap(),
-            Duration::days(days_diff) + Duration::hours(2)
-        );
-    }
-
-    #[test]
-    fn test_invalid_input_at_date() {
-        let date = NaiveDate::from_ymd_opt(2014, 9, 5).unwrap();
-        assert!(matches!(
-            parse_relative_time_at_date(date, "invalid"),
-            Err(ParseDateTimeError::InvalidInput)
-        ));
-    }
-
-    #[test]
     fn test_direction() {
         assert_eq!(
             parse_relative_time("last hour").unwrap(),
@@ -600,23 +551,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_relative_time_at_date_day() {
-        let today = Utc::now().date_naive();
-        let yesterday = today - Duration::days(1);
-        assert_eq!(
-            parse_relative_time_at_date(yesterday, "2 days").unwrap(),
-            Duration::days(1)
-        );
-    }
-
-    #[test]
     fn test_invalid_input_at_date_relative() {
-        let today = Utc::now().date_naive();
-        let result = parse_relative_time_at_date(today, "foobar");
+        let result = parse_relative_time("foobar");
         println!("{result:?}");
         assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
 
-        let result = parse_relative_time_at_date(today, "invalid 1r");
+        let result = parse_relative_time("invalid 1r");
         assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
     }
 }
