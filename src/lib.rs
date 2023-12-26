@@ -1,5 +1,3 @@
-// For the full copyright and license information, please view the LICENSE
-// file that was distributed with this source code.
 //! A Rust crate for parsing human-readable relative time strings and human-readable datetime strings and converting them to a `DateTime`.
 //! The function supports the following formats for time:
 //!
@@ -8,23 +6,23 @@
 //! * unix timestamps, e.g., "@12"
 //! * relative time to now, e.g. "+1 hour"
 //!
-use regex::Error as RegexError;
+use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt::{self, Display};
+
+use chrono::{
+    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, NaiveDate, NaiveDateTime,
+    TimeZone, Timelike,
+};
+
+use crate::parse_relative_time::dt_from_relative;
+use parse_timestamp::parse_timestamp;
 
 // Expose parse_datetime
 mod parse_relative_time;
 mod parse_timestamp;
 
 mod parse_weekday;
-
-use chrono::{
-    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone,
-    Timelike,
-};
-
-use parse_relative_time::parse_relative_time;
-use parse_timestamp::parse_timestamp;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDateTimeError {
@@ -76,7 +74,7 @@ mod format {
     pub const ZULU_OFFSET: &str = "Z%#z";
 }
 
-/// Parses a time string and returns a `DateTime` representing the
+/// Parses a time string with optional modifiers and returns a `DateTime<FixedOffset>` representing the
 /// absolute time of the string.
 ///
 /// # Arguments
@@ -86,11 +84,74 @@ mod format {
 /// # Examples
 ///
 /// ```
-/// use chrono::{DateTime, Utc, TimeZone};
-/// let time = parse_datetime::parse_datetime("2023-06-03 12:00:01Z");
-/// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 03, 12, 00, 01).unwrap());
+/// use chrono::{DateTime, Utc, TimeZone, Local, FixedOffset};
+/// let date = parse_datetime::parse_datetime("2023-06-03 12:00:01Z +16 days");
+/// assert_eq!(date.unwrap(), Utc.with_ymd_and_hms(2023, 06, 19, 12, 00, 01).unwrap());
+///
+/// let time = parse_datetime::parse_datetime("2023-06-03 00:00:00Z tomorrow 1230");
+/// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 04, 12, 30, 00).unwrap());
 /// ```
 ///
+/// # Formats
+///
+///    %Y-%m-%d
+///
+///    %Y%m%d
+///
+///   %a %b %e %H:%M:%S %Y
+///
+///    %Y%m%d%H%M.%S
+///
+///    %Y-%m-%d %H:%M:%S.%f
+///
+///    %Y-%m-%d %H:%M:%S
+///
+///    %Y-%m-%d %H:%M
+///
+///    %Y%m%d%H%M
+///
+///    %Y%m%d%H%M %z
+///
+///    %Y%m%d%H%MUTC%z
+///
+///    %Y%m%d%H%MZ%z
+///
+///    %Y-%m-%d %H:%M %z
+///
+///    %Y-%m-%dT%H:%M:%S
+///
+///    UTC%#z
+///
+///    Z%#z
+///
+///
+/// # Modifiers
+///
+/// Years
+///
+/// Months
+///
+/// Fortnights
+///
+/// Weeks
+///
+/// Days
+///
+/// Hours
+///
+/// Minutes
+///
+/// Seconds
+///
+/// Tomorrow
+///
+/// Yesterday
+///
+/// Now
+///
+/// Today
+///
+/// Time (represented as an isolated 4 digit number)
 ///
 /// # Returns
 ///
@@ -100,11 +161,155 @@ mod format {
 /// # Errors
 ///
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
-/// cannot be parsed as a relative time.
+/// cannot be parsed.
 pub fn parse_datetime<S: AsRef<str> + Clone>(
     s: S,
 ) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
-    parse_datetime_at_date(Local::now(), s)
+    if let Ok(parsed) = try_parse(s.as_ref()) {
+        return Ok(parsed);
+    }
+
+    for fmt in [
+        format::YYYYMMDDHHMM_OFFSET,
+        format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
+        format::YYYYMMDDHHMM_UTC_OFFSET,
+        format::YYYYMMDDHHMM_ZULU_OFFSET,
+    ] {
+        if let Ok((parsed, modifier)) = DateTime::parse_and_remainder(s.as_ref(), fmt) {
+            if modifier.is_empty() {
+                return Ok(parsed);
+            }
+            if let Ok(dt) = dt_from_relative(modifier, parsed) {
+                return Ok(dt);
+            }
+        }
+    }
+
+    // Parse formats with no offset, assume local time
+    for fmt in [
+        format::YYYYMMDDHHMMS_T_SEP,
+        format::YYYYMMDDHHMM,
+        format::YYYYMMDDHHMMSS,
+        format::YYYYMMDDHHMMS,
+        format::YYYY_MM_DD_HH_MM,
+        format::YYYYMMDDHHMM_DOT_SS,
+        format::POSIX_LOCALE,
+    ] {
+        if let Ok((parsed, modifier)) = NaiveDateTime::parse_and_remainder(s.as_ref(), fmt) {
+            if let Ok(dt) = naive_dt_to_fixed_offset(Local::now(), parsed) {
+                if modifier.is_empty() {
+                    return Ok(dt);
+                } else if let Ok(dt) = dt_from_relative(modifier, dt) {
+                    return Ok(dt);
+                }
+            };
+        }
+    }
+
+    // parse weekday
+    if let Ok(date) = parse_weekday(Local::now().into(), s.as_ref()) {
+        return Ok(date);
+    }
+
+    // Parse epoch seconds
+    if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
+        if let Some(timestamp_date) = NaiveDateTime::from_timestamp_opt(timestamp, 0) {
+            if let Ok(dt) = naive_dt_to_fixed_offset(Local::now(), timestamp_date) {
+                return Ok(dt);
+            }
+        }
+    }
+
+    // Parse date only formats - assume midnight local timezone
+    for fmt in [format::ISO_8601, format::ISO_8601_NO_SEP] {
+        if let Ok((date, remainder)) = NaiveDate::parse_and_remainder(s.as_ref(), fmt) {
+            let ndt = date.and_hms_opt(0, 0, 0).unwrap();
+            if let Ok(dt) = naive_dt_to_fixed_offset(Local::now(), ndt) {
+                if let Ok(dt) = dt_from_relative(remainder, dt) {
+                    return Ok(dt);
+                }
+            }
+        }
+    }
+
+    // Parse offsets. chrono doesn't provide any functionality to parse
+    // offsets, so instead we replicate parse_date behaviour by getting
+    // the current date with local, and create a date time string at midnight,
+    // before trying offset suffixes
+    let ts = format!("{}", Local::now().format("%Y%m%d")) + "0000" + s.as_ref();
+    for fmt in [format::UTC_OFFSET, format::ZULU_OFFSET] {
+        let f = format::YYYYMMDDHHMM.to_owned() + fmt;
+        if let Ok((parsed, modifier)) = DateTime::parse_and_remainder(&ts, &f) {
+            if modifier.trim().is_empty() {
+                return Ok(parsed);
+                // if the is a non empty remainder we check to see if the
+                // first letter is a space. If it is not we reject the input
+                // because it could be left over form an invalid offset.
+            } else if !modifier.as_bytes()[0].is_ascii_whitespace() {
+                return Err(ParseDateTimeError::InvalidInput);
+            }
+            if let Ok(dt) = dt_from_relative(modifier, parsed) {
+                return Ok(dt);
+            }
+        }
+    }
+
+    parse_datetime_at_date(Local::now(), s.as_ref())
+}
+
+fn try_parse<S: AsRef<str>>(s: S) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    let re = Regex::new(r"(?ix)
+                                (?:[+-]?\s*\d+\s*)?
+                                (\s*(?:years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s)|
+                                (\s*(?:next|last)\s*)|
+                                (\s*(?:yesterday|tomorrow|now|today)\s*)|
+                                (\s*(?:and|,)\s*))").unwrap();
+
+    match re.find(s.as_ref()) {
+        None => s
+            .as_ref()
+            .parse::<DateTime<FixedOffset>>()
+            .map_err(|_| ParseDateTimeError::InvalidInput),
+        Some(matcher) => {
+            let pivot = matcher.start();
+            let date = &s.as_ref()[..pivot];
+            let modifier = &s.as_ref()[pivot..];
+            if let Ok(dt) = date.parse::<DateTime<FixedOffset>>() {
+                dt_from_relative(modifier, dt)
+            } else if let Ok(dt) = date.parse::<NaiveDate>() {
+                let ndt = dt.and_hms_opt(0, 0, 0).unwrap();
+                dt_from_relative(
+                    modifier,
+                    naive_dt_to_fixed_offset(Local::now(), ndt).unwrap(),
+                )
+            } else {
+                Err(ParseDateTimeError::InvalidInput)
+            }
+        }
+    }
+}
+
+fn parse_weekday<S: AsRef<str>>(
+    date: DateTime<FixedOffset>,
+    s: S,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    if let Some(weekday) = parse_weekday::parse_weekday(s.as_ref()) {
+        let mut beginning_of_day = date
+            .with_hour(0)
+            .unwrap()
+            .with_minute(0)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+
+        while beginning_of_day.weekday() != weekday {
+            beginning_of_day += Duration::days(1);
+        }
+        return Ok(beginning_of_day);
+    }
+    Err(ParseDateTimeError::InvalidInput)
 }
 
 /// Parses a time string at a specific date and returns a `DateTime` representing the
@@ -143,104 +348,11 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     date: DateTime<Local>,
     s: S,
 ) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
-    // TODO: Replace with a proper customiseable parsing solution using `nom`, `grmtools`, or
-    // similar
-
-    // Formats with offsets don't require NaiveDateTime workaround
-    for fmt in [
-        format::YYYYMMDDHHMM_OFFSET,
-        format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
-        format::YYYYMMDDHHMM_UTC_OFFSET,
-        format::YYYYMMDDHHMM_ZULU_OFFSET,
-    ] {
-        if let Ok(parsed) = DateTime::parse_from_str(s.as_ref(), fmt) {
-            return Ok(parsed);
-        }
-    }
-
-    // Parse formats with no offset, assume local time
-    for fmt in [
-        format::YYYYMMDDHHMMS_T_SEP,
-        format::YYYYMMDDHHMM,
-        format::YYYYMMDDHHMMS,
-        format::YYYYMMDDHHMMSS,
-        format::YYYY_MM_DD_HH_MM,
-        format::YYYYMMDDHHMM_DOT_SS,
-        format::POSIX_LOCALE,
-    ] {
-        if let Ok(parsed) = NaiveDateTime::parse_from_str(s.as_ref(), fmt) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
-                return Ok(dt);
-            }
-        }
-    }
-
-    // parse weekday
-    if let Some(weekday) = parse_weekday::parse_weekday(s.as_ref()) {
-        let mut beginning_of_day = date
-            .with_hour(0)
-            .unwrap()
-            .with_minute(0)
-            .unwrap()
-            .with_second(0)
-            .unwrap()
-            .with_nanosecond(0)
-            .unwrap();
-
-        while beginning_of_day.weekday() != weekday {
-            beginning_of_day += Duration::days(1);
-        }
-
-        let dt = DateTime::<FixedOffset>::from(beginning_of_day);
-
+    if let Ok(dt) = parse_weekday(date.into(), s.as_ref()) {
         return Ok(dt);
     }
-
-    // Parse epoch seconds
-    if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
-        if let Some(timestamp_date) = NaiveDateTime::from_timestamp_opt(timestamp, 0) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, timestamp_date) {
-                return Ok(dt);
-            }
-        }
-    }
-
-    let ts = s.as_ref().to_owned() + "0000";
-    // Parse date only formats - assume midnight local timezone
-    for fmt in [format::ISO_8601, format::ISO_8601_NO_SEP] {
-        let f = fmt.to_owned() + "%H%M";
-        if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts, &f) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
-                return Ok(dt);
-            }
-        }
-    }
-
-    // Parse offsets. chrono doesn't provide any functionality to parse
-    // offsets, so instead we replicate parse_date behaviour by getting
-    // the current date with local, and create a date time string at midnight,
-    // before trying offset suffixes
-    let ts = format!("{}", date.format("%Y%m%d")) + "0000" + s.as_ref();
-    for fmt in [format::UTC_OFFSET, format::ZULU_OFFSET] {
-        let f = format::YYYYMMDDHHMM.to_owned() + fmt;
-        if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
-            return Ok(parsed);
-        }
-    }
-
     // Parse relative time.
-    if let Ok(relative_time) = parse_relative_time(s.as_ref()) {
-        let current_time = DateTime::<FixedOffset>::from(date);
-
-        if let Some(date_time) = current_time.checked_add_signed(relative_time) {
-            return Ok(date_time);
-        }
-    }
-
-    // Default parse and failure
-    s.as_ref()
-        .parse()
-        .map_err(|_| (ParseDateTimeError::InvalidInput))
+    dt_from_relative(s.as_ref(), date.fixed_offset())
 }
 
 // Convert NaiveDateTime to DateTime<FixedOffset> by assuming the offset
@@ -365,6 +477,8 @@ mod tests {
     #[cfg(test)]
     mod relative_time {
         use crate::parse_datetime;
+        use chrono::DateTime;
+
         #[test]
         fn test_positive_offsets() {
             let relative_times = vec![
@@ -377,6 +491,52 @@ mod tests {
 
             for relative_time in relative_times {
                 assert_eq!(parse_datetime(relative_time).is_ok(), true);
+            }
+        }
+
+        #[test]
+        fn test_date_with_modifiers() {
+            let format = "%Y %b %d %H:%M:%S.%f %z";
+            let input = [
+                (
+                    parse_datetime("2022-08-31 00:00:00 +0000 1 month 1230").unwrap(),
+                    DateTime::parse_from_str("2022 Oct 1 12:30:00.0 +0000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2022-08-31 00:00:00.0 +0000 2 month 1230").unwrap(),
+                    DateTime::parse_from_str("2022 Oct 31 12:30:00.0 +0000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2020-02-29 00:00:00.0 +0000 1 year 1230").unwrap(),
+                    DateTime::parse_from_str("2021 Mar 1 12:30:00.0 +0000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2020-02-29 00:00:00.0 +0500 100 year 1230").unwrap(),
+                    DateTime::parse_from_str("2120 Feb 29 12:30:00.0 +0500", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2020-02-29 00:00:00.0 -0500 101 year 1230").unwrap(),
+                    DateTime::parse_from_str("2121 Mar 1 12:30:00.0 -0500", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2020-02-29 00:00:00.0 +1000 1 month yesterday").unwrap(),
+                    DateTime::parse_from_str("2020 Mar 28 00:00:00.0 +1000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2022-08-31 00:00:00.0 +0000 1 month 1230").unwrap(),
+                    DateTime::parse_from_str("2022 Oct 1 12:30:00.0 +0000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2022-08-31 00:00:00.0 +0000 +12 seconds").unwrap(),
+                    DateTime::parse_from_str("2022 Aug 31 00:00:12.0 +0000", format).unwrap(),
+                ),
+                (
+                    parse_datetime("2022-08-31").unwrap(),
+                    DateTime::parse_from_str("2022 Aug 31 00:00:00.0 +0000", format).unwrap(),
+                ),
+            ];
+            for (parsed, expected) in input {
+                assert_eq!(parsed, expected);
             }
         }
     }
@@ -433,8 +593,9 @@ mod tests {
 
     #[cfg(test)]
     mod timestamp {
-        use crate::parse_datetime;
         use chrono::{TimeZone, Utc};
+
+        use crate::parse_datetime;
 
         #[test]
         fn test_positive_and_negative_offsets() {
@@ -478,7 +639,6 @@ mod tests {
         #[test]
         fn test_invalid_input() {
             let result = parse_datetime("foobar");
-            println!("{result:?}");
             assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
 
             let result = parse_datetime("invalid 1");
