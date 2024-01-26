@@ -1,20 +1,25 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// spell-checker:ignore datetime
+
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use chrono::{DateTime, FixedOffset};
+use items::Item;
+use winnow::Parser;
+
+mod items;
 
 #[derive(Debug, PartialEq)]
-pub enum ParseDurationError {
+pub enum ParseDateTimeError {
     InvalidInput,
 }
 
-impl Display for ParseDurationError {
+impl Display for ParseDateTimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseDurationError::InvalidInput => {
+            ParseDateTimeError::InvalidInput => {
                 write!(
                     f,
                     "Invalid input string: cannot be parsed as a relative time"
@@ -24,8 +29,11 @@ impl Display for ParseDurationError {
     }
 }
 
-impl Error for ParseDurationError {}
+impl Error for ParseDateTimeError {}
 
-fn parse_datetime(s: &str) -> Result<DateTime<FixedOffset>, ParseDurationError> {
-    todo!()
+pub fn parse_datetime(mut input: &str) -> Result<Item, ParseDateTimeError> {
+    match items::parse.parse_next(&mut input) {
+        Ok(x) => Ok(x),
+        Err(_) => Err(ParseDateTimeError::InvalidInput),
+    }
 }

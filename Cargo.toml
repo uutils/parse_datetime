@@ -8,5 +8,5 @@ repository = "https://github.com/uutils/parse_datetime"
 readme = "README.md"
 
 [dependencies]
-regex = "1.9"
 chrono = { version="0.4", default-features=false, features=["std", "alloc", "clock"] }
+winnow = "0.5.34"
