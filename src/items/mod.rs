@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore chrono
+// spell-checker:ignore chrono multispace0
 
 //! From the GNU docs:
 //!
@@ -26,13 +26,20 @@
 //!  - [`relative`]
 //!  - [`number]
 
-use chrono::{NaiveDateTime, NaiveTime, Weekday};
-use winnow::{combinator::alt, PResult, Parser};
+use chrono::{NaiveDateTime, Weekday};
+use winnow::{
+    ascii::multispace0,
+    combinator::{alt, preceded},
+    error::ParserError,
+    stream::{AsChar, Stream, StreamIsPartial},
+    PResult, Parser,
+};
 mod date;
+mod time;
 
 pub enum Item {
     Date(date::Date),
-    TimeOfDay(NaiveTime),
+    Time(time::Time),
     _TimeZone,
     Combined(NaiveDateTime),
     Weekday(Weekday),
@@ -40,11 +47,19 @@ pub enum Item {
     _PureNumber,
 }
 
-pub fn parse(input: &mut &str) -> PResult<Item> {
-    alt((date::parse.map(Item::Date),)).parse_next(input)
+/// Allow spaces after a parser
+fn s<I, O, E>(p: impl Parser<I, O, E>) -> impl Parser<I, O, E>
+where
+    I: StreamIsPartial + Stream,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    preceded(multispace0, p)
 }
 
-mod time {}
+pub fn parse(input: &mut &str) -> PResult<Item> {
+    alt((date::parse.map(Item::Date), time::parse.map(Item::Time))).parse_next(input)
+}
 
 mod time_zone {}
 
