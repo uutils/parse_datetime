@@ -26,7 +26,15 @@
 //!  - [`relative`]
 //!  - [`number]
 
-use chrono::{NaiveDateTime, Weekday};
+mod date;
+mod time;
+mod time_zone;
+mod weekday;
+mod combined {}
+mod relative {}
+mod number {}
+
+use chrono::NaiveDateTime;
 use winnow::{
     ascii::multispace0,
     combinator::{alt, preceded},
@@ -34,15 +42,13 @@ use winnow::{
     stream::{AsChar, Stream, StreamIsPartial},
     PResult, Parser,
 };
-mod date;
-mod time;
 
 pub enum Item {
     Date(date::Date),
     Time(time::Time),
     _TimeZone,
     Combined(NaiveDateTime),
-    Weekday(Weekday),
+    Weekday(weekday::Weekday),
     _Relative,
     _PureNumber,
 }
@@ -60,13 +66,3 @@ where
 pub fn parse(input: &mut &str) -> PResult<Item> {
     alt((date::parse.map(Item::Date), time::parse.map(Item::Time))).parse_next(input)
 }
-
-mod time_zone {}
-
-mod combined {}
-
-mod weekday {}
-
-mod relative {}
-
-mod number {}
