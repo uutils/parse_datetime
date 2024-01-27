@@ -134,9 +134,8 @@ fn day(input: &mut &str) -> PResult<u32> {
 /// Parse the name of a month (case-insensitive)
 fn literal_month(input: &mut &str) -> PResult<u32> {
     s(alpha1)
-        .try_map(|s: &str| {
-            let s = s.to_ascii_lowercase();
-            let month = match s.as_ref() {
+        .verify_map(|s: &str| {
+            Some(match s {
                 "january" | "jan" => 1,
                 "february" | "feb" => 2,
                 "march" | "mar" => 3,
@@ -149,9 +148,8 @@ fn literal_month(input: &mut &str) -> PResult<u32> {
                 "october" | "oct" => 10,
                 "november" | "nov" => 11,
                 "december" | "dec" => 12,
-                _ => return Err(ParseDateTimeError::InvalidInput),
-            };
-            Ok(month)
+                _ => return None,
+            })
         })
         .parse_next(input)
 }
@@ -191,15 +189,14 @@ mod test {
             "11(comment 1)/(comment 2)14(comment 3)/(comment 4)2022",
             "11   /  14   /      2022",
             "11/14/22",
-            "14 November 2022",
-            "14 Nov 2022",
-            "November 14, 2022",
-            "November 14     ,     2022",
-            "Nov 14, 2022",
+            "14 november 2022",
+            "14 nov 2022",
+            "november 14, 2022",
+            "november 14     ,     2022",
+            "nov 14, 2022",
             "14-nov-2022",
             "14nov2022",
             "14nov      2022",
-            "NoVeMbEr 14, 2022",
         ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
@@ -215,12 +212,12 @@ mod test {
         };
         for mut s in [
             "11/14",
-            "14 November",
-            "14 Nov",
-            "14(comment!)Nov",
-            "November 14",
-            "November(comment!)14",
-            "Nov 14",
+            "14 november",
+            "14 nov",
+            "14(comment!)nov",
+            "november 14",
+            "november(comment!)14",
+            "nov 14",
             "14-nov",
             "14nov",
             "14(comment????)nov",

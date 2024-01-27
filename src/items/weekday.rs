@@ -23,7 +23,7 @@
 
 use winnow::{ascii::alpha1, combinator::opt, seq, PResult, Parser};
 
-use super::s;
+use super::{s, offset};
 
 #[derive(PartialEq, Eq, Debug)]
 enum Day {
@@ -50,35 +50,10 @@ pub fn parse(input: &mut &str) -> PResult<Weekday> {
     .parse_next(input)
 }
 
-fn offset(input: &mut &str) -> PResult<i32> {
-    s(alpha1)
-        .verify_map(|s: &str| {
-            let s = s.to_ascii_lowercase();
-            Some(match s.as_ref() {
-                "last" => -1,
-                "this" => 0,
-                "next" | "first" => 1,
-                "third" => 3,
-                "fourth" => 4,
-                "fifth" => 5,
-                "sixth" => 6,
-                "seventh" => 7,
-                "eight" => 8,
-                "ninth" => 9,
-                "tenth" => 10,
-                "eleventh" => 11,
-                "twelfth" => 12,
-                _ => return None,
-            })
-        })
-        .parse_next(input)
-}
-
 fn day(input: &mut &str) -> PResult<Day> {
     s(alpha1)
         .verify_map(|s: &str| {
-            let s = s.to_ascii_lowercase();
-            Some(match s.as_ref() {
+            Some(match s {
                 "monday" | "mon" | "mon." => Day::Monday,
                 "tuesday" | "tue" | "tue." | "tues" => Day::Tuesday,
                 "wednesday" | "wed" | "wed." | "wednes" => Day::Wednesday,
@@ -106,6 +81,7 @@ mod tests {
             "this mon",
             "this mon.",
             "this    monday",
+            "0 monday",
         ] {
             assert_eq!(
                 parse(&mut s).unwrap(),
@@ -119,7 +95,7 @@ mod tests {
 
     #[test]
     fn next_tuesday() {
-        for s in ["tuesday", "tue", "tue.", "tues", "TUE"] {
+        for s in ["tuesday", "tue", "tue.", "tues"] {
             let s = format!("next {s}");
             assert_eq!(
                 parse(&mut s.as_ref()).unwrap(),
@@ -133,7 +109,7 @@ mod tests {
 
     #[test]
     fn last_wednesday() {
-        for s in ["wednesday", "wed", "wed.", "wednesday", "WED"] {
+        for s in ["wednesday", "wed", "wed.", "wednesday"] {
             let s = format!("last {s}");
             assert_eq!(
                 parse(&mut s.as_ref()).unwrap(),

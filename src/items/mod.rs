@@ -35,7 +35,7 @@ mod relative;
 mod number {}
 
 use winnow::{
-    ascii::multispace0,
+    ascii::{alpha1, dec_int, multispace0},
     combinator::{alt, delimited, preceded, repeat, separated},
     error::ParserError,
     token::none_of,
@@ -46,9 +46,37 @@ pub enum Item {
     Date(date::Date),
     Time(time::Time),
     Weekday(weekday::Weekday),
-    Relative(()),
+    Relative(relative::Relative),
     TimeZone(()),
 }
+
+fn offset(input: &mut &str) -> PResult<i32> {
+    alt((text_offset, s(dec_int))).parse_next(input)
+}
+
+fn text_offset(input: &mut &str) -> PResult<i32> {
+    s(alpha1)
+        .verify_map(|s: &str| {
+            Some(match s {
+                "last" => -1,
+                "this" => 0,
+                "next" | "first" => 1,
+                "third" => 3,
+                "fourth" => 4,
+                "fifth" => 5,
+                "sixth" => 6,
+                "seventh" => 7,
+                "eight" => 8,
+                "ninth" => 9,
+                "tenth" => 10,
+                "eleventh" => 11,
+                "twelfth" => 12,
+                _ => return None,
+            })
+        })
+        .parse_next(input)
+}
+
 
 /// Allow spaces and comments before a parser
 ///
