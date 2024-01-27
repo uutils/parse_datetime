@@ -26,12 +26,12 @@
 //!  - [`relative`]
 //!  - [`number]
 
+mod combined;
 mod date;
+mod relative;
 mod time;
 mod time_zone;
 mod weekday;
-mod combined {}
-mod relative;
 mod number {}
 
 use winnow::{
@@ -43,6 +43,7 @@ use winnow::{
 };
 
 pub enum Item {
+    DateTime(combined::DateTime),
     Date(date::Date),
     Time(time::Time),
     Weekday(weekday::Weekday),
@@ -76,7 +77,6 @@ fn text_offset(input: &mut &str) -> PResult<i32> {
         })
         .parse_next(input)
 }
-
 
 /// Allow spaces and comments before a parser
 ///
@@ -119,6 +119,7 @@ where
 /// Parse an item
 pub fn parse(input: &mut &str) -> PResult<Item> {
     alt((
+        combined::parse.map(Item::DateTime),
         date::parse.map(Item::Date),
         time::parse.map(Item::Time),
         relative::parse.map(Item::Relative),

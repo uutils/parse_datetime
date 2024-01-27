@@ -48,12 +48,12 @@ use winnow::{
 
 use super::s;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Time {
-    hour: i32,
-    minute: i32,
-    second: f64,
-    offset: Option<Offset>,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: f64,
+    pub offset: Option<Offset>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -67,53 +67,60 @@ pub struct Offset {
 enum Suffix {
     Am,
     Pm,
-    TimeZone(Offset),
 }
 
 pub fn parse(input: &mut &str) -> PResult<Time> {
-    // Hour followed by suffix is a special case where minutes are optional
+    alt((am_pm_time, iso)).parse_next(input)
+}
+
+/// Parse an ISO 8601 time string
+///
+/// Also used by the [`combined`](super::combined) module
+pub fn iso(input: &mut &str) -> PResult<Time> {
     alt((
-        (hour, suffix).map(|(h, s)| (h, 0, 0.0, Some(s))),
-        seq!(
+        (hour24, timezone).map(|(hour, offset)| Time {
             hour,
+            minute: 0,
+            second: 0.0,
+            offset: Some(offset),
+        }),
+        seq!( Time {
+            hour: hour24,
             _: colon,
-            minute,
-            opt(preceded(colon, second)).map(|s| s.unwrap_or(0.0)),
-            opt(suffix)
-        ),
+            minute: minute,
+            second: opt(preceded(colon, second)).map(|s| s.unwrap_or(0.0)),
+            offset: opt(timezone)
+        }),
     ))
-    .verify_map(|(mut hour, minute, second, suffix)| {
-        let mut offset = None;
-        match suffix {
-            None => {}
-            // 12am should be noon
-            Some(Suffix::Am) => {
-                // With an AM/PM suffix
-                if hour > 12 {
-                    return None;
-                }
-                if hour == 12 {
-                    hour = 0;
-                };
-            }
-            // 12pm should be noon
-            Some(Suffix::Pm) => {
-                if hour > 12 {
-                    return None;
-                } else if hour == 12 {
-                    hour = 12;
-                } else {
-                    hour += 12;
-                }
-            }
-            Some(Suffix::TimeZone(tz)) => offset = Some(tz),
-        };
-        Some(Time {
-            hour: hour as i32,
-            minute: minute as i32,
-            second,
-            offset,
-        })
+    .parse_next(input)
+}
+
+/// Parse a time ending with AM or PM
+///
+/// The hours are restricted to 12 or lower in this format
+fn am_pm_time(input: &mut &str) -> PResult<Time> {
+    seq!(
+        hour12,
+        opt(preceded(colon, minute)),
+        opt(preceded(colon, second)),
+        alt((
+            s("am").value(Suffix::Am),
+            s("a.m.").value(Suffix::Am),
+            s("pm").value(Suffix::Pm),
+            s("p.m.").value(Suffix::Pm)
+        )),
+    )
+    .map(|(h, m, s, suffix)| {
+        let mut h = h % 12;
+        if let Suffix::Pm = suffix {
+            h += 12;
+        }
+        Time {
+            hour: h,
+            minute: m.unwrap_or(0),
+            second: s.unwrap_or(0.0),
+            offset: None,
+        }
     })
     .parse_next(input)
 }
@@ -123,9 +130,14 @@ fn colon(input: &mut &str) -> PResult<()> {
     s(':').void().parse_next(input)
 }
 
-/// Parse a number of hours (preceded by whitespace)
-fn hour(input: &mut &str) -> PResult<u32> {
+/// Parse a number of hours in `0..24` (preceded by whitespace)
+fn hour24(input: &mut &str) -> PResult<u32> {
     s(dec_uint).verify(|x| *x < 24).parse_next(input)
+}
+
+/// Parse a number of hours in `0..=12` (preceded by whitespace)
+fn hour12(input: &mut &str) -> PResult<u32> {
+    s(dec_uint).verify(|x| *x <= 12).parse_next(input)
 }
 
 /// Parse a number of minutes (preceded by whitespace)
@@ -136,18 +148,6 @@ fn minute(input: &mut &str) -> PResult<u32> {
 /// Parse a number of seconds (preceded by whitespace)
 fn second(input: &mut &str) -> PResult<f64> {
     s(float).verify(|x| *x < 60.0).parse_next(input)
-}
-
-/// Parse a suffix of am, pm or an offset (preceded by whitespace)
-fn suffix(input: &mut &str) -> PResult<Suffix> {
-    alt((
-        s("am").value(Suffix::Am),
-        s("a.m.").value(Suffix::Am),
-        s("pm").value(Suffix::Pm),
-        s("p.m.").value(Suffix::Pm),
-        timezone.map(Suffix::TimeZone),
-    ))
-    .parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`
@@ -229,7 +229,11 @@ mod test {
             "8:   02     p.m.",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -244,7 +248,11 @@ mod test {
 
         for mut s in ["11am", "11 am", "11 a.m.", "11   :  00", "11:00:00"] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -266,7 +274,11 @@ mod test {
             "12 p.m.",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -281,7 +293,11 @@ mod test {
 
         for mut s in ["00:00", "12am"] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -307,7 +323,11 @@ mod test {
             "1:23+05:0",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -334,7 +354,11 @@ mod test {
             "3:45  + 05 : 35",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -362,7 +386,11 @@ mod test {
             "3:45  + 00 : 35",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 
@@ -389,7 +417,11 @@ mod test {
             "3:45  - 05 : 35",
         ] {
             let old_s = s.to_owned();
-            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
         }
     }
 }

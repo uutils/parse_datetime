@@ -37,11 +37,11 @@ use winnow::{
 use super::s;
 use crate::ParseDateTimeError;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Date {
-    day: u32,
-    month: u32,
-    year: Option<u32>,
+    pub day: u32,
+    pub month: u32,
+    pub year: Option<u32>,
 }
 
 pub fn parse(input: &mut &str) -> PResult<Date> {
@@ -49,7 +49,9 @@ pub fn parse(input: &mut &str) -> PResult<Date> {
 }
 
 /// Parse `YYYY-MM-DD` or `YY-MM-DD`
-fn iso(input: &mut &str) -> PResult<Date> {
+///
+/// This is also used by [`combined`](super::combined).
+pub fn iso(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         year: year.map(Some),
         _: s('-'),
