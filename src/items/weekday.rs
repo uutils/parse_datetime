@@ -98,7 +98,15 @@ mod tests {
 
     #[test]
     fn this_monday() {
-        for mut s in ["monday", "mon", "mon.", "this monday", "this mon", "this mon.", "this    monday"] {
+        for mut s in [
+            "monday",
+            "mon",
+            "mon.",
+            "this monday",
+            "this mon",
+            "this mon.",
+            "this    monday",
+        ] {
             assert_eq!(
                 parse(&mut s).unwrap(),
                 Weekday {
