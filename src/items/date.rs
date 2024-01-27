@@ -157,7 +157,7 @@ fn literal_month(input: &mut &str) -> PResult<u32> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{parse, Date};
 
     // Test cases from the GNU docs:

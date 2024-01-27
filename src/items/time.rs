@@ -130,7 +130,7 @@ fn colon(input: &mut &str) -> PResult<()> {
     s(':').void().parse_next(input)
 }
 
-/// Parse a number of hours in `0..24` (preceded by whitespace)
+/// Parse a number of hours in `0..24`(preceded by whitespace)
 fn hour24(input: &mut &str) -> PResult<u32> {
     s(dec_uint).verify(|x| *x < 24).parse_next(input)
 }
@@ -201,7 +201,7 @@ fn plus_or_minus(input: &mut &str) -> PResult<bool> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{Offset, Time};
     use crate::items::time::parse;
 
