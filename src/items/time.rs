@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore Caseless shhmm colonless
+// spell-checker:ignore shhmm colonless
 
 //! Parse a time item (without a date)
 //!
@@ -38,7 +38,7 @@
 //! > Either ‘am’/‘pm’ or a time zone correction may be specified, but not both.
 
 use winnow::{
-    ascii::{dec_uint, float, Caseless},
+    ascii::{dec_uint, float},
     combinator::{alt, opt, preceded},
     seq,
     stream::AsChar,
@@ -141,10 +141,10 @@ fn second(input: &mut &str) -> PResult<f64> {
 /// Parse a suffix of am, pm or an offset (preceded by whitespace)
 fn suffix(input: &mut &str) -> PResult<Suffix> {
     alt((
-        s(Caseless("am")).value(Suffix::Am),
-        s(Caseless("a.m.")).value(Suffix::Am),
-        s(Caseless("pm")).value(Suffix::Pm),
-        s(Caseless("p.m.")).value(Suffix::Pm),
+        s("am").value(Suffix::Am),
+        s("a.m.").value(Suffix::Am),
+        s("pm").value(Suffix::Pm),
+        s("p.m.").value(Suffix::Pm),
         timezone.map(Suffix::TimeZone),
     ))
     .parse_next(input)
@@ -242,13 +242,7 @@ mod test {
             offset: None,
         };
 
-        for mut s in [
-            "11am",
-            "11 am",
-            "11 a.m.",
-            "11   :  00",
-            "11:00:00",
-        ] {
+        for mut s in ["11am", "11 am", "11 a.m.", "11   :  00", "11:00:00"] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
