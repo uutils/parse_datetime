@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore multispace Caseless shhmm colonless
+// spell-checker:ignore Caseless shhmm colonless
 
 //! Parse a time item (without a date)
 //!
@@ -88,7 +88,7 @@ pub fn parse(input: &mut &str) -> PResult<Time> {
             None => {}
             // 12am should be noon
             Some(Suffix::Am) => {
-                // With an AM/PM suffix 
+                // With an AM/PM suffix
                 if hour > 12 {
                     return None;
                 }
@@ -217,6 +217,9 @@ mod test {
         for mut s in [
             "20:02:00.000000",
             "20:02:00",
+            "20: (A comment!)   02 (Another comment!)  :00",
+            "20:02  (A nested (comment!))  :00",
+            "20:02  (So (many (nested) comments!!!!))  :00",
             "20   :    02  :   00.000000",
             "20:02",
             "20  :   02",
@@ -240,7 +243,15 @@ mod test {
             offset: None,
         };
 
-        for mut s in ["11am", "11 am", "11AM", "11 AM", "11 A.M.", "11   :  00", "11:00:00"] {
+        for mut s in [
+            "11am",
+            "11 am",
+            "11AM",
+            "11 AM",
+            "11 A.M.",
+            "11   :  00",
+            "11:00:00",
+        ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
@@ -255,7 +266,15 @@ mod test {
             offset: None,
         };
 
-        for mut s in ["12:00", "12pm", "12 pm", "12PM", "12 PM", "12 P.M."] {
+        for mut s in [
+            "12:00",
+            "12pm",
+            "12 pm",
+            "12 (A comment!) pm",
+            "12PM",
+            "12 PM",
+            "12 P.M.",
+        ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }

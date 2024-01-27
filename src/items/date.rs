@@ -1,10 +1,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore multispace
-
 //! Parse a date item (without time component)
-//! 
+//!
 //! The GNU docs say:
 //!
 //! > A calendar date item specifies a day of the year. It is specified
@@ -29,13 +27,14 @@
 //! > ‘September’.
 
 use winnow::{
-    ascii::{alpha1, dec_uint, multispace0},
+    ascii::{alpha1, dec_uint},
     combinator::{alt, opt, preceded},
     seq,
     token::take,
     PResult, Parser,
 };
 
+use super::s;
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -53,9 +52,9 @@ pub fn parse(input: &mut &str) -> PResult<Date> {
 fn iso(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         year: year.map(Some),
-        _: (multispace0, '-', multispace0),
+        _: s('-'),
         month: month,
-        _: (multispace0, '-', multispace0),
+        _: s('-'),
         day: day,
     })
     .parse_next(input)
@@ -65,9 +64,9 @@ fn iso(input: &mut &str) -> PResult<Date> {
 fn us(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         month: month,
-        _: (multispace0, '/', multispace0),
+        _: s('/'),
         day: day,
-        year: opt(preceded((multispace0, '/', multispace0), year)),
+        year: opt(preceded(s('/'), year)),
     })
     .parse_next(input)
 }
@@ -76,9 +75,9 @@ fn us(input: &mut &str) -> PResult<Date> {
 fn literal1(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         day: day,
-        _: (multispace0, opt('-'), multispace0),
+        _: opt(s('-')),
         month: literal_month,
-        year: opt(preceded((multispace0, opt('-'), multispace0), year)),
+        year: opt(preceded(opt(s('-')), year)),
     })
     .parse_next(input)
 }
@@ -87,17 +86,16 @@ fn literal1(input: &mut &str) -> PResult<Date> {
 fn literal2(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         month: literal_month,
-        _: multispace0,
         day: day,
         // FIXME: GNU requires _some_ space between the day and the year,
         // probably to distinguish with floats.
-        year: opt(preceded((multispace0, ",", multispace0), year)),
+        year: opt(preceded(s(","), year)),
     })
     .parse_next(input)
 }
 
 fn year(input: &mut &str) -> PResult<u32> {
-    alt((
+    s(alt((
         take(4usize).try_map(|x: &str| x.parse()),
         take(3usize).try_map(|x: &str| x.parse()),
         take(2usize).try_map(|x: &str| x.parse()).map(
@@ -109,12 +107,12 @@ fn year(input: &mut &str) -> PResult<u32> {
                 }
             },
         ),
-    ))
+    )))
     .parse_next(input)
 }
 
 fn month(input: &mut &str) -> PResult<u32> {
-    dec_uint
+    s(dec_uint)
         .try_map(|x| {
             (x >= 1 && x <= 12)
                 .then_some(x)
@@ -124,7 +122,7 @@ fn month(input: &mut &str) -> PResult<u32> {
 }
 
 fn day(input: &mut &str) -> PResult<u32> {
-    dec_uint
+    s(dec_uint)
         .try_map(|x| {
             (x >= 1 && x <= 31)
                 .then_some(x)
@@ -135,7 +133,7 @@ fn day(input: &mut &str) -> PResult<u32> {
 
 /// Parse the name of a month (case-insensitive)
 fn literal_month(input: &mut &str) -> PResult<u32> {
-    alpha1
+    s(alpha1)
         .try_map(|s: &str| {
             let s = s.to_ascii_lowercase();
             let month = match s.as_ref() {
@@ -188,7 +186,9 @@ mod test {
             "2022-11-14",
             "2022    -  11  -   14",
             "22-11-14",
+            "22(comment 1)-(comment 2)11(comment 3)-(comment 4)14",
             "11/14/2022",
+            "11(comment 1)/(comment 2)14(comment 3)/(comment 4)2022",
             "11   /  14   /      2022",
             "11/14/22",
             "14 November 2022",
@@ -217,10 +217,13 @@ mod test {
             "11/14",
             "14 November",
             "14 Nov",
+            "14(comment!)Nov",
             "November 14",
+            "November(comment!)14",
             "Nov 14",
             "14-nov",
             "14nov",
+            "14(comment????)nov",
         ] {
             assert_eq!(parse(&mut s).unwrap(), reference);
         }

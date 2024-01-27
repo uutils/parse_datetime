@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore chrono multispace0
+// spell-checker:ignore multispace0
 
 //! From the GNU docs:
 //!
@@ -31,38 +31,71 @@ mod time;
 mod time_zone;
 mod weekday;
 mod combined {}
-mod relative {}
+mod relative;
 mod number {}
 
-use chrono::NaiveDateTime;
 use winnow::{
     ascii::multispace0,
-    combinator::{alt, preceded},
+    combinator::{alt, delimited, preceded, repeat, separated},
     error::ParserError,
-    stream::{AsChar, Stream, StreamIsPartial},
+    token::none_of,
     PResult, Parser,
 };
 
 pub enum Item {
     Date(date::Date),
     Time(time::Time),
-    _TimeZone,
-    Combined(NaiveDateTime),
     Weekday(weekday::Weekday),
-    _Relative,
-    _PureNumber,
+    Relative(()),
+    TimeZone(()),
 }
 
-/// Allow spaces after a parser
-fn s<I, O, E>(p: impl Parser<I, O, E>) -> impl Parser<I, O, E>
+/// Allow spaces and comments before a parser
+///
+/// Every token parser should be wrapped in this to allow spaces and comments.
+/// It is only preceding, because that allows us to check mandatory whitespace
+/// after running the parser.
+fn s<'a, O, E>(p: impl Parser<&'a str, O, E>) -> impl Parser<&'a str, O, E>
 where
-    I: StreamIsPartial + Stream,
-    <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I>,
+    E: ParserError<&'a str>,
 {
-    preceded(multispace0, p)
+    preceded(space, p)
 }
 
+/// Parse the space in-between tokens
+///
+/// You probably want to use the [`s`] combinator instead.
+fn space<'a, E>(input: &mut &'a str) -> PResult<(), E>
+where
+    E: ParserError<&'a str>,
+{
+    separated(0.., multispace0, comment).parse_next(input)
+}
+
+/// Parse a comment
+///
+/// A comment is given between parentheses, which must be balanced. Any other
+/// tokens can be within the comment.
+fn comment<'a, E>(input: &mut &'a str) -> PResult<(), E>
+where
+    E: ParserError<&'a str>,
+{
+    delimited(
+        '(',
+        repeat(0.., alt((none_of(['(', ')']).void(), comment))),
+        ')',
+    )
+    .parse_next(input)
+}
+
+/// Parse an item
 pub fn parse(input: &mut &str) -> PResult<Item> {
-    alt((date::parse.map(Item::Date), time::parse.map(Item::Time))).parse_next(input)
+    alt((
+        date::parse.map(Item::Date),
+        time::parse.map(Item::Time),
+        relative::parse.map(Item::Relative),
+        weekday::parse.map(Item::Weekday),
+        time_zone::parse.map(Item::TimeZone),
+    ))
+    .parse_next(input)
 }
