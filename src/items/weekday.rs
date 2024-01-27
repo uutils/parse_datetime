@@ -1,6 +1,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// spell-checker:ignore wednes
+
 //! The GNU docs state:
 //!
 //! > The explicit mention of a day of the week will forward the date (only if
