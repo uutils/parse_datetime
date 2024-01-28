@@ -35,8 +35,8 @@ mod weekday;
 mod number {}
 
 use winnow::{
-    ascii::{alpha1, dec_int, multispace0},
-    combinator::{alt, delimited, not, peek, preceded, repeat, separated},
+    ascii::{alpha1, dec_uint, multispace0},
+    combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated},
     error::ParserError,
     stream::AsChar,
     token::{none_of, take_while},
@@ -52,11 +52,21 @@ pub enum Item {
     TimeZone(()),
 }
 
-fn offset(input: &mut &str) -> PResult<i32> {
-    alt((text_offset, s(dec_int))).parse_next(input)
+fn ordinal(input: &mut &str) -> PResult<i32> {
+    alt((text_ordinal, number_ordinal)).parse_next(input)
 }
 
-fn text_offset(input: &mut &str) -> PResult<i32> {
+fn number_ordinal(input: &mut &str) -> PResult<i32> {
+    let sign = opt(alt(('+'.value(1), '-'.value(-1)))).map(|s| s.unwrap_or(1));
+    (s(sign), s(dec_uint))
+        .verify_map(|(s, u): (i32, u32)| {
+            let i: i32 = u.try_into().ok()?;
+            Some(s * i)
+        })
+        .parse_next(input)
+}
+
+fn text_ordinal(input: &mut &str) -> PResult<i32> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s {
@@ -98,10 +108,10 @@ fn space<'a, E>(input: &mut &'a str) -> PResult<(), E>
 where
     E: ParserError<&'a str>,
 {
-    separated(0.., multispace0, alt((comment, ignored_hyphen))).parse_next(input)
+    separated(0.., multispace0, alt((comment, ignored_hyphen_or_plus))).parse_next(input)
 }
 
-/// A hyphen is ignored when it is not followed by a digit
+/// A hyphen or plus is ignored when it is not followed by a digit
 ///
 /// This includes being followed by a comment! Compare these inputs:
 /// ```txt
@@ -109,11 +119,17 @@ where
 /// - (comment) 12 weeks
 /// ```
 /// The last comment should be ignored.
-fn ignored_hyphen<'a, E>(input: &mut &'a str) -> PResult<(), E>
+///
+/// The plus is undocumented, but it seems to be ignored.
+fn ignored_hyphen_or_plus<'a, E>(input: &mut &'a str) -> PResult<(), E>
 where
     E: ParserError<&'a str>,
 {
-    ('-', multispace0, peek(not(take_while(1, AsChar::is_dec_digit))))
+    (
+        alt(('-', '+')),
+        multispace0,
+        peek(not(take_while(1, AsChar::is_dec_digit))),
+    )
         .void()
         .parse_next(input)
 }

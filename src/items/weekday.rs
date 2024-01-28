@@ -23,7 +23,7 @@
 
 use winnow::{ascii::alpha1, combinator::opt, seq, PResult, Parser};
 
-use super::{offset, s};
+use super::{ordinal, s};
 
 #[derive(PartialEq, Eq, Debug)]
 enum Day {
@@ -44,7 +44,7 @@ pub struct Weekday {
 
 pub fn parse(input: &mut &str) -> PResult<Weekday> {
     seq!(Weekday {
-        offset: opt(offset).map(|o| o.unwrap_or_default()),
+        offset: opt(ordinal).map(|o| o.unwrap_or_default()),
         day: day,
     })
     .parse_next(input)

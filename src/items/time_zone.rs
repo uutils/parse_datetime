@@ -12,10 +12,3 @@
 //! > of the form ‘TZ="rule"’. The two quote characters (‘"’) must be present
 //! > in the date, and any quotes or backslashes within rule must be escaped by
 //! > a backslash.
-//!
-
-use winnow::PResult;
-
-pub fn parse(_input: &mut &str) -> PResult<()> {
-    todo!()
-}

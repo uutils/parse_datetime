@@ -164,8 +164,7 @@ fn timezone(input: &mut &str) -> PResult<Offset> {
 /// Parse a timezone offset with a colon separating hours and minutes
 fn timezone_colon(input: &mut &str) -> PResult<(u32, u32)> {
     seq!(
-        // There's an edge case here: GNU allows the hours to be omitted
-        s(take_while(0..=2, AsChar::is_dec_digit)).try_map(|x: &str| {
+        s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| {
             // parse will fail on empty input
             if x == "" {
                 Ok(0)
@@ -217,7 +216,10 @@ mod tests {
         for mut s in [
             "20:02:00.000000",
             "20:02:00",
+            "20:02+:00",
+            "20:02-:00",
             "20----:02--(these hyphens are ignored)--:00",
+            "20++++:02++(these plusses are ignored)++:00",
             "20: (A comment!)   02 (Another comment!)  :00",
             "20:02  (A nested (comment!))  :00",
             "20:02  (So (many (nested) comments!!!!))  :00",
@@ -247,7 +249,15 @@ mod tests {
             offset: None,
         };
 
-        for mut s in ["11am", "11 am", "11 - am", "11 a.m.", "11   :  00", "11:00:00"] {
+        for mut s in [
+            "11am",
+            "11 am",
+            "11 - am",
+            "11 + am",
+            "11 a.m.",
+            "11   :  00",
+            "11:00:00",
+        ] {
             let old_s = s.to_owned();
             assert_eq!(
                 parse(&mut s).ok(),
@@ -384,7 +394,6 @@ mod tests {
             "3:45+0035",
             "3:45+0:35",
             "3:45+00:35",
-            "3:45+:35",
             "3:45  + 00 : 35",
         ] {
             let old_s = s.to_owned();

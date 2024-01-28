@@ -37,7 +37,7 @@ use winnow::{
     PResult, Parser,
 };
 
-use super::{offset, s};
+use super::{ordinal, s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Relative {
@@ -78,7 +78,7 @@ pub fn parse(input: &mut &str) -> PResult<Relative> {
 
 fn seconds(input: &mut &str) -> PResult<Relative> {
     (
-        opt(alt((s(float), offset.map(|x| x as f64)))),
+        opt(alt((s(float), ordinal.map(|x| x as f64)))),
         s(alpha1).verify(|s: &str| matches!(s, "seconds" | "second" | "sec" | "secs")),
         ago,
     )
@@ -87,7 +87,7 @@ fn seconds(input: &mut &str) -> PResult<Relative> {
 }
 
 fn other(input: &mut &str) -> PResult<Relative> {
-    (opt(offset), integer_unit, ago)
+    (opt(ordinal), integer_unit, ago)
         .map(|(n, unit, ago)| unit.mul(n.unwrap_or(1) * if ago { -1 } else { 1 }))
         .parse_next(input)
 }
@@ -128,6 +128,7 @@ mod tests {
             ("second ago", Relative::Seconds(-1.0)),
             ("3 seconds", Relative::Seconds(3.0)),
             ("3.5 seconds", Relative::Seconds(3.5)),
+            // ("+3.5 seconds", Relative::Seconds(3.5)),
             ("3.5 seconds ago", Relative::Seconds(-3.5)),
             ("-3.5 seconds ago", Relative::Seconds(3.5)),
             // Minutes
@@ -143,6 +144,7 @@ mod tests {
             ("hour", Relative::Hours(1)),
             ("hours", Relative::Hours(1)),
             ("10 hours", Relative::Hours(10)),
+            ("+10 hours", Relative::Hours(10)),
             ("-10 hours", Relative::Hours(-10)),
             ("10 hours ago", Relative::Hours(-10)),
             ("-10 hours ago", Relative::Hours(10)),
@@ -150,6 +152,7 @@ mod tests {
             ("day", Relative::Days(1)),
             ("days", Relative::Days(1)),
             ("10 days", Relative::Days(10)),
+            ("+10 days", Relative::Days(10)),
             ("-10 days", Relative::Days(-10)),
             ("10 days ago", Relative::Days(-10)),
             ("-10 days ago", Relative::Days(10)),
@@ -157,6 +160,7 @@ mod tests {
             ("fortnight", Relative::Days(14)),
             ("fortnights", Relative::Days(14)),
             ("2 fortnights ago", Relative::Days(-28)),
+            ("+2 fortnights ago", Relative::Days(-28)),
             ("week", Relative::Days(7)),
             ("weeks", Relative::Days(7)),
             ("2 weeks ago", Relative::Days(-14)),
