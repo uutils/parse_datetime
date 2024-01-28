@@ -23,7 +23,7 @@
 
 use winnow::{ascii::alpha1, combinator::opt, seq, PResult, Parser};
 
-use super::{ordinal, s};
+use super::{ordinal::ordinal, s};
 
 #[derive(PartialEq, Eq, Debug)]
 enum Day {

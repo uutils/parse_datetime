@@ -37,7 +37,7 @@ use winnow::{
     PResult, Parser,
 };
 
-use super::{ordinal, s};
+use super::{ordinal::ordinal, s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Relative {
