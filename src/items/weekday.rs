@@ -81,6 +81,7 @@ mod tests {
             "this mon",
             "this mon.",
             "this    monday",
+            "this - monday",
             "0 monday",
         ] {
             assert_eq!(

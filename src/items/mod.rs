@@ -36,9 +36,10 @@ mod number {}
 
 use winnow::{
     ascii::{alpha1, dec_int, multispace0},
-    combinator::{alt, delimited, preceded, repeat, separated},
+    combinator::{alt, delimited, not, peek, preceded, repeat, separated},
     error::ParserError,
-    token::none_of,
+    stream::AsChar,
+    token::{none_of, take_while},
     PResult, Parser,
 };
 
@@ -97,7 +98,24 @@ fn space<'a, E>(input: &mut &'a str) -> PResult<(), E>
 where
     E: ParserError<&'a str>,
 {
-    separated(0.., multispace0, comment).parse_next(input)
+    separated(0.., multispace0, alt((comment, ignored_hyphen))).parse_next(input)
+}
+
+/// A hyphen is ignored when it is not followed by a digit
+///
+/// This includes being followed by a comment! Compare these inputs:
+/// ```txt
+/// - 12 weeks
+/// - (comment) 12 weeks
+/// ```
+/// The last comment should be ignored.
+fn ignored_hyphen<'a, E>(input: &mut &'a str) -> PResult<(), E>
+where
+    E: ParserError<&'a str>,
+{
+    ('-', multispace0, peek(not(take_while(1, AsChar::is_dec_digit))))
+        .void()
+        .parse_next(input)
 }
 
 /// Parse a comment
@@ -124,7 +142,7 @@ pub fn parse(input: &mut &str) -> PResult<Item> {
         time::parse.map(Item::Time),
         relative::parse.map(Item::Relative),
         weekday::parse.map(Item::Weekday),
-        time_zone::parse.map(Item::TimeZone),
+        // time_zone::parse.map(Item::TimeZone),
     ))
     .parse_next(input)
 }

@@ -217,6 +217,7 @@ mod tests {
         for mut s in [
             "20:02:00.000000",
             "20:02:00",
+            "20----:02--(these hyphens are ignored)--:00",
             "20: (A comment!)   02 (Another comment!)  :00",
             "20:02  (A nested (comment!))  :00",
             "20:02  (So (many (nested) comments!!!!))  :00",
@@ -246,7 +247,7 @@ mod tests {
             offset: None,
         };
 
-        for mut s in ["11am", "11 am", "11 a.m.", "11   :  00", "11:00:00"] {
+        for mut s in ["11am", "11 am", "11 - am", "11 a.m.", "11   :  00", "11:00:00"] {
             let old_s = s.to_owned();
             assert_eq!(
                 parse(&mut s).ok(),
@@ -346,6 +347,7 @@ mod tests {
 
         for mut s in [
             "3:45+535",
+            "3:45-+535",
             "03:45+535",
             "3   :  45  +  535",
             "3:45+0535",
