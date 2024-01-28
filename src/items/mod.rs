@@ -36,14 +36,15 @@ mod weekday;
 mod number {}
 
 use winnow::{
-    ascii::{alpha1, dec_uint, multispace0},
-    combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated},
+    ascii::multispace0,
+    combinator::{alt, delimited, not, peek, preceded, repeat, separated, terminated},
     error::ParserError,
     stream::AsChar,
     token::{none_of, take_while},
     PResult, Parser,
 };
 
+#[derive(PartialEq, Debug)]
 pub enum Item {
     DateTime(combined::DateTime),
     Date(date::Date),
@@ -115,7 +116,7 @@ where
 }
 
 /// Parse an item
-pub fn parse(input: &mut &str) -> PResult<Item> {
+pub fn parse_one(input: &mut &str) -> PResult<Item> {
     alt((
         combined::parse.map(Item::DateTime),
         date::parse.map(Item::Date),
@@ -125,4 +126,33 @@ pub fn parse(input: &mut &str) -> PResult<Item> {
         // time_zone::parse.map(Item::TimeZone),
     ))
     .parse_next(input)
+}
+
+pub fn parse(input: &mut &str) -> Option<Vec<Item>> {
+    terminated(repeat(0.., parse_one), space).parse(input).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{date::Date, parse, time::Time, Item};
+
+    #[test]
+    fn date_and_time() {
+        assert_eq!(
+            parse(&mut "   10:10   2022-12-12    "),
+            Some(vec![
+                Item::Time(Time {
+                    hour: 10,
+                    minute: 10,
+                    second: 0.0,
+                    offset: None,
+                }),
+                Item::Date(Date {
+                    day: 12,
+                    month: 12,
+                    year: Some(2022)
+                })
+            ])
+        )
+    }
 }

@@ -31,10 +31,10 @@ impl Display for ParseDateTimeError {
 
 impl Error for ParseDateTimeError {}
 
-pub fn parse_datetime(input: &str) -> Result<Item, ParseDateTimeError> {
+pub fn parse_datetime(input: &str) -> Result<Vec<Item>, ParseDateTimeError> {
     let input = input.to_ascii_lowercase();
-    match items::parse.parse_next(&mut input.as_ref()) {
-        Ok(x) => Ok(x),
-        Err(_) => Err(ParseDateTimeError::InvalidInput),
+    match items::parse(&mut input.as_ref()) {
+        Some(x) => Ok(x),
+        None => Err(ParseDateTimeError::InvalidInput),
     }
 }
