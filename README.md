@@ -38,13 +38,13 @@ assert_eq!(
 );
 ```
 
-For DateTime parsing, import the `parse_datetime` module:
+For DateTime parsing, import the `parse_datetime` function:
 
 ```rs
-use parse_datetime::parse_datetime::from_str;
+use parse_datetime::parse_datetime;
 use chrono::{Local, TimeZone};
 
-let dt = from_str("2021-02-14 06:37:47");
+let dt = parse_datetime("2021-02-14 06:37:47");
 assert_eq!(dt.unwrap(), Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap());
 ```
 
