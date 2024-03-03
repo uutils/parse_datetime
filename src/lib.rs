@@ -16,6 +16,7 @@ use std::fmt::{self, Display};
 mod parse_relative_time;
 mod parse_timestamp;
 
+mod parse_time_only_str;
 mod parse_weekday;
 
 use chrono::{
@@ -235,6 +236,11 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
         if let Some(date_time) = current_time.checked_add_signed(relative_time) {
             return Ok(date_time);
         }
+    }
+
+    // parse time only dates
+    if let Some(date_time) = parse_time_only_str::parse_time_only(date, s.as_ref()) {
+        return Ok(date_time);
     }
 
     // Default parse and failure
