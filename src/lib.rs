@@ -200,9 +200,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // Parse epoch seconds
     if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
         if let Some(timestamp_date) = NaiveDateTime::from_timestamp_opt(timestamp, 0) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, timestamp_date) {
-                return Ok(dt);
-            }
+            return Ok(date.offset().from_utc_datetime(&timestamp_date));
         }
     }
 
@@ -315,6 +313,14 @@ mod tests {
         #[test]
         fn test_epoch_seconds() {
             env::set_var("TZ", "UTC");
+            let dt = "@1613371067";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn test_epoch_seconds_non_utc() {
+            env::set_var("TZ", "EST");
             let dt = "@1613371067";
             let actual = parse_datetime(dt);
             assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
@@ -462,6 +468,21 @@ mod tests {
         }
     }
 
+    #[cfg(test)]
+    mod timeonly {
+        use crate::parse_datetime_at_date;
+        use chrono::{Local, TimeZone};
+        use std::env;
+        #[test]
+        fn test_time_only() {
+            env::set_var("TZ", "UTC");
+            let test_date = Local.with_ymd_and_hms(2024, 03, 03, 0, 0, 0).unwrap();
+            let parsed_time = parse_datetime_at_date(test_date, "9:04:30 PM +0530")
+                .unwrap()
+                .timestamp();
+            assert_eq!(parsed_time, 1709480070)
+        }
+    }
     /// Used to test example code presented in the README.
     mod readme_test {
         use crate::parse_datetime;
