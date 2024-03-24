@@ -52,7 +52,7 @@ mod tests {
     use std::env;
 
     fn get_test_date() -> DateTime<Local> {
-        Local.with_ymd_and_hms(2024, 03, 03, 0, 0, 0).unwrap()
+        Local.with_ymd_and_hms(2024, 3, 3, 0, 0, 0).unwrap()
     }
 
     #[test]
