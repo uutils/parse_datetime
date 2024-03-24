@@ -382,7 +382,7 @@ mod tests {
             ];
 
             for relative_time in relative_times {
-                assert_eq!(parse_datetime(relative_time).is_ok(), true);
+                assert!(parse_datetime(relative_time).is_ok());
             }
         }
     }
@@ -401,7 +401,7 @@ mod tests {
         #[test]
         fn test_weekday() {
             // add some constant hours and minutes and seconds to check its reset
-            let date = Local.with_ymd_and_hms(2023, 02, 28, 10, 12, 3).unwrap();
+            let date = Local.with_ymd_and_hms(2023, 2, 28, 10, 12, 3).unwrap();
 
             // 2023-2-28 is tuesday
             assert_eq!(
