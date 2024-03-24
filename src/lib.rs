@@ -382,7 +382,7 @@ mod tests {
             ];
 
             for relative_time in relative_times {
-                assert_eq!(parse_datetime(relative_time).is_ok(), true);
+                assert!(parse_datetime(relative_time).is_ok());
             }
         }
     }
