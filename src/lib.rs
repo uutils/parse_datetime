@@ -476,7 +476,7 @@ mod tests {
         #[test]
         fn test_time_only() {
             env::set_var("TZ", "UTC");
-            let test_date = Local.with_ymd_and_hms(2024, 03, 03, 0, 0, 0).unwrap();
+            let test_date = Local.with_ymd_and_hms(2024, 3, 3, 0, 0, 0).unwrap();
             let parsed_time = parse_datetime_at_date(test_date, "9:04:30 PM +0530")
                 .unwrap()
                 .timestamp();
