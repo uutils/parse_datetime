@@ -9,5 +9,5 @@ readme = "README.md"
 
 [dependencies]
 regex = "1.10.4"
-chrono = { version="0.4", default-features=false, features=["std", "alloc", "clock"] }
+chrono = { version="0.4.38", default-features=false, features=["std", "alloc", "clock"] }
 nom = "7.1.3"
