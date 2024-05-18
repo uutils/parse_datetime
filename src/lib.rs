@@ -204,10 +204,10 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
         }
     }
 
-    let ts = s.as_ref().to_owned() + "0000";
+    let ts = s.as_ref().to_owned() + " 0000";
     // Parse date only formats - assume midnight local timezone
     for fmt in [format::ISO_8601, format::ISO_8601_NO_SEP] {
-        let f = fmt.to_owned() + "%H%M";
+        let f = fmt.to_owned() + " %H%M";
         if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts, &f) {
             if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
                 return Ok(dt);
@@ -324,6 +324,23 @@ mod tests {
             let dt = "@1613371067";
             let actual = parse_datetime(dt);
             assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+    }
+
+    #[cfg(test)]
+    mod formats {
+        use crate::parse_datetime;
+        use chrono::{DateTime, Local, TimeZone};
+
+        #[test]
+        fn single_digit_month_day() {
+            let x = Local.with_ymd_and_hms(1987, 5, 7, 0, 0, 0).unwrap();
+            let expected = DateTime::fixed_offset(&x);
+
+            assert_eq!(Ok(expected), parse_datetime("1987-05-07"));
+            assert_eq!(Ok(expected), parse_datetime("1987-5-07"));
+            assert_eq!(Ok(expected), parse_datetime("1987-05-7"));
+            assert_eq!(Ok(expected), parse_datetime("1987-5-7"));
         }
     }
 
