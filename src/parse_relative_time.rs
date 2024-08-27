@@ -673,6 +673,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_relative_time_at_date_month() {
+        // Use January because it has 31 days rather than 30
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            parse_relative_time_at_date(now, "1 month").unwrap(),
+            now.checked_add_months(Months::new(1)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_relative_time_at_date_year() {
+        // Use 2024 because it's a leap year and has 366 days rather than 365
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            parse_relative_time_at_date(now, "1 year").unwrap(),
+            now.checked_add_months(Months::new(12)).unwrap()
+        );
+    }
+
+    #[test]
     fn test_invalid_input_at_date_relative() {
         let now = Utc::now();
         let result = parse_relative_time_at_date(now, "foobar");
