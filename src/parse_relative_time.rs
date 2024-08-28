@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use crate::ParseDateTimeError;
-use chrono::{DateTime, Days, Duration, Months, Utc};
+use chrono::{DateTime, Days, Duration, Months, TimeZone, Utc};
 use regex::Regex;
 /// Parses a relative time string and returns a `Duration` representing the
 /// relative time.
@@ -58,10 +58,10 @@ pub fn parse_relative_time(s: &str) -> Result<Duration, ParseDateTimeError> {
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
 /// cannot be parsed as a relative time.
 /// ```
-fn parse_relative_time_at_date(
-    mut datetime: DateTime<Utc>,
+fn parse_relative_time_at_date<T: TimeZone>(
+    mut datetime: DateTime<T>,
     s: &str,
-) -> Result<DateTime<Utc>, ParseDateTimeError> {
+) -> Result<DateTime<T>, ParseDateTimeError> {
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -146,7 +146,11 @@ fn parse_relative_time_at_date(
     }
 }
 
-fn add_months(datetime: DateTime<Utc>, months: i64, mut is_ago: bool) -> Option<DateTime<Utc>> {
+fn add_months<T: TimeZone>(
+    datetime: DateTime<T>,
+    months: i64,
+    mut is_ago: bool,
+) -> Option<DateTime<T>> {
     let months = if months < 0 {
         is_ago = !is_ago;
         u32::try_from(-months).ok()?
@@ -160,7 +164,11 @@ fn add_months(datetime: DateTime<Utc>, months: i64, mut is_ago: bool) -> Option<
     }
 }
 
-fn add_days(datetime: DateTime<Utc>, days: i64, mut is_ago: bool) -> Option<DateTime<Utc>> {
+fn add_days<T: TimeZone>(
+    datetime: DateTime<T>,
+    days: i64,
+    mut is_ago: bool,
+) -> Option<DateTime<T>> {
     let days = if days < 0 {
         is_ago = !is_ago;
         u64::try_from(-days).ok()?
@@ -174,11 +182,11 @@ fn add_days(datetime: DateTime<Utc>, days: i64, mut is_ago: bool) -> Option<Date
     }
 }
 
-fn add_duration(
-    datetime: DateTime<Utc>,
+fn add_duration<T: TimeZone>(
+    datetime: DateTime<T>,
     duration: Duration,
     is_ago: bool,
-) -> Option<DateTime<Utc>> {
+) -> Option<DateTime<T>> {
     let duration = if is_ago { -duration } else { duration };
     datetime.checked_add_signed(duration)
 }
