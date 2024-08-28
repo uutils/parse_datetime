@@ -24,7 +24,7 @@ use chrono::{
     Timelike,
 };
 
-use parse_relative_time::parse_relative_time;
+use parse_relative_time::parse_relative_time_at_date;
 use parse_timestamp::parse_timestamp;
 
 #[derive(Debug, PartialEq)]
@@ -228,12 +228,8 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     }
 
     // Parse relative time.
-    if let Ok(relative_time) = parse_relative_time(s.as_ref()) {
-        let current_time = DateTime::<FixedOffset>::from(date);
-
-        if let Some(date_time) = current_time.checked_add_signed(relative_time) {
-            return Ok(date_time);
-        }
+    if let Ok(datetime) = parse_relative_time_at_date(date, s.as_ref()) {
+        return Ok(DateTime::<FixedOffset>::from(datetime));
     }
 
     // parse time only dates
