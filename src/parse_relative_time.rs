@@ -274,18 +274,12 @@ mod tests {
             parse_duration("2 weeks ago").unwrap(),
             Duration::seconds(-1_209_600)
         );
-        assert_eq!(
-            parse_duration("week").unwrap(),
-            Duration::seconds(604_800)
-        );
+        assert_eq!(parse_duration("week").unwrap(), Duration::seconds(604_800));
     }
 
     #[test]
     fn test_days() {
-        assert_eq!(
-            parse_duration("1 day").unwrap(),
-            Duration::seconds(86400)
-        );
+        assert_eq!(parse_duration("1 day").unwrap(), Duration::seconds(86400));
         assert_eq!(
             parse_duration("2 days ago").unwrap(),
             Duration::seconds(-172_800)
@@ -294,18 +288,12 @@ mod tests {
             parse_duration("-2 days").unwrap(),
             Duration::seconds(-172_800)
         );
-        assert_eq!(
-            parse_duration("day").unwrap(),
-            Duration::seconds(86400)
-        );
+        assert_eq!(parse_duration("day").unwrap(), Duration::seconds(86400));
     }
 
     #[test]
     fn test_hours() {
-        assert_eq!(
-            parse_duration("1 hour").unwrap(),
-            Duration::seconds(3600)
-        );
+        assert_eq!(parse_duration("1 hour").unwrap(), Duration::seconds(3600));
         assert_eq!(
             parse_duration("1 hour ago").unwrap(),
             Duration::seconds(-3600)
@@ -314,35 +302,20 @@ mod tests {
             parse_duration("-2 hours").unwrap(),
             Duration::seconds(-7200)
         );
-        assert_eq!(
-            parse_duration("hour").unwrap(),
-            Duration::seconds(3600)
-        );
+        assert_eq!(parse_duration("hour").unwrap(), Duration::seconds(3600));
     }
 
     #[test]
     fn test_minutes() {
-        assert_eq!(
-            parse_duration("1 minute").unwrap(),
-            Duration::seconds(60)
-        );
-        assert_eq!(
-            parse_duration("2 minutes").unwrap(),
-            Duration::seconds(120)
-        );
+        assert_eq!(parse_duration("1 minute").unwrap(), Duration::seconds(60));
+        assert_eq!(parse_duration("2 minutes").unwrap(), Duration::seconds(120));
         assert_eq!(parse_duration("min").unwrap(), Duration::seconds(60));
     }
 
     #[test]
     fn test_seconds() {
-        assert_eq!(
-            parse_duration("1 second").unwrap(),
-            Duration::seconds(1)
-        );
-        assert_eq!(
-            parse_duration("2 seconds").unwrap(),
-            Duration::seconds(2)
-        );
+        assert_eq!(parse_duration("1 second").unwrap(), Duration::seconds(1));
+        assert_eq!(parse_duration("2 seconds").unwrap(), Duration::seconds(2));
         assert_eq!(parse_duration("sec").unwrap(), Duration::seconds(1));
     }
 
@@ -382,10 +355,7 @@ mod tests {
             parse_relative_time_at_date(now, "-2years").unwrap(),
             now.checked_sub_months(Months::new(24)).unwrap()
         );
-        assert_eq!(
-            parse_duration("15minutes").unwrap(),
-            Duration::minutes(15)
-        );
+        assert_eq!(parse_duration("15minutes").unwrap(), Duration::minutes(15));
         assert_eq!(
             parse_duration("-30seconds").unwrap(),
             Duration::seconds(-30)
@@ -549,10 +519,7 @@ mod tests {
             now.checked_add_days(Days::new(7)).unwrap()
         );
 
-        assert_eq!(
-            parse_duration("1 day").unwrap(),
-            Duration::seconds(86_400)
-        );
+        assert_eq!(parse_duration("1 day").unwrap(), Duration::seconds(86_400));
         assert_eq!(
             parse_duration("2 days ago").unwrap(),
             Duration::seconds(-172_800)
@@ -561,19 +528,10 @@ mod tests {
             parse_duration("-2 days").unwrap(),
             Duration::seconds(-172_800)
         );
-        assert_eq!(
-            parse_duration("day").unwrap(),
-            Duration::seconds(86_400)
-        );
+        assert_eq!(parse_duration("day").unwrap(), Duration::seconds(86_400));
 
-        assert_eq!(
-            parse_duration("1 hour").unwrap(),
-            Duration::seconds(3_600)
-        );
-        assert_eq!(
-            parse_duration("1 h").unwrap(),
-            Duration::seconds(3_600)
-        );
+        assert_eq!(parse_duration("1 hour").unwrap(), Duration::seconds(3_600));
+        assert_eq!(parse_duration("1 h").unwrap(), Duration::seconds(3_600));
         assert_eq!(
             parse_duration("1 hour ago").unwrap(),
             Duration::seconds(-3_600)
@@ -582,36 +540,18 @@ mod tests {
             parse_duration("-2 hours").unwrap(),
             Duration::seconds(-7_200)
         );
-        assert_eq!(
-            parse_duration("hour").unwrap(),
-            Duration::seconds(3_600)
-        );
+        assert_eq!(parse_duration("hour").unwrap(), Duration::seconds(3_600));
 
-        assert_eq!(
-            parse_duration("1 minute").unwrap(),
-            Duration::seconds(60)
-        );
+        assert_eq!(parse_duration("1 minute").unwrap(), Duration::seconds(60));
         assert_eq!(parse_duration("1 min").unwrap(), Duration::seconds(60));
-        assert_eq!(
-            parse_duration("2 minutes").unwrap(),
-            Duration::seconds(120)
-        );
-        assert_eq!(
-            parse_duration("2 mins").unwrap(),
-            Duration::seconds(120)
-        );
+        assert_eq!(parse_duration("2 minutes").unwrap(), Duration::seconds(120));
+        assert_eq!(parse_duration("2 mins").unwrap(), Duration::seconds(120));
         assert_eq!(parse_duration("2m").unwrap(), Duration::seconds(120));
         assert_eq!(parse_duration("min").unwrap(), Duration::seconds(60));
 
-        assert_eq!(
-            parse_duration("1 second").unwrap(),
-            Duration::seconds(1)
-        );
+        assert_eq!(parse_duration("1 second").unwrap(), Duration::seconds(1));
         assert_eq!(parse_duration("1 s").unwrap(), Duration::seconds(1));
-        assert_eq!(
-            parse_duration("2 seconds").unwrap(),
-            Duration::seconds(2)
-        );
+        assert_eq!(parse_duration("2 seconds").unwrap(), Duration::seconds(2));
         assert_eq!(parse_duration("2 secs").unwrap(), Duration::seconds(2));
         assert_eq!(parse_duration("2 sec").unwrap(), Duration::seconds(2));
         assert_eq!(parse_duration("sec").unwrap(), Duration::seconds(1));
@@ -620,7 +560,8 @@ mod tests {
         assert_eq!(parse_duration("today").unwrap(), Duration::seconds(0));
 
         assert_eq!(
-            parse_relative_time_at_date(now, "1 year 2 months 4 weeks 3 days and 2 seconds").unwrap(),
+            parse_relative_time_at_date(now, "1 year 2 months 4 weeks 3 days and 2 seconds")
+                .unwrap(),
             now.checked_add_months(Months::new(12 + 2))
                 .unwrap()
                 .checked_add_days(Days::new(4 * 7 + 3))
@@ -629,7 +570,8 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(
-            parse_relative_time_at_date(now, "1 year 2 months 4 weeks 3 days and 2 seconds ago").unwrap(),
+            parse_relative_time_at_date(now, "1 year 2 months 4 weeks 3 days and 2 seconds ago")
+                .unwrap(),
             now.checked_sub_months(Months::new(12 + 2))
                 .unwrap()
                 .checked_sub_days(Days::new(4 * 7 + 3))
