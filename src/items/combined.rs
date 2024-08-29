@@ -13,9 +13,13 @@
 //! > seconds are allowed, with either comma or period preceding the fraction.
 //! > ISO 8601 fractional minutes and hours are not supported. Typically, hosts
 //! > support nanosecond timestamp resolution; excess precision is silently discarded.
+#![allow(deprecated)]
 
-use winnow::{combinator::alt, seq, PResult, Parser};
+use winnow::ascii::dec_uint;
+use winnow::token::take;
+use winnow::{combinator::alt, seq, trace::trace, PResult, Parser};
 
+use crate::items::combined;
 use crate::items::space;
 
 use super::{
@@ -24,19 +28,53 @@ use super::{
     time::{self, Time},
 };
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Default)]
 pub struct DateTime {
-    date: Date,
-    time: Time,
+    pub(crate) date: Date,
+    pub(crate) time: Time,
 }
 
 pub fn parse(input: &mut &str) -> PResult<DateTime> {
+    alt((
+        parse_basic,
+        //parse_8digits
+    ))
+    .parse_next(input)
+}
+
+fn parse_basic(input: &mut &str) -> PResult<DateTime> {
     seq!(DateTime {
-        date: date::iso,
+        date: trace("date iso", date::iso),
         // Note: the `T` is lowercased by the main parse function
         _: alt((s('t').void(), (' ', space).void())),
-        time: time::iso,
+        time: trace("time iso", time::iso),
     })
+    .parse_next(input)
+}
+
+#[allow(dead_code)]
+fn parse_8digits(input: &mut &str) -> PResult<DateTime> {
+    s((
+        take(2usize).and_then(dec_uint),
+        take(2usize).and_then(dec_uint),
+        take(2usize).and_then(dec_uint),
+        take(2usize).and_then(dec_uint),
+    ))
+    .map(
+        |(hour, minute, day, month): (u32, u32, u32, u32)| combined::DateTime {
+            date: date::Date {
+                day,
+                month,
+                year: None,
+            },
+            time: time::Time {
+                hour,
+                minute,
+                second: 0.0,
+                offset: None,
+            },
+        },
+    )
     .parse_next(input)
 }
 

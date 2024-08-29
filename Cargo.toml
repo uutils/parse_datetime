@@ -1,7 +1,7 @@
 [package]
 name = "parse_datetime"
-description = " parsing human-readable relative time strings and converting them to a Duration"
-version = "0.4.0"
+description = "parsing human-readable time strings and converting them to a DateTime"
+version = "0.7.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/uutils/parse_datetime"
@@ -9,4 +9,18 @@ readme = "README.md"
 
 [dependencies]
 chrono = { version="0.4", default-features=false, features=["std", "alloc", "clock"] }
-winnow = "0.5.34"
+num-traits = "0.2.19"
+winnow = { version="0.5.34"}
+
+[dev-dependencies]
+anyhow = "1.0.86"
+#winnow = { version="0.5.34", features = ["debug"] }
+
+[features]
+debug = ["winnow/debug"]
+
+[[bin]]
+path = "bin/main.rs"
+name = "parse_datetime"
+test = false
+bench = false
