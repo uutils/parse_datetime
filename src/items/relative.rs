@@ -99,7 +99,7 @@ fn ago(input: &mut &str) -> PResult<bool> {
 fn integer_unit(input: &mut &str) -> PResult<Relative> {
     s(alpha1)
         .verify_map(|s: &str| {
-            Some(match s.strip_suffix('s').unwrap_or(&s) {
+            Some(match s.strip_suffix('s').unwrap_or(s) {
                 "year" => Relative::Years(1),
                 "month" => Relative::Months(1),
                 "fortnight" => Relative::Days(14),

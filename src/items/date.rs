@@ -30,14 +30,14 @@ use winnow::{
     ascii::{alpha1, dec_uint},
     combinator::{alt, opt, preceded},
     seq,
-    token::take,
+    trace::trace,
     PResult, Parser,
 };
 
 use super::s;
 use crate::ParseDateTimeError;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Date {
     pub day: u32,
     pub month: u32,
@@ -96,27 +96,24 @@ fn literal2(input: &mut &str) -> PResult<Date> {
     .parse_next(input)
 }
 
-fn year(input: &mut &str) -> PResult<u32> {
-    s(alt((
-        take(4usize).try_map(|x: &str| x.parse()),
-        take(3usize).try_map(|x: &str| x.parse()),
-        take(2usize).try_map(|x: &str| x.parse()).map(
-            |x: u32| {
-                if x <= 68 {
-                    x + 2000
-                } else {
-                    x + 1900
-                }
-            },
-        ),
-    )))
+pub fn year(input: &mut &str) -> PResult<u32> {
+    trace(
+        "year",
+        dec_uint.try_map(|x| {
+            (0..=2147485547)
+                .contains(&x)
+                .then_some(x)
+                .ok_or(ParseDateTimeError::InvalidInput)
+        }),
+    )
     .parse_next(input)
 }
 
 fn month(input: &mut &str) -> PResult<u32> {
     s(dec_uint)
         .try_map(|x| {
-            (x >= 1 && x <= 12)
+            (1..=12)
+                .contains(&x)
                 .then_some(x)
                 .ok_or(ParseDateTimeError::InvalidInput)
         })
@@ -126,7 +123,8 @@ fn month(input: &mut &str) -> PResult<u32> {
 fn day(input: &mut &str) -> PResult<u32> {
     s(dec_uint)
         .try_map(|x| {
-            (x >= 1 && x <= 31)
+            (1..=31)
+                .contains(&x)
                 .then_some(x)
                 .ok_or(ParseDateTimeError::InvalidInput)
         })
@@ -228,5 +226,25 @@ mod tests {
         ] {
             assert_eq!(parse(&mut s).unwrap(), reference);
         }
+    }
+
+    #[test]
+    fn test_year() {
+        use super::year;
+
+        // the minimun input length is 2
+        assert!(year(&mut "0").is_err());
+        // 2-characters are converted to 19XX/20XX
+        assert_eq!(year(&mut "00").unwrap(), 2000u32);
+        assert_eq!(year(&mut "68").unwrap(), 2068u32);
+        assert_eq!(year(&mut "69").unwrap(), 1969u32);
+        assert_eq!(year(&mut "99").unwrap(), 1999u32);
+        // 3,4-characters are converted verbatim
+        assert_eq!(year(&mut "468").unwrap(), 468u32);
+        assert_eq!(year(&mut "469").unwrap(), 469u32);
+        assert_eq!(year(&mut "1568").unwrap(), 1568u32);
+        assert_eq!(year(&mut "1569").unwrap(), 1569u32);
+        // consumes at most 4 characters from the input
+        assert_eq!(year(&mut "1234567").unwrap(), 1234u32);
     }
 }

@@ -37,9 +37,13 @@
 //! >
 //! > Either ‘am’/‘pm’ or a time zone correction may be specified, but not both.
 
+use std::fmt::Display;
+
+use chrono::FixedOffset;
 use winnow::{
     ascii::{dec_uint, float},
     combinator::{alt, opt, preceded},
+    error::{AddContext, ContextError, ErrMode, StrContext},
     seq,
     stream::AsChar,
     token::take_while,
@@ -48,7 +52,14 @@ use winnow::{
 
 use super::s;
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Debug, Clone, Default)]
+pub struct Offset {
+    pub(crate) negative: bool,
+    pub(crate) hours: u32,
+    pub(crate) minutes: u32,
+}
+
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct Time {
     pub hour: u32,
     pub minute: u32,
@@ -56,11 +67,55 @@ pub struct Time {
     pub offset: Option<Offset>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct Offset {
-    negative: bool,
-    hours: u32,
-    minutes: u32,
+impl Offset {
+    fn merge(self, offset: Offset) -> Option<Offset> {
+        let Offset { negative, .. } = offset;
+        fn combine(a: u32, b: u32, negative: bool) -> Option<u32> {
+            if negative {
+                a.checked_sub(b)
+            } else {
+                a.checked_add(b)
+            }
+        }
+        let hours = combine(self.hours, offset.hours, negative)?;
+        let minutes = combine(self.minutes, offset.minutes, negative)?;
+        Some(Offset {
+            negative,
+            hours,
+            minutes,
+        })
+    }
+}
+
+impl From<Offset> for chrono::FixedOffset {
+    fn from(
+        Offset {
+            negative,
+            hours,
+            minutes,
+        }: Offset,
+    ) -> Self {
+        let secs = hours * 3600 + minutes * 60;
+
+        if negative {
+            FixedOffset::west_opt(secs.try_into().expect("secs overflow"))
+                .expect("timezone overflow")
+        } else {
+            FixedOffset::east_opt(secs.try_into().unwrap()).unwrap()
+        }
+    }
+}
+
+impl Display for Offset {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            fmt,
+            "{}{:02}:{:02}",
+            if self.negative { "-" } else { "+" },
+            self.hours,
+            self.minutes
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -150,15 +205,39 @@ fn second(input: &mut &str) -> PResult<f64> {
     s(float).verify(|x| *x < 60.0).parse_next(input)
 }
 
+pub(crate) fn timezone(input: &mut &str) -> PResult<Offset> {
+    alt((timezone_num, timezone_name_offset)).parse_next(input)
+}
+
 /// Parse a timezone starting with `+` or `-`
-fn timezone(input: &mut &str) -> PResult<Offset> {
+fn timezone_num(input: &mut &str) -> PResult<Offset> {
     seq!(plus_or_minus, alt((timezone_colon, timezone_colonless)))
-        .map(|(negative, (hours, minutes))| Offset {
-            negative,
-            hours,
-            minutes,
-        })
         .parse_next(input)
+        .and_then(|(negative, (hours, minutes))| {
+            if !(0..=12).contains(&hours) {
+                return Err(ErrMode::Cut(ContextError::new().add_context(
+                    &input,
+                    StrContext::Expected(winnow::error::StrContextValue::Description(
+                        "timezone hour between 0 and 12",
+                    )),
+                )));
+            }
+
+            if !(0..=60).contains(&minutes) {
+                return Err(ErrMode::Cut(ContextError::new().add_context(
+                    &input,
+                    StrContext::Expected(winnow::error::StrContextValue::Description(
+                        "timezone minute between 0 and 60",
+                    )),
+                )));
+            }
+
+            Ok(Offset {
+                negative,
+                hours,
+                minutes,
+            })
+        })
 }
 
 /// Parse a timezone offset with a colon separating hours and minutes
@@ -166,7 +245,7 @@ fn timezone_colon(input: &mut &str) -> PResult<(u32, u32)> {
     seq!(
         s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| {
             // parse will fail on empty input
-            if x == "" {
+            if x.is_empty() {
                 Ok(0)
             } else {
                 x.parse()
@@ -192,6 +271,262 @@ fn timezone_colonless(input: &mut &str) -> PResult<(u32, u32)> {
             })
         })
         .parse_next(input)
+}
+
+/// Parse a timezone by name
+fn timezone_name_offset(input: &mut &str) -> PResult<Offset> {
+    /// I'm assuming there are no timezone abbreviations with more
+    /// than 6 charactres
+    const MAX_TZ_SIZE: usize = 6;
+    let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
+    let tz = tzname_to_offset(nextword)?;
+    if let Ok(other_tz) = timezone_num.parse_next(input) {
+        let newtz = tz
+            .merge(other_tz)
+            .ok_or(ErrMode::Cut(ContextError::new()))?;
+
+        return Ok(newtz);
+    };
+
+    Ok(tz)
+}
+
+/// Timezone list extracted from:
+///   https://www.timeanddate.com/time/zones/
+fn tzname_to_offset(input: &str) -> PResult<Offset> {
+    let mut offset_str = match input {
+        "z" => Ok("+0"),
+        "yekt" => Ok("+5"),
+        "yekst" => Ok("+6"),
+        "yapt" => Ok("+10"),
+        "yakt" => Ok("+9"),
+        "yakst" => Ok("+10"),
+        "y" => Ok("-12"),
+        "x" => Ok("-11"),
+        "wt" => Ok("+0"),
+        "wst" => Ok("+13"),
+        "wita" => Ok("+8"),
+        "wit" => Ok("+9"),
+        "wib" => Ok("+7"),
+        "wgt" => Ok("-2"),
+        "wgst" => Ok("-1"),
+        "wft" => Ok("+12"),
+        "wet" => Ok("+0"),
+        "west" => Ok("+1"),
+        "wat" => Ok("+1"),
+        "wast" => Ok("+2"),
+        "warst" => Ok("-3"),
+        "wakt" => Ok("+12"),
+        "w" => Ok("-10"),
+        "vut" => Ok("+11"),
+        "vost" => Ok("+6"),
+        "vlat" => Ok("+10"),
+        "vlast" => Ok("+11"),
+        "vet" => Ok("-4"),
+        "v" => Ok("-9"),
+        "uzt" => Ok("+5"),
+        "uyt" => Ok("-3"),
+        "uyst" => Ok("-2"),
+        "utc" => Ok("+0"),
+        "ulat" => Ok("+8"),
+        "ulast" => Ok("+9"),
+        "u" => Ok("-8"),
+        "tvt" => Ok("+12"),
+        "trt" => Ok("+3"),
+        "tot" => Ok("+13"),
+        "tost" => Ok("+14"),
+        "tmt" => Ok("+5"),
+        "tlt" => Ok("+9"),
+        "tkt" => Ok("+13"),
+        "tjt" => Ok("+5"),
+        "tft" => Ok("+5"),
+        "taht" => Ok("-10"),
+        "t" => Ok("-7"),
+        "syot" => Ok("+3"),
+        "sst" => Ok("-11"),
+        "srt" => Ok("-3"),
+        "sret" => Ok("+11"),
+        "sgt" => Ok("+8"),
+        "sct" => Ok("+4"),
+        "sbt" => Ok("+11"),
+        "sast" => Ok("+2"),
+        "samt" => Ok("+4"),
+        "sakt" => Ok("+11"),
+        "s" => Ok("-6"),
+        "rott" => Ok("-3"),
+        "ret" => Ok("+4"),
+        "r" => Ok("-5"),
+        "qyzt" => Ok("+6"),
+        "q" => Ok("-4"),
+        "pyt" => Ok("-4"),
+        "pyst" => Ok("-3"),
+        "pwt" => Ok("+9"),
+        "pt" => Ok("-7"),
+        "pst" => Ok("-8"),
+        "pont" => Ok("+11"),
+        "pmst" => Ok("-3"),
+        "pmdt" => Ok("-2"),
+        "pkt" => Ok("+5"),
+        "pht" => Ok("+8"),
+        "phot" => Ok("+13"),
+        "pgt" => Ok("+10"),
+        "pett" => Ok("+12"),
+        "petst" => Ok("+12"),
+        "pet" => Ok("-5"),
+        "pdt" => Ok("-7"),
+        "p" => Ok("-3"),
+        "orat" => Ok("+5"),
+        "omst" => Ok("+6"),
+        "omsst" => Ok("+7"),
+        "o" => Ok("-2"),
+        "nzst" => Ok("+12"),
+        "nzdt" => Ok("+13"),
+        "nut" => Ok("-11"),
+        "nst" => Ok("-3:30"),
+        "nrt" => Ok("+12"),
+        "npt" => Ok("+5:45"),
+        "novt" => Ok("+7"),
+        "novst" => Ok("+7"),
+        "nft" => Ok("+11"),
+        "nfdt" => Ok("+12"),
+        "ndt" => Ok("-2:30"),
+        "nct" => Ok("+11"),
+        "n" => Ok("-1"),
+        "myt" => Ok("+8"),
+        "mvt" => Ok("+5"),
+        "mut" => Ok("+4"),
+        "mt" => Ok("-6"),
+        "mst" => Ok("-7"),
+        "msk" => Ok("+3"),
+        "msd" => Ok("+4"),
+        "mmt" => Ok("+6:30"),
+        "mht" => Ok("+12"),
+        "mdt" => Ok("-6"),
+        "mawt" => Ok("+5"),
+        "mart" => Ok("-9:30"),
+        "magt" => Ok("+11"),
+        "magst" => Ok("+12"),
+        "m" => Ok("+12"),
+        "lint" => Ok("+14"),
+        "lhst" => Ok("+10:30"),
+        "lhdt" => Ok("+11"),
+        "l" => Ok("+11"),
+        "kuyt" => Ok("+4"),
+        "kst" => Ok("+9"),
+        "krat" => Ok("+7"),
+        "krast" => Ok("+8"),
+        "kost" => Ok("+11"),
+        "kgt" => Ok("+6"),
+        "k" => Ok("+10"),
+        "jst" => Ok("+9"),
+        "ist" => Ok("+5:30"),
+        "irst" => Ok("+3:30"),
+        "irkt" => Ok("+8"),
+        "irkst" => Ok("+9"),
+        "irdt" => Ok("+4:30"),
+        "iot" => Ok("+6"),
+        "idt" => Ok("+3"),
+        "ict" => Ok("+7"),
+        "i" => Ok("+9"),
+        "hst" => Ok("-10"),
+        "hovt" => Ok("+7"),
+        "hovst" => Ok("+8"),
+        "hkt" => Ok("+8"),
+        "hdt" => Ok("-9"),
+        "h" => Ok("+8"),
+        "gyt" => Ok("-4"),
+        "gst" => Ok("+4"),
+        "gmt" => Ok("+0"),
+        "gilt" => Ok("+12"),
+        "gft" => Ok("-3"),
+        "get" => Ok("+4"),
+        "gamt" => Ok("-9"),
+        "galt" => Ok("-6"),
+        "g" => Ok("+7"),
+        "fnt" => Ok("-2"),
+        "fkt" => Ok("-4"),
+        "fkst" => Ok("-3"),
+        "fjt" => Ok("+12"),
+        "fjst" => Ok("+13"),
+        "fet" => Ok("+3"),
+        "f" => Ok("+6"),
+        "et" => Ok("-4"),
+        "est" => Ok("-5"),
+        "egt" => Ok("-1"),
+        "egst" => Ok("+0"),
+        "eet" => Ok("+2"),
+        "eest" => Ok("+3"),
+        "edt" => Ok("-4"),
+        "ect" => Ok("-5"),
+        "eat" => Ok("+3"),
+        "east" => Ok("-6"),
+        "easst" => Ok("-5"),
+        "e" => Ok("+5"),
+        "ddut" => Ok("+10"),
+        "davt" => Ok("+7"),
+        "d" => Ok("+4"),
+        "chst" => Ok("+10"),
+        "cxt" => Ok("+7"),
+        "cvt" => Ok("-1"),
+        "ct" => Ok("-5"),
+        "cst" => Ok("-6"),
+        "cot" => Ok("-5"),
+        "clt" => Ok("-4"),
+        "clst" => Ok("-3"),
+        "ckt" => Ok("-10"),
+        "cist" => Ok("-5"),
+        "cidst" => Ok("-4"),
+        "chut" => Ok("+10"),
+        "chot" => Ok("+8"),
+        "chost" => Ok("+9"),
+        "chast" => Ok("+12:45"),
+        "chadt" => Ok("+13:45"),
+        "cet" => Ok("+1"),
+        "cest" => Ok("+2"),
+        "cdt" => Ok("-5"),
+        "cct" => Ok("+6:30"),
+        "cat" => Ok("+2"),
+        "cast" => Ok("+8"),
+        "c" => Ok("+3"),
+        "btt" => Ok("+6"),
+        "bst" => Ok("+6"),
+        "brt" => Ok("-3"),
+        "brst" => Ok("-2"),
+        "bot" => Ok("-4"),
+        "bnt" => Ok("+8"),
+        "b" => Ok("+2"),
+        "aoe" => Ok("-12"),
+        "azt" => Ok("+4"),
+        "azst" => Ok("+5"),
+        "azot" => Ok("-1"),
+        "azost" => Ok("+0"),
+        "awst" => Ok("+8"),
+        "awdt" => Ok("+9"),
+        "at" => Ok("-4:00"),
+        "ast" => Ok("-3"),
+        "art" => Ok("-3"),
+        "aqtt" => Ok("+5"),
+        "anat" => Ok("+12"),
+        "anast" => Ok("+12"),
+        "amt" => Ok("-4"),
+        "amst" => Ok("-3"),
+        "almt" => Ok("+6"),
+        "akst" => Ok("-9"),
+        "akdt" => Ok("-8"),
+        "aft" => Ok("+4:30"),
+        "aet" => Ok("+11"),
+        "aest" => Ok("+10"),
+        "aedt" => Ok("+11"),
+        "adt" => Ok("+4"),
+        "acwst" => Ok("+8:45"),
+        "act" => Ok("-5"),
+        "acst" => Ok("+9:30"),
+        "acdt" => Ok("+10:30"),
+        "a" => Ok("+1"),
+        _ => Err(ErrMode::Backtrack(ContextError::new())),
+    }?;
+
+    timezone_num(&mut offset_str)
 }
 
 /// Parse the plus or minus character and return whether it was negative
@@ -434,5 +769,37 @@ mod tests {
                 "Format string: {old_s}"
             );
         }
+    }
+
+    #[test]
+    fn test_timezone_colonless() {
+        use super::timezone_colonless;
+
+        fn aux(inp: &mut &str) -> String {
+            format!("{:?}", timezone_colonless(inp).expect("timezone_colonless"))
+        }
+
+        assert_eq!("(0, 0)", aux(&mut "0000"));
+        assert_eq!("(12, 34)", aux(&mut "1234"));
+    }
+
+    #[test]
+    fn test_timezone() {
+        use super::timezone;
+        let make_timezone = |input: &mut &str| {
+            timezone(input)
+                .map_err(|e| eprintln!("TEST FAILED AT:\n{}", anyhow::format_err!("{e}")))
+                .map(|offset| format!("{}", offset))
+                .expect("expect tests to succeed")
+        };
+
+        assert_eq!("+00:00", make_timezone(&mut "+00:00"));
+        assert_eq!("+00:00", make_timezone(&mut "+0000"));
+        assert_eq!("-00:00", make_timezone(&mut "-0000"));
+        assert_eq!("+00:00", make_timezone(&mut "gmt"));
+        assert_eq!("+01:00", make_timezone(&mut "a"));
+        assert_eq!("+00:00", make_timezone(&mut "utc"));
+        assert_eq!("-02:00", make_timezone(&mut "brst"));
+        assert_eq!("-03:00", make_timezone(&mut "brt"));
     }
 }

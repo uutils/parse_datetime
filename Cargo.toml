@@ -12,3 +12,17 @@ regex = "1.10.4"
 chrono = { version="0.4.38", default-features=false, features=["std", "alloc", "clock"] }
 nom = "8.0.0"
 winnow = "0.5.34"
+num-traits = "0.2.19"
+
+[dev-dependencies]
+anyhow = "1.0.86"
+#winnow = { version="0.5.34", features = ["debug"] }
+
+[features]
+debug = ["winnow/debug"]
+
+[[bin]]
+path = "bin/main.rs"
+name = "parse_datetime"
+test = false
+bench = false

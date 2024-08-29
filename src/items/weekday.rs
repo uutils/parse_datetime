@@ -26,7 +26,7 @@ use winnow::{ascii::alpha1, combinator::opt, seq, PResult, Parser};
 use super::{ordinal::ordinal, s};
 
 #[derive(PartialEq, Eq, Debug)]
-enum Day {
+pub(crate) enum Day {
     Monday,
     Tuesday,
     Wednesday,
@@ -38,10 +38,23 @@ enum Day {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Weekday {
-    offset: i32,
-    day: Day,
+    pub(crate) offset: i32,
+    pub(crate) day: Day,
 }
 
+impl From<Day> for chrono::Weekday {
+    fn from(value: Day) -> Self {
+        match value {
+            Day::Monday => chrono::Weekday::Mon,
+            Day::Tuesday => chrono::Weekday::Tue,
+            Day::Wednesday => chrono::Weekday::Wed,
+            Day::Thursday => chrono::Weekday::Thu,
+            Day::Friday => chrono::Weekday::Fri,
+            Day::Saturday => chrono::Weekday::Sat,
+            Day::Sunday => chrono::Weekday::Sun,
+        }
+    }
+}
 pub fn parse(input: &mut &str) -> PResult<Weekday> {
     seq!(Weekday {
         offset: opt(ordinal).map(|o| o.unwrap_or_default()),

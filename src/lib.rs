@@ -11,7 +11,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use items::Item;
+use chrono::{DateTime, FixedOffset, Local};
 
 mod items;
 
@@ -35,11 +35,80 @@ impl Display for ParseDateTimeError {
 
 impl Error for ParseDateTimeError {}
 
-pub fn parse_datetime(input: &str) -> Result<Vec<Item>, ParseDateTimeError> {
-    let input = input.to_ascii_lowercase();
-    match items::parse(&mut input.as_ref()) {
-        Some(x) => Ok(x),
-        None => Err(ParseDateTimeError::InvalidInput),
+/// Parses a time string and returns a `DateTime` representing the
+/// absolute time of the string.
+///
+/// # Arguments
+///
+/// * `s` - A string slice representing the time.
+///
+/// # Examples
+///
+/// ```
+/// use chrono::{DateTime, Utc, TimeZone};
+/// let time = parse_datetime::parse_datetime("2023-06-03 12:00:01Z");
+/// assert_eq!(time.unwrap(), Utc.with_ymd_and_hms(2023, 06, 03, 12, 00, 01).unwrap());
+/// ```
+///
+///
+/// # Returns
+///
+/// * `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a relative time
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
+pub fn parse_datetime<S: AsRef<str> + Clone>(
+    input: S,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    let input = input.as_ref().to_ascii_lowercase();
+    match items::parse(&mut input.as_str()) {
+        Ok(x) => items::at_local(x),
+        Err(_) => Err(ParseDateTimeError::InvalidInput),
+    }
+}
+/// Parses a time string at a specific date and returns a `DateTime` representing the
+/// absolute time of the string.
+///
+/// # Arguments
+///
+/// * date - The date represented in local time
+/// * `s` - A string slice representing the time.
+///
+/// # Examples
+///
+/// ```
+/// use chrono::{Duration, Local};
+/// use parse_datetime::parse_datetime_at_date;
+///
+///  let now = Local::now();
+///  let after = parse_datetime_at_date(now, "2024-09-13 +3 days");
+///
+///  assert_eq!(
+///    "2024-09-16",
+///    after.unwrap().naive_utc().format("%F").to_string()
+///  );
+/// ```
+///
+/// # Returns
+///
+/// * `Ok(DateTime<FixedOffset>)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a relative time
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the input string
+/// cannot be parsed as a relative time.
+pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
+    date: DateTime<Local>,
+    input: S,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    let input = input.as_ref().to_ascii_lowercase();
+    match items::parse(&mut input.as_str()) {
+        Ok(x) => items::at_date(x, date.into()),
+        Err(_) => Err(ParseDateTimeError::InvalidInput),
     }
 }
 
@@ -545,6 +614,124 @@ mod tests {
             let delta = Days::new(u64::from(day.days_since(today)));
             let expected = midnight_today.checked_add_days(delta).unwrap();
             assert_eq!(actual, expected);
+        }
+    }
+
+    mod test_relative {
+        use chrono::NaiveDate;
+
+        use crate::{items, parse_datetime};
+        use std::{
+            env,
+            io::{self, Write},
+        };
+
+        #[test]
+        fn test_month() {
+            env::set_var("TZ", "UTC");
+
+            assert_eq!(
+                parse_datetime("28 feb + 1 month")
+                    .expect("parse_datetime")
+                    .format("%+")
+                    .to_string(),
+                "2024-03-28T00:00:00+00:00"
+            );
+
+            // 29 feb 2025 is invalid
+            assert!(parse_datetime("29 feb + 1 year").is_err());
+
+            // 29 feb 2025 is an invalid date
+            assert!(parse_datetime("29 feb 2025").is_err());
+
+            // because 29 feb 2025 is invalid, 29 feb 2025 + 1 day is invalid
+            // arithmetic does not operate on invalid dates
+            assert!(parse_datetime("29 feb 2025 + 1 day").is_err());
+
+            // 28 feb 2023 + 1 day = 1 mar
+            assert_eq!(
+                parse_datetime("28 feb 2023 + 1 day")
+                    .unwrap()
+                    .format("%+")
+                    .to_string(),
+                "2023-03-01T00:00:00+00:00"
+            );
+        }
+
+        #[test]
+        fn month_overflow() {
+            env::set_var("TZ", "UTC");
+            assert_eq!(
+                parse_datetime("2024-01-31 + 1 month")
+                    .unwrap()
+                    .format("%+")
+                    .to_string(),
+                "2024-03-02T00:00:00+00:00",
+            );
+
+            assert_eq!(
+                parse_datetime("2024-02-29 + 1 month")
+                    .unwrap()
+                    .format("%+")
+                    .to_string(),
+                "2024-03-29T00:00:00+00:00",
+            );
+        }
+        fn make_gnu_date(input: &str, fmt: &str) -> String {
+            std::process::Command::new("date")
+                .arg("-d")
+                .arg(input)
+                .arg(format!("+{fmt}"))
+                .output()
+                .map(|mut output| {
+                    io::stdout().write_all(&output.stdout).unwrap();
+                    output.stdout.pop(); // remove trailing \n
+                    String::from_utf8(output.stdout).expect("from_utf8")
+                })
+                .unwrap()
+        }
+
+        #[test]
+        fn chrono_date() {
+            const FMT: &str = "%Y-%m-%d %H:%M:%S";
+            let year = 262144;
+            let input = format!("{year}-01-01 00:00:00");
+
+            assert!(NaiveDate::from_ymd_opt(year, 1, 1).is_none());
+            assert!(chrono::DateTime::parse_from_str(&input, FMT).is_err());
+            // the parsing works, but hydration fails
+            assert!(items::parse(&mut input.to_string().as_str()).is_ok());
+            assert!(parse_datetime(&input).is_err());
+            // GNU date works
+            assert_eq!(make_gnu_date(&input, FMT), input);
+        }
+
+        #[test]
+        fn gnu_compat() {
+            const FMT: &str = "%Y-%m-%d %H:%M:%S";
+            let input = "0000-03-02 00:00:00";
+            assert_eq!(
+                make_gnu_date(input, FMT),
+                parse_datetime(input).unwrap().format(FMT).to_string()
+            );
+
+            let input = "262144-03-10 00:00:00";
+            assert_eq!(
+                make_gnu_date(input, FMT),
+                parse_datetime(input)
+                    .expect("parse_datetime")
+                    .format(FMT)
+                    .to_string()
+            );
+
+            let input = "10384-03-10 00:00:00";
+            assert_eq!(
+                make_gnu_date(input, FMT),
+                parse_datetime(input)
+                    .expect("parse_datetime")
+                    .format(FMT)
+                    .to_string()
+            );
         }
     }
 }
