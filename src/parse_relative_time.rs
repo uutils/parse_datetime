@@ -102,7 +102,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
             "yesterday" => add_days(datetime, 1, true),
             "tomorrow" => add_days(datetime, 1, false),
             "now" | "today" => Some(datetime),
-            _ => return Err(ParseDateTimeError::InvalidInput),
+            _ => None,
         };
         datetime = match new_datetime {
             Some(dt) => dt,
