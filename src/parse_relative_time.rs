@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use crate::ParseDateTimeError;
-use chrono::{Duration, Local, NaiveDate, Utc};
+use chrono::{Duration, Local, NaiveDate};
 use regex::Regex;
 /// Parses a relative time string and returns a `Duration` representing the
 /// relative time.
@@ -40,7 +40,7 @@ use regex::Regex;
 ///
 /// ```
 pub fn parse_relative_time(s: &str) -> Result<Duration, ParseDateTimeError> {
-    parse_relative_time_at_date(Utc::now().date_naive(), s)
+    parse_relative_time_at_date(Local::now().date_naive(), s)
 }
 
 /// Parses a duration string and returns a `Duration` instance, with the duration
@@ -151,7 +151,7 @@ mod tests {
 
     use super::ParseDateTimeError;
     use super::{parse_relative_time, parse_relative_time_at_date};
-    use chrono::{Duration, Local, NaiveDate, Utc};
+    use chrono::{Duration, Local, NaiveDate};
 
     #[test]
     fn test_years() {
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_parse_relative_time_at_date_day() {
-        let today = Utc::now().date_naive();
+        let today = Local::now().date_naive();
         let yesterday = today - Duration::days(1);
         assert_eq!(
             parse_relative_time_at_date(yesterday, "2 days").unwrap(),
@@ -611,7 +611,7 @@ mod tests {
 
     #[test]
     fn test_invalid_input_at_date_relative() {
-        let today = Utc::now().date_naive();
+        let today = Local::now().date_naive();
         let result = parse_relative_time_at_date(today, "foobar");
         println!("{result:?}");
         assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
