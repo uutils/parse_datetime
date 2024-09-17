@@ -46,7 +46,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
-        (\s*(?P<direction>next|last)?\s*)?
+        (\s*(?P<direction>next|this|last)?\s*)?
         (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
         (\s*(?P<separator>and|,)?\s*)?
         (\s*(?P<ago>ago)?)?",
@@ -71,10 +71,10 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
                 .map_err(|_| ParseDateTimeError::InvalidInput)?
         };
 
-        if let Some(direction) = capture.name("direction") {
-            if direction.as_str() == "last" {
-                is_ago = true;
-            }
+        let direction = capture.name("direction").map_or("", |d| d.as_str());
+
+        if direction == "last" {
+            is_ago = true;
         }
 
         let unit = capture
@@ -86,23 +86,27 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
             is_ago = true;
         }
 
-        let new_datetime = match unit {
-            "years" | "year" => add_months(datetime, value * 12, is_ago),
-            "months" | "month" => add_months(datetime, value, is_ago),
-            "fortnights" | "fortnight" => add_days(datetime, value * 14, is_ago),
-            "weeks" | "week" => add_days(datetime, value * 7, is_ago),
-            "days" | "day" => add_days(datetime, value, is_ago),
-            "hours" | "hour" | "h" => add_duration(datetime, Duration::hours(value), is_ago),
-            "minutes" | "minute" | "mins" | "min" | "m" => {
-                add_duration(datetime, Duration::minutes(value), is_ago)
+        let new_datetime = if direction == "this" {
+            add_days(datetime, 0, is_ago)
+        } else {
+            match unit {
+                "years" | "year" => add_months(datetime, value * 12, is_ago),
+                "months" | "month" => add_months(datetime, value, is_ago),
+                "fortnights" | "fortnight" => add_days(datetime, value * 14, is_ago),
+                "weeks" | "week" => add_days(datetime, value * 7, is_ago),
+                "days" | "day" => add_days(datetime, value, is_ago),
+                "hours" | "hour" | "h" => add_duration(datetime, Duration::hours(value), is_ago),
+                "minutes" | "minute" | "mins" | "min" | "m" => {
+                    add_duration(datetime, Duration::minutes(value), is_ago)
+                }
+                "seconds" | "second" | "secs" | "sec" | "s" => {
+                    add_duration(datetime, Duration::seconds(value), is_ago)
+                }
+                "yesterday" => add_days(datetime, 1, true),
+                "tomorrow" => add_days(datetime, 1, false),
+                "now" | "today" => Some(datetime),
+                _ => None,
             }
-            "seconds" | "second" | "secs" | "sec" | "s" => {
-                add_duration(datetime, Duration::seconds(value), is_ago)
-            }
-            "yesterday" => add_days(datetime, 1, true),
-            "tomorrow" => add_days(datetime, 1, false),
-            "now" | "today" => Some(datetime),
-            _ => None,
         };
         datetime = match new_datetime {
             Some(dt) => dt,
@@ -192,6 +196,10 @@ mod tests {
             now.checked_add_months(Months::new(12)).unwrap()
         );
         assert_eq!(
+            parse_relative_time_at_date(now, "this year").unwrap(),
+            now.checked_add_months(Months::new(0)).unwrap()
+        );
+        assert_eq!(
             parse_relative_time_at_date(now, "-2 years").unwrap(),
             now.checked_sub_months(Months::new(24)).unwrap()
         );
@@ -211,6 +219,10 @@ mod tests {
         assert_eq!(
             parse_relative_time_at_date(now, "1 month").unwrap(),
             now.checked_add_months(Months::new(1)).unwrap()
+        );
+        assert_eq!(
+            parse_relative_time_at_date(now, "this month").unwrap(),
+            now.checked_add_months(Months::new(0)).unwrap()
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks").unwrap(),
@@ -243,6 +255,10 @@ mod tests {
             Duration::seconds(1_209_600)
         );
         assert_eq!(
+            parse_duration("this fortnight").unwrap(),
+            Duration::seconds(0)
+        );
+        assert_eq!(
             parse_duration("3 fortnights").unwrap(),
             Duration::seconds(3_628_800)
         );
@@ -258,6 +274,7 @@ mod tests {
             parse_duration("1 week").unwrap(),
             Duration::seconds(604_800)
         );
+        assert_eq!(parse_duration("this week").unwrap(), Duration::seconds(0));
         assert_eq!(
             parse_duration("1 week 3 days").unwrap(),
             Duration::seconds(864_000)
@@ -284,6 +301,7 @@ mod tests {
             parse_duration("2 days ago").unwrap(),
             Duration::seconds(-172_800)
         );
+        assert_eq!(parse_duration("this day").unwrap(), Duration::seconds(0));
         assert_eq!(
             parse_duration("-2 days").unwrap(),
             Duration::seconds(-172_800)
@@ -298,6 +316,7 @@ mod tests {
             parse_duration("1 hour ago").unwrap(),
             Duration::seconds(-3600)
         );
+        assert_eq!(parse_duration("this hour").unwrap(), Duration::seconds(0));
         assert_eq!(
             parse_duration("-2 hours").unwrap(),
             Duration::seconds(-7200)
@@ -307,6 +326,7 @@ mod tests {
 
     #[test]
     fn test_minutes() {
+        assert_eq!(parse_duration("this minute").unwrap(), Duration::seconds(0));
         assert_eq!(parse_duration("1 minute").unwrap(), Duration::seconds(60));
         assert_eq!(parse_duration("2 minutes").unwrap(), Duration::seconds(120));
         assert_eq!(parse_duration("min").unwrap(), Duration::seconds(60));
@@ -314,6 +334,7 @@ mod tests {
 
     #[test]
     fn test_seconds() {
+        assert_eq!(parse_duration("this second").unwrap(), Duration::seconds(0));
         assert_eq!(parse_duration("1 second").unwrap(), Duration::seconds(1));
         assert_eq!(parse_duration("2 seconds").unwrap(), Duration::seconds(2));
         assert_eq!(parse_duration("sec").unwrap(), Duration::seconds(1));
@@ -347,6 +368,7 @@ mod tests {
             parse_duration("2weeks 1hour ago").unwrap(),
             Duration::seconds(-1_213_200)
         );
+        assert_eq!(parse_duration("thismonth").unwrap(), Duration::days(0));
         assert_eq!(
             parse_relative_time_at_date(now, "+4months").unwrap(),
             now.checked_add_months(Months::new(4)).unwrap()
@@ -418,6 +440,10 @@ mod tests {
             parse_relative_time_at_date(now, "last month").unwrap(),
             now.checked_sub_months(Months::new(1)).unwrap()
         );
+
+        assert_eq!(parse_duration("this month").unwrap(), Duration::days(0));
+
+        assert_eq!(parse_duration("this year").unwrap(), Duration::days(0));
     }
 
     #[test]
