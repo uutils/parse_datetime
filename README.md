@@ -20,7 +20,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-parse_datetime = "0.5.0"
+parse_datetime = "0.6.0"
 ```
 
 Then, import the crate and use the `parse_datetime_at_date` function:
