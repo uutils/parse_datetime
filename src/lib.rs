@@ -199,8 +199,8 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 
     // Parse epoch seconds
     if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
-        if let Some(timestamp_date) = NaiveDateTime::from_timestamp_opt(timestamp, 0) {
-            return Ok(date.offset().from_utc_datetime(&timestamp_date));
+        if let Some(timestamp_date) = DateTime::from_timestamp(timestamp, 0) {
+            return Ok(timestamp_date.into());
         }
     }
 
