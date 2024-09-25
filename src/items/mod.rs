@@ -53,8 +53,8 @@ mod timezone {
 use chrono::NaiveDate;
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
 
-use winnow::error::ParseError;
 use winnow::error::ParserError;
+use winnow::error::{ContextError, ErrMode, ParseError};
 use winnow::trace::trace;
 use winnow::{
     ascii::multispace0,
@@ -100,6 +100,17 @@ where
     separated(0.., multispace0, alt((comment, ignored_hyphen_or_plus))).parse_next(input)
 }
 
+/// Check for the end of a token, without consuming the input
+/// succeedes if the next character in the input is a space or
+/// if the input is empty
+pub(crate) fn eotoken(input: &mut &str) -> PResult<()> {
+    if input.is_empty() || input.chars().next().unwrap().is_space() {
+        return Ok(());
+    }
+
+    Err(ErrMode::Backtrack(ContextError::new()))
+}
+
 /// A hyphen or plus is ignored when it is not followed by a digit
 ///
 /// This includes being followed by a comment! Compare these inputs:
@@ -141,7 +152,7 @@ where
 
 // Parse an item
 pub fn parse_one(input: &mut &str) -> PResult<Item> {
-    //eprintln!("parsing_one -> {input}");
+    // eprintln!("parsing_one -> {input}");
     let result = trace(
         "parse_one",
         alt((
@@ -152,11 +163,11 @@ pub fn parse_one(input: &mut &str) -> PResult<Item> {
             weekday::parse.map(Item::Weekday),
             epoch::parse.map(Item::Timestamp),
             timezone::parse.map(Item::TimeZone),
-            s(date::year).map(Item::Year),
+            date::year.map(Item::Year),
         )),
     )
     .parse_next(input)?;
-    //eprintln!("parsing_one <- {input} {result:?}");
+    // eprintln!("parsing_one <- {input} {result:?}");
 
     Ok(result)
 }

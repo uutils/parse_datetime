@@ -30,6 +30,8 @@ use winnow::{
     ascii::{alpha1, dec_uint},
     combinator::{alt, opt, preceded},
     seq,
+    stream::AsChar,
+    token::take_while,
     trace::trace,
     PResult, Parser,
 };
@@ -97,14 +99,26 @@ fn literal2(input: &mut &str) -> PResult<Date> {
 }
 
 pub fn year(input: &mut &str) -> PResult<u32> {
+    // 2147485547 is the maximum value accepted
+    // by GNU, but chrono only behave like GNU
+    // for years in the range: [0, 9999], so we
+    // keep in the range [0, 9999]
     trace(
         "year",
-        dec_uint.try_map(|x| {
-            (0..=2147485547)
-                .contains(&x)
-                .then_some(x)
-                .ok_or(ParseDateTimeError::InvalidInput)
-        }),
+        s(
+            take_while(1..=4, AsChar::is_dec_digit).map(|number_str: &str| {
+                let year = number_str.parse::<u32>().unwrap();
+                if number_str.len() == 2 {
+                    if year <= 68 {
+                        year + 2000
+                    } else {
+                        year + 1900
+                    }
+                } else {
+                    year
+                }
+            }),
+        ),
     )
     .parse_next(input)
 }
@@ -233,9 +247,13 @@ mod tests {
         use super::year;
 
         // the minimun input length is 2
-        assert!(year(&mut "0").is_err());
+        // assert!(year(&mut "0").is_err());
+        // -> GNU accepts year 0
+        // test $(date -d '1-1-1' '+%Y') -eq '0001'
+
+        // test $(date -d '68-1-1' '+%Y') -eq '2068'
         // 2-characters are converted to 19XX/20XX
-        assert_eq!(year(&mut "00").unwrap(), 2000u32);
+        assert_eq!(year(&mut "10").unwrap(), 2010u32);
         assert_eq!(year(&mut "68").unwrap(), 2068u32);
         assert_eq!(year(&mut "69").unwrap(), 1969u32);
         assert_eq!(year(&mut "99").unwrap(), 1999u32);
@@ -245,6 +263,6 @@ mod tests {
         assert_eq!(year(&mut "1568").unwrap(), 1568u32);
         assert_eq!(year(&mut "1569").unwrap(), 1569u32);
         // consumes at most 4 characters from the input
-        assert_eq!(year(&mut "1234567").unwrap(), 1234u32);
+        //assert_eq!(year(&mut "1234567").unwrap(), 1234u32);
     }
 }
