@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 
 use std::fmt::{Debug, Display};
-use std::io::{self, Write};
 
 use libfuzzer_sys::arbitrary::{self, Arbitrary};
 

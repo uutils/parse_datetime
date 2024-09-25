@@ -18,9 +18,3 @@ anyhow = "1.0.86"
 
 [features]
 debug = ["winnow/debug"]
-
-[[bin]]
-path = "bin/main.rs"
-name = "parse_datetime"
-test = false
-bench = false

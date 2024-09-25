@@ -42,7 +42,7 @@ use std::fmt::Display;
 use chrono::FixedOffset;
 use winnow::{
     ascii::{dec_uint, float},
-    combinator::{alt, opt, preceded},
+    combinator::{alt, opt, preceded, terminated},
     error::{AddContext, ContextError, ErrMode, StrContext},
     seq,
     stream::AsChar,
@@ -50,7 +50,7 @@ use winnow::{
     PResult, Parser,
 };
 
-use super::s;
+use super::{eotoken, s};
 
 #[derive(PartialEq, Debug, Clone, Default)]
 pub struct Offset {
@@ -206,7 +206,11 @@ fn second(input: &mut &str) -> PResult<f64> {
 }
 
 pub(crate) fn timezone(input: &mut &str) -> PResult<Offset> {
-    alt((timezone_num, timezone_name_offset)).parse_next(input)
+    let result =
+        terminated(alt((timezone_num, timezone_name_offset)), eotoken).parse_next(input)?;
+
+    // space_or_eof(input, result)
+    Ok(result)
 }
 
 /// Parse a timezone starting with `+` or `-`

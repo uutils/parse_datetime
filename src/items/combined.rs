@@ -35,11 +35,7 @@ pub struct DateTime {
 }
 
 pub fn parse(input: &mut &str) -> PResult<DateTime> {
-    alt((
-        parse_basic,
-        //parse_8digits
-    ))
-    .parse_next(input)
+    alt((parse_basic, parse_8digits)).parse_next(input)
 }
 
 fn parse_basic(input: &mut &str) -> PResult<DateTime> {
@@ -52,7 +48,6 @@ fn parse_basic(input: &mut &str) -> PResult<DateTime> {
     .parse_next(input)
 }
 
-#[allow(dead_code)]
 fn parse_8digits(input: &mut &str) -> PResult<DateTime> {
     s((
         take(2usize).and_then(dec_uint),
