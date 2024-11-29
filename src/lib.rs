@@ -415,8 +415,9 @@ mod tests {
         fn get_formatted_date(date: DateTime<Local>, weekday: &str) -> String {
             let result = parse_datetime_at_date(date, weekday).unwrap();
 
-            return result.format("%F %T %f").to_string();
+            result.format("%F %T %f").to_string()
         }
+
         #[test]
         fn test_weekday() {
             // add some constant hours and minutes and seconds to check its reset
