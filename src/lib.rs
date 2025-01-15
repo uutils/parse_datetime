@@ -63,6 +63,10 @@ impl From<RegexError> for ParseDateTimeError {
 mod format {
     pub const ISO_8601: &str = "%Y-%m-%d";
     pub const ISO_8601_NO_SEP: &str = "%Y%m%d";
+    // US format for calendar date items:
+    // https://www.gnu.org/software/coreutils/manual/html_node/Calendar-date-items.html
+    pub const MMDDYYYY_SLASH: &str = "%m/%d/%Y";
+    pub const MMDDYY_SLASH: &str = "%m/%d/%y";
     pub const POSIX_LOCALE: &str = "%a %b %e %H:%M:%S %Y";
     pub const YYYYMMDDHHMM_DOT_SS: &str = "%Y%m%d%H%M.%S";
     pub const YYYYMMDDHHMMSS: &str = "%Y-%m-%d %H:%M:%S.%f";
@@ -208,7 +212,12 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 
     let ts = s.as_ref().to_owned() + " 0000";
     // Parse date only formats - assume midnight local timezone
-    for fmt in [format::ISO_8601, format::ISO_8601_NO_SEP] {
+    for fmt in [
+        format::ISO_8601,
+        format::ISO_8601_NO_SEP,
+        format::MMDDYYYY_SLASH,
+        format::MMDDYY_SLASH,
+    ] {
         let f = fmt.to_owned() + " %H%M";
         if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts, &f) {
             if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
@@ -339,7 +348,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod formats {
+    mod calendar_date_items {
         use crate::parse_datetime;
         use chrono::{DateTime, Local, TimeZone};
 
@@ -352,6 +361,10 @@ mod tests {
             assert_eq!(Ok(expected), parse_datetime("1987-5-07"));
             assert_eq!(Ok(expected), parse_datetime("1987-05-7"));
             assert_eq!(Ok(expected), parse_datetime("1987-5-7"));
+            assert_eq!(Ok(expected), parse_datetime("5/7/1987"));
+            assert_eq!(Ok(expected), parse_datetime("5/07/1987"));
+            assert_eq!(Ok(expected), parse_datetime("05/7/1987"));
+            assert_eq!(Ok(expected), parse_datetime("05/07/1987"));
         }
     }
 
