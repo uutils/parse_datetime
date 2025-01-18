@@ -77,6 +77,7 @@ mod format {
     pub const YYYYMMDDHHMM_UTC_OFFSET: &str = "%Y%m%d%H%MUTC%z";
     pub const YYYYMMDDHHMM_ZULU_OFFSET: &str = "%Y%m%d%H%MZ%z";
     pub const YYYYMMDDHHMM_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M %z";
+    pub const YYYYMMDDHHMMSS_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M:%S %#z";
     pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
     pub const UTC_OFFSET: &str = "UTC%#z";
     pub const ZULU_OFFSET: &str = "Z%#z";
@@ -154,9 +155,16 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // similar
 
     // Formats with offsets don't require NaiveDateTime workaround
+    //
+    // HACK: if the string ends with a single digit preceded by a + or -
+    // sign, then insert a 0 between the sign and the digit to make it
+    // possible for `chrono` to parse it.
+    let pattern = Regex::new(r"([\+-])(\d)$").unwrap();
+    let s = pattern.replace(s.as_ref(), "${1}0${2}");
     for fmt in [
         format::YYYYMMDDHHMM_OFFSET,
         format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
+        format::YYYYMMDDHHMMSS_HYPHENATED_OFFSET,
         format::YYYYMMDDHHMM_UTC_OFFSET,
         format::YYYYMMDDHHMM_ZULU_OFFSET,
     ] {
@@ -230,16 +238,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // offsets, so instead we replicate parse_date behaviour by getting
     // the current date with local, and create a date time string at midnight,
     // before trying offset suffixes
-    //
-    // HACK: if the string ends with a single digit preceded by a + or -
-    // sign, then insert a 0 between the sign and the digit to make it
-    // possible for `chrono` to parse it.
-    let pattern = Regex::new(r"([\+-])(\d)$").unwrap();
-    let ts = format!(
-        "{}0000{}",
-        date.format("%Y%m%d"),
-        pattern.replace(s.as_ref(), "${1}0${2}")
-    );
+    let ts = format!("{}0000{}", date.format("%Y%m%d"), s);
     for fmt in [
         format::UTC_OFFSET,
         format::ZULU_OFFSET,
@@ -370,7 +369,7 @@ mod tests {
 
     #[cfg(test)]
     mod offsets {
-        use chrono::Local;
+        use chrono::{Local, NaiveDate};
 
         use crate::parse_datetime;
         use crate::ParseDateTimeError;
@@ -412,6 +411,17 @@ mod tests {
                 parse_datetime(offset),
                 Err(ParseDateTimeError::InvalidInput)
             );
+        }
+
+        #[test]
+        fn test_datetime_with_offset() {
+            let actual = parse_datetime("1997-01-19 08:17:48 +0").unwrap();
+            let expected = NaiveDate::from_ymd_opt(1997, 1, 19)
+                .unwrap()
+                .and_hms_opt(8, 17, 48)
+                .unwrap()
+                .and_utc();
+            assert_eq!(actual, expected);
         }
     }
 
