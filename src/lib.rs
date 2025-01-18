@@ -9,6 +9,7 @@
 //! * relative time to now, e.g. "+1 hour"
 //!
 use regex::Error as RegexError;
+use regex::Regex;
 use std::error::Error;
 use std::fmt::{self, Display};
 
@@ -75,6 +76,7 @@ mod format {
     pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
     pub const UTC_OFFSET: &str = "UTC%#z";
     pub const ZULU_OFFSET: &str = "Z%#z";
+    pub const NAKED_OFFSET: &str = "%#z";
 }
 
 /// Parses a time string and returns a `DateTime` representing the
@@ -219,8 +221,21 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // offsets, so instead we replicate parse_date behaviour by getting
     // the current date with local, and create a date time string at midnight,
     // before trying offset suffixes
-    let ts = format!("{}", date.format("%Y%m%d")) + "0000" + s.as_ref();
-    for fmt in [format::UTC_OFFSET, format::ZULU_OFFSET] {
+    //
+    // HACK: if the string ends with a single digit preceded by a + or -
+    // sign, then insert a 0 between the sign and the digit to make it
+    // possible for `chrono` to parse it.
+    let pattern = Regex::new(r"([\+-])(\d)$").unwrap();
+    let ts = format!(
+        "{}0000{}",
+        date.format("%Y%m%d"),
+        pattern.replace(s.as_ref(), "${1}0${2}")
+    );
+    for fmt in [
+        format::UTC_OFFSET,
+        format::ZULU_OFFSET,
+        format::NAKED_OFFSET,
+    ] {
         let f = format::YYYYMMDDHHMM.to_owned() + fmt;
         if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
             return Ok(parsed);
@@ -356,6 +371,8 @@ mod tests {
                 "Z+07:00",
                 "Z+0700",
                 "Z+07",
+                "+07",
+                "+7",
             ];
 
             let expected = format!("{}{}", Local::now().format("%Y%m%d"), "0000+0700");
@@ -377,13 +394,11 @@ mod tests {
 
         #[test]
         fn invalid_offset_format() {
-            let invalid_offsets = vec!["+0700", "UTC+2", "Z-1", "UTC+01005"];
-            for offset in invalid_offsets {
-                assert_eq!(
-                    parse_datetime(offset),
-                    Err(ParseDateTimeError::InvalidInput)
-                );
-            }
+            let offset = "UTC+01005";
+            assert_eq!(
+                parse_datetime(offset),
+                Err(ParseDateTimeError::InvalidInput)
+            );
         }
     }
 
