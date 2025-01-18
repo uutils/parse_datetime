@@ -1,8 +1,16 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use crate::ParseDateTimeError;
-use chrono::{DateTime, Days, Duration, Months, TimeZone};
+use chrono::{
+    DateTime, Datelike, Days, Duration, LocalResult, Months, NaiveDate, NaiveDateTime, TimeZone,
+};
 use regex::Regex;
+
+/// Number of days in each month.
+///
+/// Months are 0-indexed, so January is at index 0. The number of days
+/// in February is 28.
+const DAYS_PER_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// Parses a relative time string and adds the duration that it represents to the
 /// given date.
@@ -145,7 +153,89 @@ fn add_months<T: TimeZone>(
     if is_ago {
         datetime.checked_sub_months(Months::new(months))
     } else {
-        datetime.checked_add_months(Months::new(months))
+        checked_add_months(datetime, months)
+    }
+}
+
+/// Whether the given year is a leap year.
+fn is_leap_year(year: i32) -> bool {
+    NaiveDate::from_ymd_opt(year, 1, 1).is_some_and(|d| d.leap_year())
+}
+
+/// Get the number of days in the month in a particular year.
+///
+/// The year is required because February has 29 days in leap years.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    if is_leap_year(year) && month == 2 {
+        29
+    } else {
+        DAYS_PER_MONTH[month as usize - 1]
+    }
+}
+
+/// Get the datetime at the given number of months ahead.
+///
+/// If the date is out of range or would be ambiguous (in the case of a
+/// fold in the local time), return `None`.
+///
+/// If the day would be out of range in the new month (for example, if
+/// `datetime` has day 31 but the resulting month only has 30 days),
+/// then the surplus days are rolled over into the following month.
+///
+/// # Examples
+///
+/// Surplus days are rolled over
+///
+/// ```rust,ignore
+/// use chrono::{NaiveDate, TimeZone, Utc};
+/// let datetime = Utc.from_utc_datetime(
+///     &NaiveDate::from_ymd_opt(1996, 3, 31).unwrap().into()
+/// );
+/// let new_datetime = checked_add_months(datetime, 1).unwrap();
+/// assert_eq!(
+///     new_datetime,
+///     Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(1996, 5, 1).unwrap().into()),
+/// );
+/// ```
+fn checked_add_months<T>(datetime: DateTime<T>, months: u32) -> Option<DateTime<T>>
+where
+    T: TimeZone,
+{
+    // The starting date.
+    let ref_year = datetime.year();
+    let ref_month = datetime.month();
+    let ref_date_in_months = 12 * ref_year + (ref_month as i32) - 1;
+
+    // The year, month, and day of the target date.
+    let target_date_in_months = ref_date_in_months.checked_add(months as i32)?;
+    let year = target_date_in_months.div_euclid(12);
+    let month = target_date_in_months.rem_euclid(12) + 1;
+    let day = datetime.day();
+
+    // Account for overflow when getting the correct day in the next
+    // month. For example,
+    //
+    //     $ date -I --date '1996-01-31 +1 month'  # a leap year
+    //     1996-03-02
+    //     $ date -I --date '1997-01-31 +1 month'  # a non-leap year
+    //     1997-03-03
+    //
+    let (month, day) = if day > days_in_month(year, month as u32) {
+        (month + 1, day - days_in_month(year, month as u32))
+    } else {
+        (month, datetime.day())
+    };
+
+    // Create the new timezone-naive datetime.
+    let new_date = NaiveDate::from_ymd_opt(year, month as u32, day)?;
+    let time = datetime.time();
+    let new_naive_datetime = NaiveDateTime::new(new_date, time);
+
+    // Make it timezone-aware.
+    let offset = T::from_offset(datetime.offset());
+    match offset.from_local_datetime(&new_naive_datetime) {
+        LocalResult::Single(d) => Some(d),
+        LocalResult::Ambiguous(_, _) | LocalResult::None => None,
     }
 }
 
@@ -214,6 +304,20 @@ mod tests {
     }
 
     #[test]
+    fn test_leap_day() {
+        // $ date -I --date '1996-02-29 +1 year'
+        // 1997-03-01
+        // $ date -I --date '1996-02-29 +12 months'
+        // 1997-03-01
+        let datetime = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(1996, 2, 29).unwrap().into());
+        let expected = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(1997, 3, 1).unwrap().into());
+        let parse = |s| parse_relative_time_at_date(datetime, s).unwrap();
+        assert_eq!(parse("+1 year"), expected);
+        assert_eq!(parse("+12 months"), expected);
+        assert_eq!(parse("+366 days"), expected);
+    }
+
+    #[test]
     fn test_months() {
         let now = Utc::now();
         assert_eq!(
@@ -246,6 +350,16 @@ mod tests {
             parse_relative_time_at_date(now, "month").unwrap(),
             now.checked_add_months(Months::new(1)).unwrap()
         );
+    }
+
+    #[test]
+    fn test_overflow_days_in_month() {
+        // $ date -I --date '1996-03-31 1 month'
+        // 1996-05-01
+        let datetime = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(1996, 3, 31).unwrap().into());
+        let expected = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(1996, 5, 1).unwrap().into());
+        let parse = |s| parse_relative_time_at_date(datetime, s).unwrap();
+        assert_eq!(parse("1 month"), expected);
     }
 
     #[test]
