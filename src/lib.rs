@@ -78,6 +78,7 @@ mod format {
     pub const YYYYMMDDHHMM_ZULU_OFFSET: &str = "%Y%m%d%H%MZ%z";
     pub const YYYYMMDDHHMM_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M %z";
     pub const YYYYMMDDHHMMSS_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M:%S %#z";
+    pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET: &str = "%Y-%m-%dT%H:%M:%S%#z";
     pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
     pub const UTC_OFFSET: &str = "UTC%#z";
     pub const ZULU_OFFSET: &str = "Z%#z";
@@ -165,6 +166,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
         format::YYYYMMDDHHMM_OFFSET,
         format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
         format::YYYYMMDDHHMMSS_HYPHENATED_OFFSET,
+        format::YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET,
         format::YYYYMMDDHHMM_UTC_OFFSET,
         format::YYYYMMDDHHMM_ZULU_OFFSET,
     ] {
@@ -317,6 +319,14 @@ mod tests {
         fn test_t_sep_offset() {
             env::set_var("TZ", "UTC");
             let dt = "2021-02-14T22:37:47 -0800";
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
+        }
+
+        #[test]
+        fn test_t_sep_single_digit_offset_no_space() {
+            env::set_var("TZ", "UTC");
+            let dt = "2021-02-14T22:37:47-8";
             let actual = parse_datetime(dt);
             assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
         }
