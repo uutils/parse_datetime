@@ -4,7 +4,7 @@ use chrono::Weekday;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::combinator::value;
-use nom::{self, IResult};
+use nom::{self, IResult, Parser};
 
 // Helper macro to simplify tag matching
 macro_rules! tag_match {
@@ -25,7 +25,8 @@ pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
         tag_match!(Weekday::Fri, "friday", "fri"),
         tag_match!(Weekday::Sat, "saturday", "sat"),
         tag_match!(Weekday::Sun, "sunday", "sun"),
-    )))(s);
+    )))
+    .parse(s);
 
     match parse_result {
         Ok((_, weekday)) => Some(weekday),

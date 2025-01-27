@@ -10,8 +10,7 @@ use nom::character::complete::{char, digit1};
 use nom::combinator::all_consuming;
 use nom::multi::fold_many0;
 use nom::sequence::preceded;
-use nom::sequence::tuple;
-use nom::{self, IResult};
+use nom::{self, IResult, Parser};
 
 #[derive(Debug, PartialEq)]
 pub enum ParseTimestampError {
@@ -55,7 +54,7 @@ pub(crate) fn parse_timestamp(s: &str) -> Result<i64, ParseTimestampError> {
 
     let res: IResult<&str, (char, &str)> = all_consuming(preceded(
         char('@'),
-        tuple((
+        (
             // Note: to stay compatible with gnu date this code allows
             // multiple + and - and only considers the last one
             fold_many0(
@@ -67,8 +66,9 @@ pub(crate) fn parse_timestamp(s: &str) -> Result<i64, ParseTimestampError> {
                 |_, c| c,
             ),
             digit1,
-        )),
-    ))(s);
+        ),
+    ))
+    .parse(s);
 
     let (_, (sign, number_str)) = res?;
 
