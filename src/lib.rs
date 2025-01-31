@@ -363,6 +363,7 @@ mod tests {
 
         #[test]
         fn single_digit_month_day() {
+            std::env::set_var("TZ", "UTC");
             let x = Local.with_ymd_and_hms(1987, 5, 7, 0, 0, 0).unwrap();
             let expected = DateTime::fixed_offset(&x);
 
