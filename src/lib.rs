@@ -105,7 +105,7 @@ mod format {
         (YYYYMMDDHHMM_ZULU_OFFSET, 18),
     ];
 
-    pub(crate) const PATTERNS_NOTZ: [(&str, usize); 9] = [
+    pub(crate) const PATTERNS_NO_TZ: [(&str, usize); 9] = [
         (YYYYMMDDHHMMSS, 29),
         (POSIX_LOCALE, 24),
         (YYYYMMDDHHMMSS_HYPHENATED_ZULU, 20),
@@ -117,7 +117,7 @@ mod format {
         (YYYYMMDDHHMM, 12),
     ];
 
-    pub(crate) const PATTERNS_DATE_NOTZ: [(&str, usize); 8] = [
+    pub(crate) const PATTERNS_DATE_NO_TZ: [(&str, usize); 8] = [
         (ISO_8601, 10),
         (MMDDYYYY_SLASH, 10),
         (ISO_8601, 9),
@@ -256,7 +256,7 @@ fn parse_reference_date(date: DateTime<Local>, s: &str) -> Option<(DateTime<Fixe
     }
 
     // DateTimes without timezone.
-    for (pattern, n) in format::PATTERNS_NOTZ {
+    for (pattern, n) in format::PATTERNS_NO_TZ {
         if s.len() >= n {
             if let Ok(parsed) = NaiveDateTime::parse_from_str(&s[0..n], pattern) {
                 // Special case: `chrono` can only parse a datetime like
@@ -281,7 +281,7 @@ fn parse_reference_date(date: DateTime<Local>, s: &str) -> Option<(DateTime<Fixe
     }
 
     // Dates without timezone.
-    for (pattern, n) in format::PATTERNS_DATE_NOTZ {
+    for (pattern, n) in format::PATTERNS_DATE_NO_TZ {
         if s.len() >= n {
             if let Ok(parsed) = NaiveDate::parse_from_str(&s[0..n], pattern) {
                 match date
