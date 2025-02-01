@@ -20,6 +20,8 @@ const DAYS_PER_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 3
 /// * `date` - A `Date` instance representing the base date for the calculation
 /// * `s` - A string slice representing the relative time.
 ///
+/// If `s` is empty, the `date` is returned as-is.
+///
 /// # Supported formats
 ///
 /// The function supports the following formats for relative time:
@@ -51,6 +53,10 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     mut datetime: DateTime<T>,
     s: &str,
 ) -> Result<DateTime<T>, ParseDateTimeError> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(datetime);
+    }
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -279,16 +285,19 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_string() {
+        let now = Utc::now();
+        assert_eq!(parse_relative_time_at_date(now, "").unwrap(), now);
+    }
+
+    #[test]
     fn test_years() {
         let now = Utc::now();
         assert_eq!(
             parse_relative_time_at_date(now, "1 year").unwrap(),
             now.checked_add_months(Months::new(12)).unwrap()
         );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this year").unwrap(),
-            now.checked_add_months(Months::new(0)).unwrap()
-        );
+        assert_eq!(parse_relative_time_at_date(now, "this year").unwrap(), now);
         assert_eq!(
             parse_relative_time_at_date(now, "-2 years").unwrap(),
             now.checked_sub_months(Months::new(24)).unwrap()
@@ -319,25 +328,24 @@ mod tests {
 
     #[test]
     fn test_months() {
+        use crate::parse_relative_time::add_months;
+
         let now = Utc::now();
         assert_eq!(
             parse_relative_time_at_date(now, "1 month").unwrap(),
-            now.checked_add_months(Months::new(1)).unwrap()
+            add_months(now, 1, false).unwrap(),
         );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this month").unwrap(),
-            now.checked_add_months(Months::new(0)).unwrap()
-        );
+        assert_eq!(parse_relative_time_at_date(now, "this month").unwrap(), now);
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks").unwrap(),
-            now.checked_add_months(Months::new(1))
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_add_days(Days::new(14))
                 .unwrap()
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks ago").unwrap(),
-            now.checked_sub_months(Months::new(1))
+            add_months(now, 1, true)
                 .unwrap()
                 .checked_sub_days(Days::new(14))
                 .unwrap()
@@ -348,7 +356,7 @@ mod tests {
         );
         assert_eq!(
             parse_relative_time_at_date(now, "month").unwrap(),
-            now.checked_add_months(Months::new(1)).unwrap()
+            add_months(now, 1, false).unwrap(),
         );
     }
 
@@ -562,6 +570,8 @@ mod tests {
 
     #[test]
     fn test_duration_parsing() {
+        use crate::parse_relative_time::add_months;
+
         let now = Utc::now();
         assert_eq!(
             parse_relative_time_at_date(now, "1 year").unwrap(),
@@ -582,25 +592,25 @@ mod tests {
 
         assert_eq!(
             parse_relative_time_at_date(now, "1 month").unwrap(),
-            now.checked_add_months(Months::new(1)).unwrap()
+            add_months(now, 1, false).unwrap(),
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks").unwrap(),
-            now.checked_add_months(Months::new(1))
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_add_days(Days::new(14))
                 .unwrap()
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month, 2 weeks").unwrap(),
-            now.checked_add_months(Months::new(1))
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_add_days(Days::new(14))
                 .unwrap()
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 months 2 weeks").unwrap(),
-            now.checked_add_months(Months::new(1))
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_add_days(Days::new(14))
                 .unwrap()
@@ -618,7 +628,7 @@ mod tests {
         );
         assert_eq!(
             parse_relative_time_at_date(now, "month").unwrap(),
-            now.checked_add_months(Months::new(1)).unwrap()
+            add_months(now, 1, false).unwrap(),
         );
 
         assert_eq!(
