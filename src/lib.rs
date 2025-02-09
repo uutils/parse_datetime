@@ -575,4 +575,14 @@ mod tests {
             assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
         }
     }
+
+    #[test]
+    fn test_datetime_ending_in_z() {
+        use crate::parse_datetime;
+        use chrono::{TimeZone, Utc};
+
+        let actual = parse_datetime("2023-06-03 12:00:01Z").unwrap();
+        let expected = Utc.with_ymd_and_hms(2023, 6, 3, 12, 0, 1).unwrap();
+        assert_eq!(actual, expected);
+    }
 }
