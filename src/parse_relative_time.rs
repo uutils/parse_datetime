@@ -20,6 +20,8 @@ const DAYS_PER_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 3
 /// * `date` - A `Date` instance representing the base date for the calculation
 /// * `s` - A string slice representing the relative time.
 ///
+/// If `s` is empty, the `date` is returned as-is.
+///
 /// # Supported formats
 ///
 /// The function supports the following formats for relative time:
@@ -51,6 +53,10 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     mut datetime: DateTime<T>,
     s: &str,
 ) -> Result<DateTime<T>, ParseDateTimeError> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(datetime);
+    }
     let time_pattern: Regex = Regex::new(
         r"(?x)
         (?:(?P<value>[-+]?\d*)\s*)?
@@ -276,6 +282,12 @@ mod tests {
         let now = Utc::now();
         let parsed = parse_relative_time_at_date(now, s)?;
         Ok(parsed - now)
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let now = Utc::now();
+        assert_eq!(parse_relative_time_at_date(now, "").unwrap(), now);
     }
 
     #[test]
