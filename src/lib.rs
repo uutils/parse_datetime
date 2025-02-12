@@ -318,7 +318,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     for (fmt, n) in format::PATTERNS_OFFSET {
         if ts.len() == n + 12 {
             let f = format::YYYYMMDDHHMM.to_owned() + fmt;
-            if let Ok(parsed) = DateTime::parse_from_str(&ts[0..n + 12], &f) {
+            if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
                 return Ok(parsed);
             }
         }
