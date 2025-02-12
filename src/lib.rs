@@ -21,8 +21,8 @@ mod parse_time_only_str;
 mod parse_weekday;
 
 use chrono::{
-    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone,
-    Timelike,
+    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, MappedLocalTime, NaiveDateTime,
+    TimeZone, Timelike,
 };
 
 use parse_relative_time::parse_relative_time_at_date;
@@ -78,11 +78,88 @@ mod format {
     pub const YYYYMMDDHHMM_ZULU_OFFSET: &str = "%Y%m%d%H%MZ%z";
     pub const YYYYMMDDHHMM_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M %z";
     pub const YYYYMMDDHHMMSS_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M:%S %#z";
+    pub const YYYYMMDDHHMMSS_HYPHENATED_ZULU: &str = "%Y-%m-%d %H:%M:%SZ";
     pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET: &str = "%Y-%m-%dT%H:%M:%S%#z";
+    pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_SPACE_OFFSET: &str = "%Y-%m-%dT%H:%M:%S %#z";
     pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
     pub const UTC_OFFSET: &str = "UTC%#z";
     pub const ZULU_OFFSET: &str = "Z%#z";
     pub const NAKED_OFFSET: &str = "%#z";
+
+    /// Whether the pattern ends in the character `Z`.
+    pub(crate) fn is_zulu(pattern: &str) -> bool {
+        pattern == YYYYMMDDHHMMSS_HYPHENATED_ZULU
+    }
+
+    /// Patterns for datetimes with timezones.
+    ///
+    /// These are in decreasing order of length. The same pattern may
+    /// appear multiple times with different lengths if the pattern
+    /// accepts input strings of different lengths. For example, the
+    /// specifier `%#z` accepts two-digit time zone offsets (`+00`)
+    /// and four-digit time zone offsets (`+0000`).
+    pub(crate) const PATTERNS_TZ: [(&str, usize); 9] = [
+        (YYYYMMDDHHMMSS_HYPHENATED_OFFSET, 25),
+        (YYYYMMDDHHMMSS_T_SEP_HYPHENATED_SPACE_OFFSET, 25),
+        (YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET, 24),
+        (YYYYMMDDHHMMSS_HYPHENATED_OFFSET, 23),
+        (YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET, 22),
+        (YYYYMMDDHHMM_HYPHENATED_OFFSET, 22),
+        (YYYYMMDDHHMM_UTC_OFFSET, 20),
+        (YYYYMMDDHHMM_OFFSET, 18),
+        (YYYYMMDDHHMM_ZULU_OFFSET, 18),
+    ];
+
+    /// Patterns for datetimes without timezones.
+    ///
+    /// These are in decreasing order of length.
+    pub(crate) const PATTERNS_NO_TZ: [(&str, usize); 8] = [
+        (YYYYMMDDHHMMSS, 29),
+        (POSIX_LOCALE, 24),
+        (YYYYMMDDHHMMSS_HYPHENATED_ZULU, 20),
+        (YYYYMMDDHHMMS_T_SEP, 19),
+        (YYYYMMDDHHMMS, 19),
+        (YYYY_MM_DD_HH_MM, 16),
+        (YYYYMMDDHHMM_DOT_SS, 15),
+        (YYYYMMDDHHMM, 12),
+    ];
+
+    /// Patterns for dates with neither times nor timezones.
+    ///
+    /// These are in decreasing order of length. The same pattern may
+    /// appear multiple times with different lengths if the pattern
+    /// accepts input strings of different lengths. For example, the
+    /// specifier `%m` accepts one-digit month numbers (like `2`) and
+    /// two-digit month numbers (like `02` or `12`).
+    pub(crate) const PATTERNS_DATE_NO_TZ: [(&str, usize); 8] = [
+        (ISO_8601, 10),
+        (MMDDYYYY_SLASH, 10),
+        (ISO_8601, 9),
+        (MMDDYYYY_SLASH, 9),
+        (ISO_8601, 8),
+        (MMDDYY_SLASH, 8),
+        (MMDDYYYY_SLASH, 8),
+        (ISO_8601_NO_SEP, 8),
+    ];
+
+    /// Patterns for lone timezone offsets.
+    ///
+    /// These are in decreasing order of length. The same pattern may
+    /// appear multiple times with different lengths if the pattern
+    /// accepts input strings of different lengths. For example, the
+    /// specifier `%#z` accepts two-digit time zone offsets (`+00`)
+    /// and four-digit time zone offsets (`+0000`).
+    pub(crate) const PATTERNS_OFFSET: [(&str, usize); 9] = [
+        (UTC_OFFSET, 9),
+        (UTC_OFFSET, 8),
+        (ZULU_OFFSET, 7),
+        (UTC_OFFSET, 6),
+        (ZULU_OFFSET, 6),
+        (NAKED_OFFSET, 6),
+        (NAKED_OFFSET, 5),
+        (ZULU_OFFSET, 4),
+        (NAKED_OFFSET, 3),
+    ];
 }
 
 /// Parses a time string and returns a `DateTime` representing the
@@ -161,33 +238,33 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // sign, then insert a 0 between the sign and the digit to make it
     // possible for `chrono` to parse it.
     let pattern = Regex::new(r"([\+-])(\d)$").unwrap();
-    let s = pattern.replace(s.as_ref(), "${1}0${2}");
-    for fmt in [
-        format::YYYYMMDDHHMM_OFFSET,
-        format::YYYYMMDDHHMM_HYPHENATED_OFFSET,
-        format::YYYYMMDDHHMMSS_HYPHENATED_OFFSET,
-        format::YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET,
-        format::YYYYMMDDHHMM_UTC_OFFSET,
-        format::YYYYMMDDHHMM_ZULU_OFFSET,
-    ] {
-        if let Ok(parsed) = DateTime::parse_from_str(s.as_ref(), fmt) {
-            return Ok(parsed);
+    let tmp_s = pattern.replace(s.as_ref(), "${1}0${2}");
+    for (fmt, n) in format::PATTERNS_TZ {
+        if tmp_s.len() >= n {
+            if let Ok(parsed) = DateTime::parse_from_str(&tmp_s[0..n], fmt) {
+                return Ok(parsed);
+            }
         }
     }
 
     // Parse formats with no offset, assume local time
-    for fmt in [
-        format::YYYYMMDDHHMMS_T_SEP,
-        format::YYYYMMDDHHMM,
-        format::YYYYMMDDHHMMS,
-        format::YYYYMMDDHHMMSS,
-        format::YYYY_MM_DD_HH_MM,
-        format::YYYYMMDDHHMM_DOT_SS,
-        format::POSIX_LOCALE,
-    ] {
-        if let Ok(parsed) = NaiveDateTime::parse_from_str(s.as_ref(), fmt) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
-                return Ok(dt);
+    for (fmt, n) in format::PATTERNS_NO_TZ {
+        if s.as_ref().len() >= n {
+            if let Ok(parsed) = NaiveDateTime::parse_from_str(&s.as_ref()[0..n], fmt) {
+                // Special case: `chrono` can only parse a datetime like
+                // `2000-01-01 01:23:45Z` as a naive datetime, so we
+                // manually force it to be in UTC.
+                if format::is_zulu(fmt) {
+                    match FixedOffset::east_opt(0)
+                        .unwrap()
+                        .from_local_datetime(&parsed)
+                    {
+                        MappedLocalTime::Single(datetime) => return Ok(datetime),
+                        _ => return Err(ParseDateTimeError::InvalidInput),
+                    }
+                } else if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+                    return Ok(dt);
+                }
             }
         }
     }
@@ -222,16 +299,13 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 
     let ts = s.as_ref().to_owned() + " 0000";
     // Parse date only formats - assume midnight local timezone
-    for fmt in [
-        format::ISO_8601,
-        format::ISO_8601_NO_SEP,
-        format::MMDDYYYY_SLASH,
-        format::MMDDYY_SLASH,
-    ] {
-        let f = fmt.to_owned() + " %H%M";
-        if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts, &f) {
-            if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
-                return Ok(dt);
+    for (fmt, n) in format::PATTERNS_DATE_NO_TZ {
+        if ts.len() >= n + 5 {
+            let f = fmt.to_owned() + " %H%M";
+            if let Ok(parsed) = NaiveDateTime::parse_from_str(&ts[0..n + 5], &f) {
+                if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
+                    return Ok(dt);
+                }
             }
         }
     }
@@ -240,15 +314,13 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // offsets, so instead we replicate parse_date behaviour by getting
     // the current date with local, and create a date time string at midnight,
     // before trying offset suffixes
-    let ts = format!("{}0000{}", date.format("%Y%m%d"), s);
-    for fmt in [
-        format::UTC_OFFSET,
-        format::ZULU_OFFSET,
-        format::NAKED_OFFSET,
-    ] {
-        let f = format::YYYYMMDDHHMM.to_owned() + fmt;
-        if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
-            return Ok(parsed);
+    let ts = format!("{}0000{}", date.format("%Y%m%d"), tmp_s.as_ref());
+    for (fmt, n) in format::PATTERNS_OFFSET {
+        if ts.len() == n + 12 {
+            let f = format::YYYYMMDDHHMM.to_owned() + fmt;
+            if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
+                return Ok(parsed);
+            }
         }
     }
 
@@ -574,5 +646,15 @@ mod tests {
             let result = parse_datetime("invalid 1");
             assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
         }
+    }
+
+    #[test]
+    fn test_datetime_ending_in_z() {
+        use crate::parse_datetime;
+        use chrono::{TimeZone, Utc};
+
+        let actual = parse_datetime("2023-06-03 12:00:01Z").unwrap();
+        let expected = Utc.with_ymd_and_hms(2023, 6, 3, 12, 0, 1).unwrap();
+        assert_eq!(actual, expected);
     }
 }
