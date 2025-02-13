@@ -657,4 +657,128 @@ mod tests {
         let expected = Utc.with_ymd_and_hms(2023, 6, 3, 12, 0, 1).unwrap();
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn test_parse_invalid_datetime() {
+        assert!(crate::parse_datetime("bogus +1 day").is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_delta() {
+        assert!(crate::parse_datetime("1997-01-01 bogus").is_err());
+    }
+
+    #[test]
+    fn test_parse_datetime_tz_nodelta() {
+        std::env::set_var("TZ", "UTC0");
+
+        // 1997-01-01 00:00:00 +0000
+        let expected = chrono::NaiveDate::from_ymd_opt(1997, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in [
+            "1997-01-01 00:00:00 +0000",
+            "1997-01-01 00:00:00 +00",
+            "199701010000 +0000",
+            "199701010000UTC+0000",
+            "199701010000Z+0000",
+            "1997-01-01 00:00 +0000",
+            "1997-01-01 00:00:00 +0000",
+            "1997-01-01T00:00:00+0000",
+            "1997-01-01T00:00:00+00",
+            "1997-01-01T00:00:00Z",
+            "@852076800",
+        ] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_datetime_notz_nodelta() {
+        std::env::set_var("TZ", "UTC0");
+        let expected = chrono::NaiveDate::from_ymd_opt(1997, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in [
+            "1997-01-01 00:00:00.000000000",
+            "Wed Jan  1 00:00:00 1997",
+            "1997-01-01T00:00:00",
+            "1997-01-01 00:00:00",
+            "1997-01-01 00:00",
+            "199701010000.00",
+            "199701010000",
+        ] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_date_notz_nodelta() {
+        std::env::set_var("TZ", "UTC0");
+        let expected = chrono::NaiveDate::from_ymd_opt(1997, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in ["1997-01-01", "19970101", "01/01/1997", "01/01/97"] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_time_only() {
+        use chrono::{FixedOffset, Local};
+        std::env::set_var("TZ", "UTC");
+
+        let offset = FixedOffset::east_opt(5 * 60 * 60 + 1800).unwrap();
+        let expected = Local::now()
+            .date_naive()
+            .and_hms_opt(21, 4, 30)
+            .unwrap()
+            .and_local_timezone(offset)
+            .unwrap();
+        let actual = crate::parse_datetime("9:04:30 PM +0530").unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_weekday_only() {
+        use chrono::{Datelike, Days, Local, MappedLocalTime, NaiveTime, Weekday};
+        std::env::set_var("TZ", "UTC0");
+        let now = Local::now();
+        let midnight = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
+        let today = now.weekday();
+        let midnight_today = match now.with_time(midnight) {
+            MappedLocalTime::Single(t) => t,
+            _ => panic!(),
+        };
+
+        for (s, day) in [
+            ("sunday", Weekday::Sun),
+            ("monday", Weekday::Mon),
+            ("tuesday", Weekday::Tue),
+            ("wednesday", Weekday::Wed),
+            ("thursday", Weekday::Thu),
+            ("friday", Weekday::Fri),
+            ("saturday", Weekday::Sat),
+        ] {
+            let actual = crate::parse_datetime(s).unwrap();
+            let delta = Days::new(day.days_since(today) as u64);
+            let expected = midnight_today.checked_add_days(delta).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
 }
