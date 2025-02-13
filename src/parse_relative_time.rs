@@ -297,10 +297,7 @@ mod tests {
             parse_relative_time_at_date(now, "1 year").unwrap(),
             now.checked_add_months(Months::new(12)).unwrap()
         );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this year").unwrap(),
-            now.checked_add_months(Months::new(0)).unwrap()
-        );
+        assert_eq!(parse_relative_time_at_date(now, "this year").unwrap(), now);
         assert_eq!(
             parse_relative_time_at_date(now, "-2 years").unwrap(),
             now.checked_sub_months(Months::new(24)).unwrap()
@@ -338,10 +335,7 @@ mod tests {
             parse_relative_time_at_date(now, "1 month").unwrap(),
             add_months(now, 1, false).unwrap(),
         );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this month").unwrap(),
-            now.checked_add_months(Months::new(0)).unwrap()
-        );
+        assert_eq!(parse_relative_time_at_date(now, "this month").unwrap(), now);
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks").unwrap(),
             add_months(now, 1, false)
