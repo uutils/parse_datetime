@@ -80,6 +80,7 @@ mod format {
     pub const YYYYMMDDHHMMSS_HYPHENATED_OFFSET: &str = "%Y-%m-%d %H:%M:%S %#z";
     pub const YYYYMMDDHHMMSS_HYPHENATED_ZULU: &str = "%Y-%m-%d %H:%M:%SZ";
     pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_OFFSET: &str = "%Y-%m-%dT%H:%M:%S%#z";
+    pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_ZULU: &str = "%Y-%m-%dT%H:%M:%SZ";
     pub const YYYYMMDDHHMMSS_T_SEP_HYPHENATED_SPACE_OFFSET: &str = "%Y-%m-%dT%H:%M:%S %#z";
     pub const YYYYMMDDHHMMS_T_SEP: &str = "%Y-%m-%dT%H:%M:%S";
     pub const UTC_OFFSET: &str = "UTC%#z";
@@ -88,7 +89,7 @@ mod format {
 
     /// Whether the pattern ends in the character `Z`.
     pub(crate) fn is_zulu(pattern: &str) -> bool {
-        pattern == YYYYMMDDHHMMSS_HYPHENATED_ZULU
+        pattern == YYYYMMDDHHMMSS_HYPHENATED_ZULU || pattern == YYYYMMDDHHMMSS_T_SEP_HYPHENATED_ZULU
     }
 
     /// Patterns for datetimes with timezones.
@@ -113,10 +114,11 @@ mod format {
     /// Patterns for datetimes without timezones.
     ///
     /// These are in decreasing order of length.
-    pub(crate) const PATTERNS_NO_TZ: [(&str, usize); 8] = [
+    pub(crate) const PATTERNS_NO_TZ: [(&str, usize); 9] = [
         (YYYYMMDDHHMMSS, 29),
         (POSIX_LOCALE, 24),
         (YYYYMMDDHHMMSS_HYPHENATED_ZULU, 20),
+        (YYYYMMDDHHMMSS_T_SEP_HYPHENATED_ZULU, 20),
         (YYYYMMDDHHMMS_T_SEP, 19),
         (YYYYMMDDHHMMS, 19),
         (YYYY_MM_DD_HH_MM, 16),
