@@ -234,8 +234,34 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // TODO: Replace with a proper customiseable parsing solution using `nom`, `grmtools`, or
     // similar
 
-    // Formats with offsets don't require NaiveDateTime workaround
-    //
+    // Try to parse a reference date first. Try parsing from longest
+    // pattern to shortest pattern. If a reference date can be parsed,
+    // then try to parse a time delta from the remaining slice. If no
+    // reference date could be parsed, then try to parse the entire
+    // string as a time delta. If no time delta could be parsed,
+    // return an error.
+    let (ref_date, n) = match parse_reference_date(date, s.as_ref()) {
+        Some((ref_date, n)) => (ref_date, n),
+        None => {
+            let tz = TimeZone::from_offset(date.offset());
+            match date.naive_local().and_local_timezone(tz) {
+                MappedLocalTime::Single(ref_date) => (ref_date, 0),
+                _ => return Err(ParseDateTimeError::InvalidInput),
+            }
+        }
+    };
+    parse_relative_time_at_date(ref_date, &s.as_ref()[n..])
+}
+
+/// Parse an absolute datetime from a prefix of s, if possible.
+///
+/// Try to parse the longest possible absolute datetime at the beginning
+/// of string `s`. Return the parsed datetime and the index in `s` at
+/// which the datetime ended.
+fn parse_reference_date<S>(date: DateTime<Local>, s: S) -> Option<(DateTime<FixedOffset>, usize)>
+where
+    S: AsRef<str>,
+{
     // HACK: if the string ends with a single digit preceded by a + or -
     // sign, then insert a 0 between the sign and the digit to make it
     // possible for `chrono` to parse it.
@@ -244,7 +270,11 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     for (fmt, n) in format::PATTERNS_TZ {
         if tmp_s.len() >= n {
             if let Ok(parsed) = DateTime::parse_from_str(&tmp_s[0..n], fmt) {
-                return Ok(parsed);
+                if tmp_s == s.as_ref() {
+                    return Some((parsed, n));
+                } else {
+                    return Some((parsed, n - 1));
+                }
             }
         }
     }
@@ -261,11 +291,11 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
                         .unwrap()
                         .from_local_datetime(&parsed)
                     {
-                        MappedLocalTime::Single(datetime) => return Ok(datetime),
-                        _ => return Err(ParseDateTimeError::InvalidInput),
+                        MappedLocalTime::Single(datetime) => return Some((datetime, n)),
+                        _ => return None,
                     }
                 } else if let Ok(dt) = naive_dt_to_fixed_offset(date, parsed) {
-                    return Ok(dt);
+                    return Some((dt, n));
                 }
             }
         }
@@ -289,13 +319,13 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 
         let dt = DateTime::<FixedOffset>::from(beginning_of_day);
 
-        return Ok(dt);
+        return Some((dt, s.as_ref().len()));
     }
 
     // Parse epoch seconds
     if let Ok(timestamp) = parse_timestamp(s.as_ref()) {
         if let Some(timestamp_date) = DateTime::from_timestamp(timestamp, 0) {
-            return Ok(timestamp_date.into());
+            return Some((timestamp_date.into(), s.as_ref().len()));
         }
     }
 
@@ -305,7 +335,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
             if let Ok(parsed) = NaiveDate::parse_from_str(&s.as_ref()[0..n], fmt) {
                 let datetime = parsed.and_hms_opt(0, 0, 0).unwrap();
                 if let Ok(dt) = naive_dt_to_fixed_offset(date, datetime) {
-                    return Ok(dt);
+                    return Some((dt, n));
                 }
             }
         }
@@ -320,25 +350,21 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
         if ts.len() == n + 12 {
             let f = format::YYYYMMDDHHMM.to_owned() + fmt;
             if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
-                return Ok(parsed);
+                if tmp_s == s.as_ref() {
+                    return Some((parsed, n));
+                } else {
+                    return Some((parsed, n - 1));
+                }
             }
         }
     }
 
-    // Parse relative time.
-    if let Ok(datetime) = parse_relative_time_at_date(date, s.as_ref()) {
-        return Ok(DateTime::<FixedOffset>::from(datetime));
-    }
-
     // parse time only dates
     if let Some(date_time) = parse_time_only_str::parse_time_only(date, s.as_ref()) {
-        return Ok(date_time);
+        return Some((date_time, s.as_ref().len()));
     }
 
-    // Default parse and failure
-    s.as_ref()
-        .parse()
-        .map_err(|_| (ParseDateTimeError::InvalidInput))
+    None
 }
 
 // Convert NaiveDateTime to DateTime<FixedOffset> by assuming the offset
@@ -664,14 +690,10 @@ mod tests {
         assert!(crate::parse_datetime("bogus +1 day").is_err());
     }
 
-    // TODO Re-enable this when we parse the absolute datetime and the
-    // time delta separately, see
-    // <https://github.com/uutils/parse_datetime/issues/104>.
-    //
-    // #[test]
-    // fn test_parse_invalid_delta() {
-    //     assert!(crate::parse_datetime("1997-01-01 bogus").is_err());
-    // }
+    #[test]
+    fn test_parse_invalid_delta() {
+        assert!(crate::parse_datetime("1997-01-01 bogus").is_err());
+    }
 
     #[test]
     fn test_parse_datetime_tz_nodelta() {
@@ -738,6 +760,80 @@ mod tests {
             .fixed_offset();
 
         for s in ["1997-01-01", "19970101", "01/01/1997", "01/01/97"] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_datetime_tz_delta() {
+        std::env::set_var("TZ", "UTC0");
+
+        // 1998-01-01
+        let expected = chrono::NaiveDate::from_ymd_opt(1998, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in [
+            "1997-01-01 00:00:00 +0000 +1 year",
+            "1997-01-01 00:00:00 +00 +1 year",
+            "199701010000 +0000 +1 year",
+            "199701010000UTC+0000 +1 year",
+            "199701010000Z+0000 +1 year",
+            "1997-01-01T00:00:00Z +1 year",
+            "1997-01-01 00:00 +0000 +1 year",
+            "1997-01-01 00:00:00 +0000 +1 year",
+            "1997-01-01T00:00:00+0000 +1 year",
+            "1997-01-01T00:00:00+00 +1 year",
+        ] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_datetime_notz_delta() {
+        std::env::set_var("TZ", "UTC0");
+        let expected = chrono::NaiveDate::from_ymd_opt(1998, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in [
+            "1997-01-01 00:00:00.000000000 +1 year",
+            "Wed Jan  1 00:00:00 1997 +1 year",
+            "1997-01-01T00:00:00 +1 year",
+            "1997-01-01 00:00:00 +1 year",
+            "1997-01-01 00:00 +1 year",
+            "199701010000.00 +1 year",
+            "199701010000 +1 year",
+        ] {
+            let actual = crate::parse_datetime(s).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_date_notz_delta() {
+        std::env::set_var("TZ", "UTC0");
+        let expected = chrono::NaiveDate::from_ymd_opt(1998, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+
+        for s in [
+            "1997-01-01 +1 year",
+            "19970101 +1 year",
+            "01/01/1997 +1 year",
+            "01/01/97 +1 year",
+        ] {
             let actual = crate::parse_datetime(s).unwrap();
             assert_eq!(actual, expected);
         }
