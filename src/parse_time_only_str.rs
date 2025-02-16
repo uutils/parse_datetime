@@ -140,7 +140,7 @@ mod tests {
         let parsed_time = parse_time_only(get_test_date(), "21:04")
             .unwrap()
             .timestamp();
-        assert_eq!(parsed_time, 1709499840)
+        assert_eq!(parsed_time, 1709499840);
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
         let parsed_time = parse_time_only(get_test_date(), "21:04:30")
             .unwrap()
             .timestamp();
-        assert_eq!(parsed_time, 1709499870)
+        assert_eq!(parsed_time, 1709499870);
     }
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
         let parsed_time = parse_time_only(get_test_date(), "21:04:30 +0530")
             .unwrap()
             .timestamp();
-        assert_eq!(parsed_time, 1709480070)
+        assert_eq!(parsed_time, 1709480070);
     }
 
     #[test]
@@ -205,6 +205,6 @@ mod tests {
         let parsed_time = parse_time_only(get_test_date(), "9:04:00 PM")
             .unwrap()
             .timestamp();
-        assert_eq!(parsed_time, 1709499840)
+        assert_eq!(parsed_time, 1709499840);
     }
 }
