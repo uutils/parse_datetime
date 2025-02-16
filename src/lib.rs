@@ -89,7 +89,7 @@ mod format {
 
     /// Whether the pattern ends in the character `Z`.
     pub(crate) fn is_zulu(pattern: &str) -> bool {
-        pattern == YYYYMMDDHHMMSS_HYPHENATED_ZULU || pattern == YYYYMMDDHHMMSS_T_SEP_HYPHENATED_ZULU
+        pattern.ends_with('Z')
     }
 
     /// Patterns for datetimes with timezones.
