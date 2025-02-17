@@ -18,9 +18,8 @@ A Rust crate for parsing human-readable relative time strings and human-readable
 
 Add this to your `Cargo.toml`:
 
-```toml
-[dependencies]
-parse_datetime = "0.6.0"
+```
+cargo add parse_datetime
 ```
 
 Then, import the crate and use the `parse_datetime_at_date` function:
