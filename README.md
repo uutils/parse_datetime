@@ -16,7 +16,7 @@ A Rust crate for parsing human-readable relative time strings and human-readable
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+Add `parse_datetime` to your `Cargo.toml` with:
 
 ```
 cargo add parse_datetime
