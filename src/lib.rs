@@ -240,14 +240,13 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // reference date could be parsed, then try to parse the entire
     // string as a time delta. If no time delta could be parsed,
     // return an error.
-    let (ref_date, n) = match parse_reference_date(date, s.as_ref()) {
-        Some((ref_date, n)) => (ref_date, n),
-        None => {
-            let tz = TimeZone::from_offset(date.offset());
-            match date.naive_local().and_local_timezone(tz) {
-                MappedLocalTime::Single(ref_date) => (ref_date, 0),
-                _ => return Err(ParseDateTimeError::InvalidInput),
-            }
+    let (ref_date, n) = if let Some((ref_date, n)) = parse_reference_date(date, s.as_ref()) {
+        (ref_date, n)
+    } else {
+        let tz = TimeZone::from_offset(date.offset());
+        match date.naive_local().and_local_timezone(tz) {
+            MappedLocalTime::Single(ref_date) => (ref_date, 0),
+            _ => return Err(ParseDateTimeError::InvalidInput),
         }
     };
     parse_relative_time_at_date(ref_date, &s.as_ref()[n..])
@@ -619,12 +618,12 @@ mod tests {
             for offset in offsets {
                 // positive offset
                 let time = Utc.timestamp_opt(offset, 0).unwrap();
-                let dt = parse_datetime(format!("@{}", offset));
+                let dt = parse_datetime(format!("@{offset}"));
                 assert_eq!(dt.unwrap(), time);
 
                 // negative offset
                 let time = Utc.timestamp_opt(-offset, 0).unwrap();
-                let dt = parse_datetime(format!("@-{}", offset));
+                let dt = parse_datetime(format!("@-{offset}"));
                 assert_eq!(dt.unwrap(), time);
             }
         }
@@ -642,7 +641,7 @@ mod tests {
             let parsed_time = parse_datetime_at_date(test_date, "9:04:30 PM +0530")
                 .unwrap()
                 .timestamp();
-            assert_eq!(parsed_time, 1709480070)
+            assert_eq!(parsed_time, 1709480070);
         }
     }
     /// Used to test example code presented in the README.
@@ -862,9 +861,10 @@ mod tests {
         let now = Local::now();
         let midnight = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
         let today = now.weekday();
-        let midnight_today = match now.with_time(midnight) {
-            MappedLocalTime::Single(t) => t,
-            _ => panic!(),
+        let midnight_today = if let MappedLocalTime::Single(t) = now.with_time(midnight) {
+            t
+        } else {
+            panic!()
         };
 
         for (s, day) in [
@@ -877,7 +877,7 @@ mod tests {
             ("saturday", Weekday::Sat),
         ] {
             let actual = crate::parse_datetime(s).unwrap();
-            let delta = Days::new(day.days_since(today) as u64);
+            let delta = Days::new(u64::from(day.days_since(today)));
             let expected = midnight_today.checked_add_days(delta).unwrap();
             assert_eq!(actual, expected);
         }

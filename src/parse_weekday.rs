@@ -64,9 +64,9 @@ mod tests {
 
         for (name, weekday) in days {
             assert_eq!(parse_weekday(name), Some(weekday));
-            assert_eq!(parse_weekday(&format!(" {}", name)), Some(weekday));
-            assert_eq!(parse_weekday(&format!(" {} ", name)), Some(weekday));
-            assert_eq!(parse_weekday(&format!("{} ", name)), Some(weekday));
+            assert_eq!(parse_weekday(&format!(" {name}")), Some(weekday));
+            assert_eq!(parse_weekday(&format!(" {name} ")), Some(weekday));
+            assert_eq!(parse_weekday(&format!("{name} ")), Some(weekday));
 
             let (left, right) = name.split_at(1);
             let (test_str1, test_str2) = (
