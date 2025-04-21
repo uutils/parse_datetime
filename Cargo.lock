@@ -144,7 +144,7 @@ checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "parse_datetime"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "nom",
