@@ -59,7 +59,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     }
     let time_pattern: Regex = Regex::new(
         r"(?x)
-        (?:(?P<value>[-+]?\d*)\s*)?
+        (?:(?P<value>[-+]?\s*\d*)\s*)?
         (\s*(?P<direction>next|this|last)?\s*)?
         (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today)
         (\s*(?P<separator>and|,)?\s*)?
@@ -73,10 +73,13 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     for capture in time_pattern.captures_iter(s) {
         captures_processed += 1;
 
-        let value_str = capture
+        let value_str: String = capture
             .name("value")
             .ok_or(ParseDateTimeError::InvalidInput)?
-            .as_str();
+            .as_str()
+            .chars()
+            .filter(|c| !c.is_whitespace()) // Remove potential space between +/- and number
+            .collect();
         let value = if value_str.is_empty() {
             1
         } else {
@@ -507,6 +510,19 @@ mod tests {
         assert_eq!(
             parse_duration("30seconds ago").unwrap(),
             Duration::seconds(-30)
+        );
+    }
+
+    #[test]
+    fn test_spaces() {
+        let now = Utc::now();
+        assert_eq!(
+            parse_relative_time_at_date(now, "+ 1 hour").unwrap(),
+            now.checked_add_signed(Duration::hours(1)).unwrap()
+        );
+        assert_eq!(
+            parse_relative_time_at_date(now, "- 1 hour").unwrap(),
+            now.checked_sub_signed(Duration::hours(1)).unwrap()
         );
     }
 
