@@ -78,7 +78,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
             .ok_or(ParseDateTimeError::InvalidInput)?
             .as_str()
             .chars()
-            .filter(|c| !c.is_whitespace())  // Remove potential space between +/- and number
+            .filter(|c| !c.is_whitespace()) // Remove potential space between +/- and number
             .collect();
         let value = if value_str.is_empty() {
             1
