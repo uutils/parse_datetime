@@ -57,14 +57,12 @@ fn parse_time_with_offset_multi(
         time_only_formats::HH_MM_SS,
         time_only_formats::TWELVE_HOUR,
     ] {
-        let parsed = match NaiveTime::parse_from_str(s, fmt) {
-            Ok(t) => t,
-            Err(_) => continue,
+        let Ok(parsed) = NaiveTime::parse_from_str(s, fmt) else {
+            continue;
         };
         let parsed_dt = date.date_naive().and_time(parsed);
-        match offset.from_local_datetime(&parsed_dt).single() {
-            Some(dt) => return Some(dt),
-            None => continue,
+        if let Some(dt) = offset.from_local_datetime(&parsed_dt).single() {
+            return Some(dt);
         }
     }
     None
@@ -84,7 +82,7 @@ pub(crate) fn parse_time_only(date: DateTime<Local>, s: &str) -> Option<DateTime
                     offset_in_sec += minutes.as_str().parse::<i32>().unwrap() * 60;
                 }
                 _ => (),
-            };
+            }
             offset_in_sec *= if &captures["sign"] == "-" { -1 } else { 1 };
             FixedOffset::east_opt(offset_in_sec)
         }

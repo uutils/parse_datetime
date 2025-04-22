@@ -271,9 +271,8 @@ where
             if let Ok(parsed) = DateTime::parse_from_str(&tmp_s[0..n], fmt) {
                 if tmp_s == s.as_ref() {
                     return Some((parsed, n));
-                } else {
-                    return Some((parsed, n - 1));
                 }
+                return Some((parsed, n - 1));
             }
         }
     }
@@ -351,9 +350,8 @@ where
             if let Ok(parsed) = DateTime::parse_from_str(&ts, &f) {
                 if tmp_s == s.as_ref() {
                     return Some((parsed, n));
-                } else {
-                    return Some((parsed, n - 1));
                 }
+                return Some((parsed, n - 1));
             }
         }
     }
