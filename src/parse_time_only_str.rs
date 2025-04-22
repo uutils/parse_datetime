@@ -4,7 +4,7 @@ use regex::Regex;
 mod time_only_formats {
     pub const HH_MM: &str = "%R";
     pub const HH_MM_SS: &str = "%T";
-    pub const TWELVEHOUR: &str = "%r";
+    pub const TWELVE_HOUR: &str = "%r";
 }
 
 /// Convert a military time zone string to a time zone offset.
@@ -55,7 +55,7 @@ fn parse_time_with_offset_multi(
     for fmt in [
         time_only_formats::HH_MM,
         time_only_formats::HH_MM_SS,
-        time_only_formats::TWELVEHOUR,
+        time_only_formats::TWELVE_HOUR,
     ] {
         let parsed = match NaiveTime::parse_from_str(s, fmt) {
             Ok(t) => t,
