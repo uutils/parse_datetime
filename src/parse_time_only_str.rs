@@ -84,7 +84,7 @@ pub(crate) fn parse_time_only(date: DateTime<Local>, s: &str) -> Option<DateTime
                     offset_in_sec += minutes.as_str().parse::<i32>().unwrap() * 60;
                 }
                 _ => (),
-            };
+            }
             offset_in_sec *= if &captures["sign"] == "-" { -1 } else { 1 };
             FixedOffset::east_opt(offset_in_sec)
         }
