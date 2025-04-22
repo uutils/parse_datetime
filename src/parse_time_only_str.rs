@@ -62,9 +62,8 @@ fn parse_time_with_offset_multi(
             Err(_) => continue,
         };
         let parsed_dt = date.date_naive().and_time(parsed);
-        match offset.from_local_datetime(&parsed_dt).single() {
-            Some(dt) => return Some(dt),
-            None => continue,
+        if let Some(dt) = offset.from_local_datetime(&parsed_dt).single() {
+            return Some(dt);
         }
     }
     None
