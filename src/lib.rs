@@ -13,6 +13,8 @@ use regex::Regex;
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub(crate) mod parse;
+
 // Expose parse_datetime
 mod parse_relative_time;
 mod parse_timestamp;

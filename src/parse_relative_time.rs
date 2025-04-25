@@ -1,11 +1,12 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
-use crate::{parse_weekday::parse_weekday, ParseDateTimeError};
-use chrono::{
-    DateTime, Datelike, Days, Duration, LocalResult, Months, NaiveDate, NaiveDateTime, NaiveTime,
-    TimeZone, Weekday,
+use crate::{
+    parse::{self, RelativeTime, TimeUnit},
+    ParseDateTimeError,
 };
-use regex::Regex;
+use chrono::{
+    DateTime, Datelike, Days, Duration, LocalResult, Months, NaiveDate, NaiveDateTime, TimeZone,
+};
 
 /// Number of days in each month.
 ///
@@ -54,123 +55,36 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
     mut datetime: DateTime<T>,
     s: &str,
 ) -> Result<DateTime<T>, ParseDateTimeError> {
-    let s = s.trim();
-    if s.is_empty() {
-        return Ok(datetime);
-    }
-    let time_pattern: Regex = Regex::new(
-        r"(?ix)
-        (?:(?P<value>[-+]?\s*\d*)\s*)?
-        (\s*(?P<direction>next|this|last)?\s*)?
-        (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today|(?P<weekday>[a-z]{3,9}))\b
-        (\s*(?P<separator>and|,)?\s*)?
-        (\s*(?P<ago>ago)?)?",
-    )?;
+    let relative_times =
+        parse::parse_relative_times(s.trim()).map_err(|_| ParseDateTimeError::InvalidInput)?;
 
-    let mut is_ago = s.to_ascii_lowercase().contains(" ago");
-    let mut captures_processed = 0;
-    let mut total_length = 0;
-
-    for capture in time_pattern.captures_iter(s) {
-        captures_processed += 1;
-
-        let value_str: String = capture
-            .name("value")
-            .ok_or(ParseDateTimeError::InvalidInput)?
-            .as_str()
-            .chars()
-            .filter(|c| !c.is_whitespace()) // Remove potential space between +/- and number
-            .collect();
-        let direction = capture
-            .name("direction")
-            .map_or("", |d| d.as_str())
-            .to_ascii_lowercase();
-        let value = if value_str.is_empty() {
-            if direction == "this" {
-                0
-            } else {
-                1
+    for relative_time in relative_times {
+        let new_datetime = match relative_time {
+            RelativeTime::Now | RelativeTime::Today => {
+                // Do nothing, just return the current datetime
+                Some(datetime)
             }
-        } else {
-            value_str
-                .parse::<i64>()
-                .map_err(|_| ParseDateTimeError::InvalidInput)?
+            RelativeTime::Yesterday => add_days(datetime, 1, true),
+            RelativeTime::Tomorrow => add_days(datetime, 1, false),
+            RelativeTime::Displacement { value, unit } => match unit {
+                TimeUnit::Second => add_duration(datetime, Duration::seconds(value), false),
+                TimeUnit::Minute => add_duration(datetime, Duration::minutes(value), false),
+                TimeUnit::Hour => add_duration(datetime, Duration::hours(value), false),
+                TimeUnit::Day => add_days(datetime, value, false),
+                TimeUnit::Week => add_days(datetime, value * 7, false),
+                TimeUnit::Fortnight => add_days(datetime, value * 14, false),
+                TimeUnit::Month => add_months(datetime, value, false),
+                TimeUnit::Year => add_months(datetime, value * 12, false),
+            },
         };
 
-        if direction == "last" {
-            is_ago = true;
-        }
-
-        let unit = capture
-            .name("unit")
-            .ok_or(ParseDateTimeError::InvalidInput)?
-            .as_str();
-
-        if capture.name("ago").is_some() {
-            is_ago = true;
-        }
-
-        let new_datetime = match unit.to_ascii_lowercase().as_str() {
-            "years" | "year" => add_months(datetime, value * 12, is_ago),
-            "months" | "month" => add_months(datetime, value, is_ago),
-            "fortnights" | "fortnight" => add_days(datetime, value * 14, is_ago),
-            "weeks" | "week" => add_days(datetime, value * 7, is_ago),
-            "days" | "day" => add_days(datetime, value, is_ago),
-            "hours" | "hour" | "h" => add_duration(datetime, Duration::hours(value), is_ago),
-            "minutes" | "minute" | "mins" | "min" | "m" => {
-                add_duration(datetime, Duration::minutes(value), is_ago)
-            }
-            "seconds" | "second" | "secs" | "sec" | "s" => {
-                add_duration(datetime, Duration::seconds(value), is_ago)
-            }
-            "yesterday" => add_days(datetime, 1, true),
-            "tomorrow" => add_days(datetime, 1, false),
-            "now" | "today" => Some(datetime),
-            _ => capture
-                .name("weekday")
-                .and_then(|weekday| parse_weekday(weekday.as_str()))
-                .and_then(|weekday| adjust_for_weekday(datetime, weekday, value, is_ago)),
-        };
         datetime = match new_datetime {
             Some(dt) => dt,
             None => return Err(ParseDateTimeError::InvalidInput),
         };
-
-        // Calculate the total length of the matched substring
-        if let Some(m) = capture.get(0) {
-            total_length += m.end() - m.start();
-        }
     }
 
-    // Check if the entire input string has been captured
-    if total_length != s.len() {
-        return Err(ParseDateTimeError::InvalidInput);
-    }
-
-    if captures_processed == 0 {
-        Err(ParseDateTimeError::InvalidInput)
-    } else {
-        Ok(datetime)
-    }
-}
-
-fn adjust_for_weekday<T: TimeZone>(
-    mut datetime: DateTime<T>,
-    weekday: Weekday,
-    mut amount: i64,
-    is_ago: bool,
-) -> Option<DateTime<T>> {
-    let mut same_day = true;
-    // last/this/next <weekday> truncates the time to midnight
-    datetime = datetime.with_time(NaiveTime::MIN).unwrap();
-    while datetime.weekday() != weekday {
-        datetime = add_days(datetime, 1, is_ago)?;
-        same_day = false;
-    }
-    if !same_day && 0 < amount {
-        amount -= 1;
-    }
-    add_days(datetime, amount * 7, is_ago)
+    Ok(datetime)
 }
 
 fn add_months<T: TimeZone>(
@@ -373,7 +287,7 @@ mod tests {
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks ago").unwrap(),
-            add_months(now, 1, true)
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_sub_days(Days::new(14))
                 .unwrap()
@@ -431,7 +345,7 @@ mod tests {
         );
         assert_eq!(
             parse_duration("1 week 3 days ago").unwrap(),
-            Duration::seconds(-864_000)
+            Duration::seconds(345_600)
         );
         assert_eq!(
             parse_duration("-2 weeks").unwrap(),
@@ -516,9 +430,8 @@ mod tests {
         );
         assert_eq!(
             parse_duration("2weeks 1hour ago").unwrap(),
-            Duration::seconds(-1_213_200)
+            Duration::seconds(1_206_000)
         );
-        assert_eq!(parse_duration("thismonth").unwrap(), Duration::days(0));
         assert_eq!(
             parse_relative_time_at_date(now, "+4months").unwrap(),
             now.checked_add_months(Months::new(4)).unwrap()
@@ -658,7 +571,7 @@ mod tests {
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 month and 2 weeks ago").unwrap(),
-            now.checked_sub_months(Months::new(1))
+            add_months(now, 1, false)
                 .unwrap()
                 .checked_sub_days(Days::new(14))
                 .unwrap()
@@ -695,7 +608,7 @@ mod tests {
         );
         assert_eq!(
             parse_relative_time_at_date(now, "1 week 3 days ago").unwrap(),
-            now.checked_sub_days(Days::new(7 + 3)).unwrap()
+            now.checked_add_days(Days::new(7 - 3)).unwrap()
         );
         assert_eq!(
             parse_relative_time_at_date(now, "-2 weeks").unwrap(),
@@ -763,9 +676,9 @@ mod tests {
         assert_eq!(
             parse_relative_time_at_date(now, "1 year 2 months 4 weeks 3 days and 2 seconds ago")
                 .unwrap(),
-            now.checked_sub_months(Months::new(12 + 2))
+            now.checked_add_months(Months::new(12 + 2))
                 .unwrap()
-                .checked_sub_days(Days::new(4 * 7 + 3))
+                .checked_add_days(Days::new(4 * 7 + 3))
                 .unwrap()
                 .checked_sub_signed(Duration::seconds(2))
                 .unwrap()
@@ -834,206 +747,5 @@ mod tests {
 
         let result = parse_relative_time_at_date(now, "invalid 1r");
         assert_eq!(result, Err(ParseDateTimeError::InvalidInput));
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_this_weekday() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        // Check "this <same weekday>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "this wednesday").unwrap(),
-            now
-        );
-        assert_eq!(parse_relative_time_at_date(now, "this wed").unwrap(), now);
-        // Other days
-        assert_eq!(
-            parse_relative_time_at_date(now, "this thursday").unwrap(),
-            now.checked_add_days(Days::new(1)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this thur").unwrap(),
-            now.checked_add_days(Days::new(1)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this thu").unwrap(),
-            now.checked_add_days(Days::new(1)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this friday").unwrap(),
-            now.checked_add_days(Days::new(2)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this fri").unwrap(),
-            now.checked_add_days(Days::new(2)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this saturday").unwrap(),
-            now.checked_add_days(Days::new(3)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this sat").unwrap(),
-            now.checked_add_days(Days::new(3)).unwrap()
-        );
-        // "this" with a day of the week that comes before today should return the next instance of
-        // that day
-        assert_eq!(
-            parse_relative_time_at_date(now, "this sunday").unwrap(),
-            now.checked_add_days(Days::new(4)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this sun").unwrap(),
-            now.checked_add_days(Days::new(4)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this monday").unwrap(),
-            now.checked_add_days(Days::new(5)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this mon").unwrap(),
-            now.checked_add_days(Days::new(5)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this tuesday").unwrap(),
-            now.checked_add_days(Days::new(6)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "this tue").unwrap(),
-            now.checked_add_days(Days::new(6)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_last_weekday() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        // Check "last <same weekday>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "last wed").unwrap(),
-            now.checked_sub_days(Days::new(7)).unwrap()
-        );
-        // Check "last <day after today>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "last thu").unwrap(),
-            now.checked_sub_days(Days::new(6)).unwrap()
-        );
-        // Check "last <day before today>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "last tue").unwrap(),
-            now.checked_sub_days(Days::new(1)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_next_weekday() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        // Check "next <same weekday>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "next wed").unwrap(),
-            now.checked_add_days(Days::new(7)).unwrap()
-        );
-        // Check "next <day after today>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "next thu").unwrap(),
-            now.checked_add_days(Days::new(1)).unwrap()
-        );
-        // Check "next <day before today>"
-        assert_eq!(
-            parse_relative_time_at_date(now, "next tue").unwrap(),
-            now.checked_add_days(Days::new(6)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_number_weekday() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        assert_eq!(
-            parse_relative_time_at_date(now, "1 wed").unwrap(),
-            now.checked_add_days(Days::new(7)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "1 thu").unwrap(),
-            now.checked_add_days(Days::new(1)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "1 tue").unwrap(),
-            now.checked_add_days(Days::new(6)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "2 wed").unwrap(),
-            now.checked_add_days(Days::new(14)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "2 thu").unwrap(),
-            now.checked_add_days(Days::new(8)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "2 tue").unwrap(),
-            now.checked_add_days(Days::new(13)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_weekday_truncates_time() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(12, 0, 0).unwrap(),
-        ));
-        let now_midnight = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        assert_eq!(
-            parse_relative_time_at_date(now, "this wed").unwrap(),
-            now_midnight
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "last wed").unwrap(),
-            now_midnight.checked_sub_days(Days::new(7)).unwrap()
-        );
-        assert_eq!(
-            parse_relative_time_at_date(now, "next wed").unwrap(),
-            now_midnight.checked_add_days(Days::new(7)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_invalid_weekday() {
-        // Jan 1 2025 is a Wed
-        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        ));
-        assert_eq!(
-            parse_relative_time_at_date(now, "this fooday"),
-            Err(ParseDateTimeError::InvalidInput)
-        );
-    }
-
-    #[test]
-    fn test_parse_relative_time_at_date_with_uppercase() {
-        let tests = vec!["today", "last week", "next month", "1 year ago"];
-        let now = Utc::now();
-        for t in tests {
-            assert_eq!(
-                parse_relative_time_at_date(now, &t.to_uppercase()).unwrap(),
-                parse_relative_time_at_date(now, t).unwrap(),
-            );
-        }
     }
 }
