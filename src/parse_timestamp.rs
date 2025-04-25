@@ -1,84 +1,13 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
-use core::fmt;
-use std::error::Error;
-use std::fmt::Display;
-use std::num::ParseIntError;
+use crate::{parse, ParseDateTimeError};
 
-use nom::branch::alt;
-use nom::character::complete::{char, digit1};
-use nom::combinator::all_consuming;
-use nom::multi::fold_many0;
-use nom::sequence::preceded;
-use nom::{self, IResult, Parser};
-
-#[derive(Debug, PartialEq)]
-pub enum ParseTimestampError {
-    InvalidNumber(ParseIntError),
-    InvalidInput,
-}
-
-impl Display for ParseTimestampError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput => {
-                write!(f, "Invalid input string: cannot be parsed as a timestamp")
-            }
-            Self::InvalidNumber(err) => {
-                write!(f, "Invalid timestamp number: {err}")
-            }
-        }
-    }
-}
-
-impl Error for ParseTimestampError {}
-
-// TODO is this necessary
-impl From<ParseIntError> for ParseTimestampError {
-    fn from(err: ParseIntError) -> Self {
-        Self::InvalidNumber(err)
-    }
-}
-
-type NomError<'a> = nom::Err<nom::error::Error<&'a str>>;
-
-impl<'a> From<NomError<'a>> for ParseTimestampError {
-    fn from(_err: NomError<'a>) -> Self {
-        Self::InvalidInput
-    }
-}
-
-pub(crate) fn parse_timestamp(s: &str) -> Result<i64, ParseTimestampError> {
-    let s = s.trim().to_lowercase();
-    let s = s.as_str();
-
-    let res: IResult<&str, (char, &str)> = all_consuming(preceded(
-        char('@'),
-        (
-            // Note: to stay compatible with gnu date this code allows
-            // multiple + and - and only considers the last one
-            fold_many0(
-                // parse either + or -
-                alt((char('+'), char('-'))),
-                // start with a +
-                || '+',
-                // whatever we get (+ or -), update the accumulator to that value
-                |_, c| c,
-            ),
-            digit1,
-        ),
-    ))
-    .parse(s);
-
-    let (_, (sign, number_str)) = res?;
-
-    let mut number = number_str.parse::<i64>()?;
-
-    if sign == '-' {
-        number *= -1;
-    }
-
-    Ok(number)
+pub(crate) fn parse_timestamp(s: &str) -> Result<i64, ParseDateTimeError> {
+    // If the timestamp contains excess precision, it is truncated toward minus
+    // infinity.
+    parse::parse_timestamp(s)
+        .map(|f| f.floor() as i64)
+        .map_err(|_| ParseDateTimeError::InvalidInput)
 }
 
 #[cfg(test)]
@@ -100,6 +29,10 @@ mod tests {
         assert_eq!(parse_timestamp("@+++-12"), Ok(-12));
         assert_eq!(parse_timestamp("@+----+12"), Ok(12));
         assert_eq!(parse_timestamp("@++++-123"), Ok(-123));
+
+        // with excess precision
+        assert_eq!(parse_timestamp("@1234.567"), Ok(1234));
+        assert_eq!(parse_timestamp("@-1234,567"), Ok(-1235));
     }
 
     #[test]

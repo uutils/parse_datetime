@@ -69,7 +69,7 @@ pub(super) fn integer(input: &str) -> IResult<&str, i64> {
 /// sign characters and whitespace characters. All but the last sign character
 /// is ignored, and the last sign character is returned as the result. This
 /// quirky behavior is to stay consistent with GNU date.
-fn sign(input: &str) -> IResult<&str, char> {
+pub(super) fn sign(input: &str) -> IResult<&str, char> {
     fold_many1(
         terminated(one_of("+-"), multispace0),
         || '+',

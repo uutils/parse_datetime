@@ -1,10 +1,12 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 use relative_time::relative_times;
+use timestamp::timestamp;
 use weekday::weekday;
 
 mod primitive;
 mod relative_time;
+mod timestamp;
 mod weekday;
 
 // TODO: more specific errors?
@@ -19,6 +21,13 @@ pub(crate) use weekday::WeekdayItem;
 pub(crate) fn parse_relative_times(input: &str) -> Result<Vec<RelativeTime>, ParseError> {
     relative_times(input)
         .map(|(_, times)| times)
+        .map_err(|_| ParseError)
+}
+
+/// Parses a string of timestamp into a `f64` value (the seconds since epoch).
+pub(crate) fn parse_timestamp(input: &str) -> Result<f64, ParseError> {
+    timestamp(input)
+        .map(|(_, timestamp)| timestamp)
         .map_err(|_| ParseError)
 }
 

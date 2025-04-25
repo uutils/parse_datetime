@@ -14,7 +14,7 @@
 //!     | "wednesday" | "wednes" | "wed"
 //!     | "thursday" | "thurs" | "thur" | "thu"
 //!     | "friday" | "fri"
-//!     | "saturday" | "sat"
+//!     | "saturday" | "sat" ;
 //! ```
 
 use chrono::Weekday;
