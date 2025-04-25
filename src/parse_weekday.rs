@@ -1,100 +1,228 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
-use chrono::Weekday;
-use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::combinator::value;
-use nom::{self, IResult, Parser};
+use chrono::{DateTime, Datelike, Days, NaiveTime, TimeZone};
 
-// Helper macro to simplify tag matching
-macro_rules! tag_match {
-    ($day:expr, $($pattern:expr),+) => {
-        value($day, alt(($(tag($pattern)),+)))
-    };
-}
+use crate::{
+    parse::{self, WeekdayItem},
+    ParseDateTimeError,
+};
 
-pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
-    let s = s.trim().to_lowercase();
-    let s = s.as_str();
+pub fn parse_weekday_at_date<T: TimeZone>(
+    mut datetime: DateTime<T>,
+    s: &str,
+) -> Result<DateTime<T>, ParseDateTimeError> {
+    let WeekdayItem { weekday, ordinal } =
+        parse::parse_weekday(s.trim()).map_err(|_| ParseDateTimeError::InvalidInput)?;
 
-    let parse_result: IResult<&str, Weekday> = nom::combinator::all_consuming(alt((
-        tag_match!(Weekday::Mon, "monday", "mon"),
-        tag_match!(Weekday::Tue, "tuesday", "tues", "tue"),
-        tag_match!(Weekday::Wed, "wednesday", "wednes", "wed"),
-        tag_match!(Weekday::Thu, "thursday", "thurs", "thur", "thu"),
-        tag_match!(Weekday::Fri, "friday", "fri"),
-        tag_match!(Weekday::Sat, "saturday", "sat"),
-        tag_match!(Weekday::Sun, "sunday", "sun"),
-    )))
-    .parse(s);
+    datetime = datetime.with_time(NaiveTime::MIN).unwrap(); // infallible
 
-    match parse_result {
-        Ok((_, weekday)) => Some(weekday),
-        Err(_) => None,
+    let mut ordinal = ordinal.unwrap_or(0);
+    if datetime.weekday() != weekday && ordinal > 0 {
+        ordinal -= 1;
     }
+
+    let days_delta = (i64::from(weekday.num_days_from_monday())
+        - i64::from(datetime.weekday().num_days_from_monday()))
+    .rem_euclid(7)
+        + ordinal * 7;
+
+    let datetime = if days_delta < 0 {
+        datetime.checked_sub_days(Days::new(-days_delta as u64))
+    } else {
+        datetime.checked_add_days(Days::new(days_delta as u64))
+    };
+    datetime.ok_or(ParseDateTimeError::InvalidInput)
 }
 
 #[cfg(test)]
 mod tests {
 
-    use chrono::Weekday::*;
-
-    use crate::parse_weekday::parse_weekday;
+    use super::*;
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
     #[test]
-    fn test_valid_weekdays() {
-        let days = [
-            ("mon", Mon),
-            ("monday", Mon),
-            ("tue", Tue),
-            ("tues", Tue),
-            ("tuesday", Tue),
-            ("wed", Wed),
-            ("wednes", Wed),
-            ("wednesday", Wed),
-            ("thu", Thu),
-            ("thursday", Thu),
-            ("fri", Fri),
-            ("friday", Fri),
-            ("sat", Sat),
-            ("saturday", Sat),
-            ("sun", Sun),
-            ("sunday", Sun),
-        ];
-
-        for (name, weekday) in days {
-            assert_eq!(parse_weekday(name), Some(weekday));
-            assert_eq!(parse_weekday(&format!(" {name}")), Some(weekday));
-            assert_eq!(parse_weekday(&format!(" {name} ")), Some(weekday));
-            assert_eq!(parse_weekday(&format!("{name} ")), Some(weekday));
-
-            let (left, right) = name.split_at(1);
-            let (test_str1, test_str2) = (
-                format!("{}{}", left.to_uppercase(), right.to_lowercase()),
-                format!("{}{}", left.to_lowercase(), right.to_uppercase()),
-            );
-
-            assert_eq!(parse_weekday(&test_str1), Some(weekday));
-            assert_eq!(parse_weekday(&test_str2), Some(weekday));
-        }
+    fn test_parse_weekday_at_date_this_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        // Check "this <same weekday>"
+        assert_eq!(parse_weekday_at_date(now, "this wednesday").unwrap(), now);
+        assert_eq!(parse_weekday_at_date(now, "this wed").unwrap(), now);
+        // Other days
+        assert_eq!(
+            parse_weekday_at_date(now, "this thursday").unwrap(),
+            now.checked_add_days(Days::new(1)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this thur").unwrap(),
+            now.checked_add_days(Days::new(1)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this thu").unwrap(),
+            now.checked_add_days(Days::new(1)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this friday").unwrap(),
+            now.checked_add_days(Days::new(2)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this fri").unwrap(),
+            now.checked_add_days(Days::new(2)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this saturday").unwrap(),
+            now.checked_add_days(Days::new(3)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this sat").unwrap(),
+            now.checked_add_days(Days::new(3)).unwrap()
+        );
+        // "this" with a day of the week that comes before today should return the next instance of
+        // that day
+        assert_eq!(
+            parse_weekday_at_date(now, "this sunday").unwrap(),
+            now.checked_add_days(Days::new(4)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this sun").unwrap(),
+            now.checked_add_days(Days::new(4)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this monday").unwrap(),
+            now.checked_add_days(Days::new(5)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this mon").unwrap(),
+            now.checked_add_days(Days::new(5)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this tuesday").unwrap(),
+            now.checked_add_days(Days::new(6)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "this tue").unwrap(),
+            now.checked_add_days(Days::new(6)).unwrap()
+        );
     }
 
     #[test]
-    fn test_invalid_weekdays() {
-        let days = [
-            "mond",
-            "tuesda",
-            "we",
-            "th",
-            "fr",
-            "sa",
-            "su",
-            "garbageday",
-            "tomorrow",
-            "yesterday",
-        ];
-        for day in days {
-            assert!(parse_weekday(day).is_none());
-        }
+    fn test_parse_weekday_at_date_last_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        // Check "last <same weekday>"
+        assert_eq!(
+            parse_weekday_at_date(now, "last wed").unwrap(),
+            now.checked_sub_days(Days::new(7)).unwrap()
+        );
+        // Check "last <day after today>"
+        assert_eq!(
+            parse_weekday_at_date(now, "last thu").unwrap(),
+            now.checked_sub_days(Days::new(6)).unwrap()
+        );
+        // Check "last <day before today>"
+        assert_eq!(
+            parse_weekday_at_date(now, "last tue").unwrap(),
+            now.checked_sub_days(Days::new(1)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_weekday_at_date_next_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        // Check "next <same weekday>"
+        assert_eq!(
+            parse_weekday_at_date(now, "next wed").unwrap(),
+            now.checked_add_days(Days::new(7)).unwrap()
+        );
+        // Check "next <day after today>"
+        assert_eq!(
+            parse_weekday_at_date(now, "next thu").unwrap(),
+            now.checked_add_days(Days::new(1)).unwrap()
+        );
+        // Check "next <day before today>"
+        assert_eq!(
+            parse_weekday_at_date(now, "next tue").unwrap(),
+            now.checked_add_days(Days::new(6)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_weekday_at_date_number_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            parse_weekday_at_date(now, "1 wed").unwrap(),
+            now.checked_add_days(Days::new(7)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "1 thu").unwrap(),
+            now.checked_add_days(Days::new(1)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "1 tue").unwrap(),
+            now.checked_add_days(Days::new(6)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "2 wed").unwrap(),
+            now.checked_add_days(Days::new(14)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "2 thu").unwrap(),
+            now.checked_add_days(Days::new(8)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "2 tue").unwrap(),
+            now.checked_add_days(Days::new(13)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_weekday_at_date_weekday_truncates_time() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(12, 0, 0).unwrap(),
+        ));
+        let now_midnight = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            parse_weekday_at_date(now, "this wed").unwrap(),
+            now_midnight
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "last wed").unwrap(),
+            now_midnight.checked_sub_days(Days::new(7)).unwrap()
+        );
+        assert_eq!(
+            parse_weekday_at_date(now, "next wed").unwrap(),
+            now_midnight.checked_add_days(Days::new(7)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_weekday_at_date_invalid_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc.from_utc_datetime(&NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            parse_weekday_at_date(now, "this fooday"),
+            Err(ParseDateTimeError::InvalidInput)
+        );
     }
 }

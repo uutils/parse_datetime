@@ -23,12 +23,12 @@ mod parse_time_only_str;
 mod parse_weekday;
 
 use chrono::{
-    DateTime, Datelike, Duration, FixedOffset, Local, LocalResult, MappedLocalTime, NaiveDate,
-    NaiveDateTime, TimeZone, Timelike,
+    DateTime, FixedOffset, Local, LocalResult, MappedLocalTime, NaiveDate, NaiveDateTime, TimeZone,
 };
 
 use parse_relative_time::parse_relative_time_at_date;
 use parse_timestamp::parse_timestamp;
+use parse_weekday::parse_weekday_at_date;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDateTimeError {
@@ -302,23 +302,8 @@ where
     }
 
     // parse weekday
-    if let Some(weekday) = parse_weekday::parse_weekday(s.as_ref()) {
-        let mut beginning_of_day = date
-            .with_hour(0)
-            .unwrap()
-            .with_minute(0)
-            .unwrap()
-            .with_second(0)
-            .unwrap()
-            .with_nanosecond(0)
-            .unwrap();
-
-        while beginning_of_day.weekday() != weekday {
-            beginning_of_day += Duration::days(1);
-        }
-
-        let dt = DateTime::<FixedOffset>::from(beginning_of_day);
-
+    if let Ok(dt) = parse_weekday_at_date(date, s.as_ref()) {
+        let dt = DateTime::<FixedOffset>::from(dt);
         return Some((dt, s.as_ref().len()));
     }
 
