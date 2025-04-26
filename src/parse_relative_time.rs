@@ -59,7 +59,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
         return Ok(datetime);
     }
     let time_pattern: Regex = Regex::new(
-        r"(?x)
+        r"(?ix)
         (?:(?P<value>[-+]?\s*\d*)\s*)?
         (\s*(?P<direction>next|this|last)?\s*)?
         (?P<unit>years?|months?|fortnights?|weeks?|days?|hours?|h|minutes?|mins?|m|seconds?|secs?|s|yesterday|tomorrow|now|today|(?P<weekday>[a-z]{3,9}))\b
@@ -67,7 +67,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
         (\s*(?P<ago>ago)?)?",
     )?;
 
-    let mut is_ago = s.contains(" ago");
+    let mut is_ago = s.to_ascii_lowercase().contains(" ago");
     let mut captures_processed = 0;
     let mut total_length = 0;
 
@@ -81,7 +81,10 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
             .chars()
             .filter(|c| !c.is_whitespace()) // Remove potential space between +/- and number
             .collect();
-        let direction = capture.name("direction").map_or("", |d| d.as_str());
+        let direction = capture
+            .name("direction")
+            .map_or("", |d| d.as_str())
+            .to_ascii_lowercase();
         let value = if value_str.is_empty() {
             if direction == "this" {
                 0
@@ -107,7 +110,7 @@ pub fn parse_relative_time_at_date<T: TimeZone>(
             is_ago = true;
         }
 
-        let new_datetime = match unit {
+        let new_datetime = match unit.to_ascii_lowercase().as_str() {
             "years" | "year" => add_months(datetime, value * 12, is_ago),
             "months" | "month" => add_months(datetime, value, is_ago),
             "fortnights" | "fortnight" => add_days(datetime, value * 14, is_ago),
@@ -1020,5 +1023,17 @@ mod tests {
             parse_relative_time_at_date(now, "this fooday"),
             Err(ParseDateTimeError::InvalidInput)
         );
+    }
+
+    #[test]
+    fn test_parse_relative_time_at_date_with_uppercase() {
+        let tests = vec!["today", "last week", "next month", "1 year ago"];
+        let now = Utc::now();
+        for t in tests {
+            assert_eq!(
+                parse_relative_time_at_date(now, &t.to_uppercase()).unwrap(),
+                parse_relative_time_at_date(now, t).unwrap(),
+            );
+        }
     }
 }
