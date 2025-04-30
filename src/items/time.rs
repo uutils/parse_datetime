@@ -41,8 +41,8 @@ use std::fmt::Display;
 
 use chrono::FixedOffset;
 use winnow::{
-    ascii::{dec_uint, float},
-    combinator::{alt, opt, preceded, terminated},
+    ascii::{dec_uint, digit1, float},
+    combinator::{alt, opt, peek, preceded},
     error::{AddContext, ContextError, ErrMode, StrContext},
     seq,
     stream::AsChar,
@@ -50,7 +50,7 @@ use winnow::{
     PResult, Parser,
 };
 
-use super::{eotoken, s};
+use super::{relative, s};
 
 #[derive(PartialEq, Debug, Clone, Default)]
 pub struct Offset {
@@ -69,16 +69,24 @@ pub struct Time {
 
 impl Offset {
     fn merge(self, offset: Offset) -> Option<Offset> {
-        let Offset { negative, .. } = offset;
-        fn combine(a: u32, b: u32, negative: bool) -> Option<u32> {
-            if negative {
-                a.checked_sub(b)
+        fn combine(a: u32, neg_a: bool, b: u32, neg_b: bool) -> (u32, bool) {
+            if neg_a == neg_b {
+                (a + b, neg_a)
+            } else if a > b {
+                (a - b, neg_a)
             } else {
-                a.checked_add(b)
+                (b - a, neg_b)
             }
         }
-        let hours = combine(self.hours, offset.hours, negative)?;
-        let minutes = combine(self.minutes, offset.minutes, negative)?;
+        let (hours_minutes, negative) = combine(
+            self.hours * 60 + self.minutes,
+            self.negative,
+            offset.hours * 60 + offset.minutes,
+            offset.negative,
+        );
+        let hours = hours_minutes / 60;
+        let minutes = hours_minutes % 60;
+
         Some(Offset {
             negative,
             hours,
@@ -139,7 +147,7 @@ pub fn iso(input: &mut &str) -> PResult<Time> {
             second: 0.0,
             offset: Some(offset),
         }),
-        seq!( Time {
+        seq!(Time {
             hour: hour24,
             _: colon,
             minute: minute,
@@ -206,15 +214,20 @@ fn second(input: &mut &str) -> PResult<f64> {
 }
 
 pub(crate) fn timezone(input: &mut &str) -> PResult<Offset> {
-    let result =
-        terminated(alt((timezone_num, timezone_name_offset)), eotoken).parse_next(input)?;
-
-    // space_or_eof(input, result)
-    Ok(result)
+    alt((timezone_num, timezone_name_offset)).parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`
 fn timezone_num(input: &mut &str) -> PResult<Offset> {
+    // Strings like "+8 years" are ambiguous, they can either be parsed as a
+    // timezone offset "+8" and a relative time "years", or just a relative time
+    // "+8 years". GNU date parses them the second way, so we do the same here.
+    //
+    // Return early if the input can be parsed as a relative time.
+    if peek(relative::parse).parse_next(input).is_ok() {
+        return Err(ErrMode::Backtrack(ContextError::new()));
+    }
+
     seq!(plus_or_minus, alt((timezone_colon, timezone_colonless)))
         .parse_next(input)
         .and_then(|(negative, (hours, minutes))| {
@@ -263,6 +276,19 @@ fn timezone_colon(input: &mut &str) -> PResult<(u32, u32)> {
 
 /// Parse a timezone offset without colon
 fn timezone_colonless(input: &mut &str) -> PResult<(u32, u32)> {
+    if let Ok(x) = peek(s(digit1::<&str, ContextError>)).parse_next(input) {
+        if x.len() > 4 {
+            return Err(ErrMode::Cut(ContextError::new().add_context(
+                &input,
+                StrContext::Expected(winnow::error::StrContextValue::Description(
+                    "timezone offset cannot be more than 4 digits",
+                )),
+            )));
+        }
+    }
+
+    // TODO: GNU date supports number strings with leading zeroes, e.g.,
+    // `UTC+000001100` is valid.
     s(take_while(0..=4, AsChar::is_dec_digit))
         .verify_map(|x: &str| {
             Some(match x.len() {
@@ -271,7 +297,7 @@ fn timezone_colonless(input: &mut &str) -> PResult<(u32, u32)> {
                 // The minutes are the last two characters here, for some reason.
                 3 => (x[..1].parse().ok()?, x[1..].parse().ok()?),
                 4 => (x[..2].parse().ok()?, x[2..].parse().ok()?),
-                _ => unreachable!("We only take up to 4 characters"),
+                _ => return None,
             })
         })
         .parse_next(input)
@@ -284,13 +310,21 @@ fn timezone_name_offset(input: &mut &str) -> PResult<Offset> {
     const MAX_TZ_SIZE: usize = 6;
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
     let tz = tzname_to_offset(nextword)?;
-    if let Ok(other_tz) = timezone_num.parse_next(input) {
-        let newtz = tz
-            .merge(other_tz)
-            .ok_or(ErrMode::Cut(ContextError::new()))?;
 
-        return Ok(newtz);
-    };
+    // Strings like "UTC +8 years" are ambiguous, they can either be parsed as
+    // "UTC+8" and "years", or "UTC" and "+8 years". GNU date parses them the
+    // second way, so we do the same here.
+    //
+    // Only process if the input cannot be parsed as a relative time.
+    if peek(relative::parse).parse_next(input).is_err() {
+        if let Ok(other_tz) = timezone_num.parse_next(input) {
+            let newtz = tz
+                .merge(other_tz)
+                .ok_or(ErrMode::Cut(ContextError::new()))?;
+
+            return Ok(newtz);
+        };
+    }
 
     Ok(tz)
 }
@@ -792,7 +826,7 @@ mod tests {
         use super::timezone;
         let make_timezone = |input: &mut &str| {
             timezone(input)
-                .map_err(|e| eprintln!("TEST FAILED AT:\n{}", anyhow::format_err!("{e}")))
+                .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
                 .map(|offset| format!("{}", offset))
                 .expect("expect tests to succeed")
         };

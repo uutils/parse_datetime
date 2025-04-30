@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn last_wednesday() {
-        for s in ["wednesday", "wed", "wed.", "wednesday"] {
+        for s in ["wednesday", "wed", "wed.", "wednes"] {
             let s = format!("last {s}");
             assert_eq!(
                 parse(&mut s.as_ref()).unwrap(),

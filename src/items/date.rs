@@ -31,7 +31,7 @@ use winnow::{
     combinator::{alt, opt, preceded},
     seq,
     stream::AsChar,
-    token::take_while,
+    token::{take, take_while},
     trace::trace,
     PResult, Parser,
 };
@@ -47,19 +47,36 @@ pub struct Date {
 }
 
 pub fn parse(input: &mut &str) -> PResult<Date> {
-    alt((iso, us, literal1, literal2)).parse_next(input)
+    alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
 
 /// Parse `YYYY-MM-DD` or `YY-MM-DD`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso(input: &mut &str) -> PResult<Date> {
+pub fn iso1(input: &mut &str) -> PResult<Date> {
     seq!(Date {
         year: year.map(Some),
         _: s('-'),
         month: month,
         _: s('-'),
         day: day,
+    })
+    .parse_next(input)
+}
+
+/// Parse `YYYYMMDD`
+///
+/// This is also used by [`combined`](super::combined).
+pub fn iso2(input: &mut &str) -> PResult<Date> {
+    s((
+        take(4usize).try_map(|s: &str| s.parse::<u32>()),
+        take(2usize).try_map(|s: &str| s.parse::<u32>()),
+        take(2usize).try_map(|s: &str| s.parse::<u32>()),
+    ))
+    .map(|(year, month, day): (u32, u32, u32)| Date {
+        day,
+        month,
+        year: Some(year),
     })
     .parse_next(input)
 }
@@ -100,7 +117,7 @@ fn literal2(input: &mut &str) -> PResult<Date> {
 
 pub fn year(input: &mut &str) -> PResult<u32> {
     // 2147485547 is the maximum value accepted
-    // by GNU, but chrono only behave like GNU
+    // by GNU, but chrono only behaves like GNU
     // for years in the range: [0, 9999], so we
     // keep in the range [0, 9999]
     trace(

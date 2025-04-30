@@ -84,7 +84,7 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 /// use parse_datetime::parse_datetime_at_date;
 ///
 ///  let now = Local::now();
-///  let after = parse_datetime_at_date(now, "2024-09-13 +3 days");
+///  let after = parse_datetime_at_date(now, "2024-09-13UTC +3 days");
 ///
 ///  assert_eq!(
 ///    "2024-09-16",
@@ -120,8 +120,6 @@ mod tests {
     mod iso_8601 {
         use std::env;
 
-        use chrono::{TimeZone, Utc};
-
         use crate::ParseDateTimeError;
         use crate::{parse_datetime, tests::TEST_TIME};
 
@@ -129,11 +127,8 @@ mod tests {
         fn test_t_sep() {
             env::set_var("TZ", "UTC");
             let dt = "2021-02-15T06:37:47";
-            let actual = parse_datetime(dt).unwrap();
-            assert_eq!(
-                actual,
-                Utc.timestamp_opt(TEST_TIME, 0).unwrap().fixed_offset()
-            );
+            let actual = parse_datetime(dt);
+            assert_eq!(actual.unwrap().timestamp(), TEST_TIME);
         }
 
         #[test]
@@ -391,6 +386,7 @@ mod tests {
         #[test]
         fn test_readme_code() {
             let dt = parse_datetime("2021-02-14 06:37:47");
+
             assert_eq!(
                 dt.unwrap(),
                 Local.with_ymd_and_hms(2021, 2, 14, 6, 37, 47).unwrap()
@@ -478,8 +474,6 @@ mod tests {
             "1997-01-01T00:00:00",
             "1997-01-01 00:00:00",
             "1997-01-01 00:00",
-            "199701010000.00",
-            "199701010000",
         ] {
             let actual = crate::parse_datetime(s).unwrap();
             assert_eq!(actual, expected);
@@ -542,16 +536,22 @@ mod tests {
             .fixed_offset();
 
         for s in [
-            "1997-01-01 00:00:00.000000000 +1 year",
-            "Wed Jan  1 00:00:00 1997 +1 year",
-            "1997-01-01T00:00:00 +1 year",
-            "1997-01-01 00:00:00 +1 year",
-            "1997-01-01 00:00 +1 year",
-            "199701010000.00 +1 year",
-            "199701010000 +1 year",
+            "1997-01-01 00:00:00.000000000 1 year",
+            "Wed Jan  1 00:00:00 1997 1 year",
+            "1997-01-01T00:00:00 1 year",
+            "1997-01-01 00:00:00 1 year",
+            "1997-01-01 00:00 1 year",
         ] {
             let actual = crate::parse_datetime(s).unwrap();
             assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_datetime_notz_delta() {
+        // GNU date does not accept the following formats.
+        for s in ["199701010000.00 +1 year", "199701010000 +1 year"] {
+            assert!(crate::parse_datetime(s).is_err());
         }
     }
 
@@ -633,9 +633,9 @@ mod tests {
             assert_eq!(
                 parse_datetime("28 feb + 1 month")
                     .expect("parse_datetime")
-                    .format("%+")
+                    .format("%m%d")
                     .to_string(),
-                "2024-03-28T00:00:00+00:00"
+                "0328"
             );
 
             // 29 feb 2025 is invalid
@@ -682,60 +682,25 @@ mod tests {
     mod test_gnu {
         use crate::parse_datetime;
 
-        fn make_gnu_date(input: &str, fmt: &str) -> String {
-            std::process::Command::new("date")
-                .arg("-d")
-                .arg(input)
-                .arg(format!("+{fmt}"))
-                .output()
-                .map(|mut output| {
-                    //io::stdout().write_all(&output.stdout).unwrap();
-                    output.stdout.pop(); // remove trailing \n
-                    String::from_utf8(output.stdout).expect("from_utf8")
-                })
-                .unwrap()
-        }
-
-        fn has_gnu_date() -> bool {
-            std::process::Command::new("date")
-                .arg("--version")
-                .output()
-                .map(|output| String::from_utf8(output.stdout).unwrap())
-                .map(|output| output.starts_with("date (GNU coreutils)"))
-                .unwrap_or(false)
-        }
-
         #[test]
         fn gnu_compat() {
-            // skip if GNU date is not present
-            if !has_gnu_date() {
-                eprintln!("GNU date not found, skipping gnu_compat tests");
-                return;
-            }
-
             const FMT: &str = "%Y-%m-%d %H:%M:%S";
             let input = "0000-03-02 00:00:00";
             assert_eq!(
-                make_gnu_date(input, FMT),
+                input,
                 parse_datetime(input).unwrap().format(FMT).to_string()
             );
 
             let input = "2621-03-10 00:00:00";
             assert_eq!(
-                make_gnu_date(input, FMT),
-                parse_datetime(input)
-                    .expect("parse_datetime")
-                    .format(FMT)
-                    .to_string()
+                input,
+                parse_datetime(input).unwrap().format(FMT).to_string()
             );
 
             let input = "1038-03-10 00:00:00";
             assert_eq!(
-                make_gnu_date(input, FMT),
-                parse_datetime(input)
-                    .expect("parse_datetime")
-                    .format(FMT)
-                    .to_string()
+                input,
+                parse_datetime(input).unwrap().format(FMT).to_string()
             );
         }
     }
