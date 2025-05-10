@@ -10,6 +10,5 @@ readme = "README.md"
 [dependencies]
 regex = "1.10.4"
 chrono = { version="0.4.38", default-features=false, features=["std", "alloc", "clock"] }
-nom = "8.0.0"
-winnow = "0.5.34"
+winnow = "0.7.10"
 num-traits = "0.2.19"

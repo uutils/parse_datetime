@@ -5,14 +5,14 @@ use super::s;
 use winnow::{
     ascii::{alpha1, dec_uint},
     combinator::{alt, opt},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
-pub fn ordinal(input: &mut &str) -> PResult<i32> {
+pub fn ordinal(input: &mut &str) -> ModalResult<i32> {
     alt((text_ordinal, number_ordinal)).parse_next(input)
 }
 
-fn number_ordinal(input: &mut &str) -> PResult<i32> {
+fn number_ordinal(input: &mut &str) -> ModalResult<i32> {
     let sign = opt(alt(('+'.value(1), '-'.value(-1)))).map(|s| s.unwrap_or(1));
     (s(sign), s(dec_uint))
         .verify_map(|(s, u): (i32, u32)| {
@@ -22,7 +22,7 @@ fn number_ordinal(input: &mut &str) -> PResult<i32> {
         .parse_next(input)
 }
 
-fn text_ordinal(input: &mut &str) -> PResult<i32> {
+fn text_ordinal(input: &mut &str) -> ModalResult<i32> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s {

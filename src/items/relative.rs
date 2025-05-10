@@ -34,7 +34,7 @@
 use winnow::{
     ascii::{alpha1, float},
     combinator::{alt, opt},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use super::{ordinal::ordinal, s};
@@ -63,7 +63,7 @@ impl Relative {
     }
 }
 
-pub fn parse(input: &mut &str) -> PResult<Relative> {
+pub fn parse(input: &mut &str) -> ModalResult<Relative> {
     alt((
         s("tomorrow").value(Relative::Days(1)),
         s("yesterday").value(Relative::Days(-1)),
@@ -76,7 +76,7 @@ pub fn parse(input: &mut &str) -> PResult<Relative> {
     .parse_next(input)
 }
 
-fn seconds(input: &mut &str) -> PResult<Relative> {
+fn seconds(input: &mut &str) -> ModalResult<Relative> {
     (
         opt(alt((s(float), ordinal.map(|x| x as f64)))),
         s(alpha1).verify(|s: &str| matches!(s, "seconds" | "second" | "sec" | "secs")),
@@ -86,17 +86,17 @@ fn seconds(input: &mut &str) -> PResult<Relative> {
         .parse_next(input)
 }
 
-fn other(input: &mut &str) -> PResult<Relative> {
+fn other(input: &mut &str) -> ModalResult<Relative> {
     (opt(ordinal), integer_unit, ago)
         .map(|(n, unit, ago)| unit.mul(n.unwrap_or(1) * if ago { -1 } else { 1 }))
         .parse_next(input)
 }
 
-fn ago(input: &mut &str) -> PResult<bool> {
+fn ago(input: &mut &str) -> ModalResult<bool> {
     opt(s("ago")).map(|o| o.is_some()).parse_next(input)
 }
 
-fn integer_unit(input: &mut &str) -> PResult<Relative> {
+fn integer_unit(input: &mut &str) -> ModalResult<Relative> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s.strip_suffix('s').unwrap_or(s) {
