@@ -21,7 +21,7 @@
 //! >
 //! > A comma following a day of the week item is ignored.
 
-use winnow::{ascii::alpha1, combinator::opt, seq, PResult, Parser};
+use winnow::{ascii::alpha1, combinator::opt, seq, ModalResult, Parser};
 
 use super::{ordinal::ordinal, s};
 
@@ -55,7 +55,7 @@ impl From<Day> for chrono::Weekday {
         }
     }
 }
-pub fn parse(input: &mut &str) -> PResult<Weekday> {
+pub fn parse(input: &mut &str) -> ModalResult<Weekday> {
     seq!(Weekday {
         offset: opt(ordinal).map(|o| o.unwrap_or_default()),
         day: day,
@@ -63,7 +63,7 @@ pub fn parse(input: &mut &str) -> PResult<Weekday> {
     .parse_next(input)
 }
 
-fn day(input: &mut &str) -> PResult<Day> {
+fn day(input: &mut &str) -> ModalResult<Day> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s {

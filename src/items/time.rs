@@ -41,16 +41,16 @@ use std::fmt::Display;
 
 use chrono::FixedOffset;
 use winnow::{
-    ascii::{dec_uint, digit1, float},
+    ascii::{digit1, float},
     combinator::{alt, opt, peek, preceded},
-    error::{AddContext, ContextError, ErrMode, StrContext},
+    error::{ContextError, ErrMode, StrContext, StrContextValue},
     seq,
     stream::AsChar,
     token::take_while,
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
-use super::{relative, s};
+use super::{dec_uint, relative, s};
 
 #[derive(PartialEq, Debug, Clone, Default)]
 pub struct Offset {
@@ -132,14 +132,14 @@ enum Suffix {
     Pm,
 }
 
-pub fn parse(input: &mut &str) -> PResult<Time> {
+pub fn parse(input: &mut &str) -> ModalResult<Time> {
     alt((am_pm_time, iso)).parse_next(input)
 }
 
 /// Parse an ISO 8601 time string
 ///
 /// Also used by the [`combined`](super::combined) module
-pub fn iso(input: &mut &str) -> PResult<Time> {
+pub fn iso(input: &mut &str) -> ModalResult<Time> {
     alt((
         (hour24, timezone).map(|(hour, offset)| Time {
             hour,
@@ -161,7 +161,7 @@ pub fn iso(input: &mut &str) -> PResult<Time> {
 /// Parse a time ending with AM or PM
 ///
 /// The hours are restricted to 12 or lower in this format
-fn am_pm_time(input: &mut &str) -> PResult<Time> {
+fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
     seq!(
         hour12,
         opt(preceded(colon, minute)),
@@ -189,36 +189,36 @@ fn am_pm_time(input: &mut &str) -> PResult<Time> {
 }
 
 /// Parse a colon preceded by whitespace
-fn colon(input: &mut &str) -> PResult<()> {
+fn colon(input: &mut &str) -> ModalResult<()> {
     s(':').void().parse_next(input)
 }
 
 /// Parse a number of hours in `0..24`(preceded by whitespace)
-fn hour24(input: &mut &str) -> PResult<u32> {
+fn hour24(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint).verify(|x| *x < 24).parse_next(input)
 }
 
 /// Parse a number of hours in `0..=12` (preceded by whitespace)
-fn hour12(input: &mut &str) -> PResult<u32> {
+fn hour12(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint).verify(|x| *x <= 12).parse_next(input)
 }
 
 /// Parse a number of minutes (preceded by whitespace)
-fn minute(input: &mut &str) -> PResult<u32> {
+fn minute(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint).verify(|x| *x < 60).parse_next(input)
 }
 
 /// Parse a number of seconds (preceded by whitespace)
-fn second(input: &mut &str) -> PResult<f64> {
+fn second(input: &mut &str) -> ModalResult<f64> {
     s(float).verify(|x| *x < 60.0).parse_next(input)
 }
 
-pub(crate) fn timezone(input: &mut &str) -> PResult<Offset> {
+pub(crate) fn timezone(input: &mut &str) -> ModalResult<Offset> {
     alt((timezone_num, timezone_name_offset)).parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`
-fn timezone_num(input: &mut &str) -> PResult<Offset> {
+fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
     // Strings like "+8 years" are ambiguous, they can either be parsed as a
     // timezone offset "+8" and a relative time "years", or just a relative time
     // "+8 years". GNU date parses them the second way, so we do the same here.
@@ -232,21 +232,19 @@ fn timezone_num(input: &mut &str) -> PResult<Offset> {
         .parse_next(input)
         .and_then(|(negative, (hours, minutes))| {
             if !(0..=12).contains(&hours) {
-                return Err(ErrMode::Cut(ContextError::new().add_context(
-                    &input,
-                    StrContext::Expected(winnow::error::StrContextValue::Description(
-                        "timezone hour between 0 and 12",
-                    )),
+                let mut ctx_err = ContextError::new();
+                ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                    "timezone hour between 0 and 12",
                 )));
+                return Err(ErrMode::Cut(ctx_err));
             }
 
             if !(0..=60).contains(&minutes) {
-                return Err(ErrMode::Cut(ContextError::new().add_context(
-                    &input,
-                    StrContext::Expected(winnow::error::StrContextValue::Description(
-                        "timezone minute between 0 and 60",
-                    )),
+                let mut ctx_err = ContextError::new();
+                ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                    "timezone minute between 0 and 60",
                 )));
+                return Err(ErrMode::Cut(ctx_err));
             }
 
             Ok(Offset {
@@ -258,7 +256,7 @@ fn timezone_num(input: &mut &str) -> PResult<Offset> {
 }
 
 /// Parse a timezone offset with a colon separating hours and minutes
-fn timezone_colon(input: &mut &str) -> PResult<(u32, u32)> {
+fn timezone_colon(input: &mut &str) -> ModalResult<(u32, u32)> {
     seq!(
         s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| {
             // parse will fail on empty input
@@ -275,15 +273,14 @@ fn timezone_colon(input: &mut &str) -> PResult<(u32, u32)> {
 }
 
 /// Parse a timezone offset without colon
-fn timezone_colonless(input: &mut &str) -> PResult<(u32, u32)> {
+fn timezone_colonless(input: &mut &str) -> ModalResult<(u32, u32)> {
     if let Ok(x) = peek(s(digit1::<&str, ContextError>)).parse_next(input) {
         if x.len() > 4 {
-            return Err(ErrMode::Cut(ContextError::new().add_context(
-                &input,
-                StrContext::Expected(winnow::error::StrContextValue::Description(
-                    "timezone offset cannot be more than 4 digits",
-                )),
+            let mut ctx_err = ContextError::new();
+            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                "timezone offset cannot be more than 4 digits",
             )));
+            return Err(ErrMode::Cut(ctx_err));
         }
     }
 
@@ -304,7 +301,7 @@ fn timezone_colonless(input: &mut &str) -> PResult<(u32, u32)> {
 }
 
 /// Parse a timezone by name
-fn timezone_name_offset(input: &mut &str) -> PResult<Offset> {
+fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     /// I'm assuming there are no timezone abbreviations with more
     /// than 6 charactres
     const MAX_TZ_SIZE: usize = 6;
@@ -331,7 +328,7 @@ fn timezone_name_offset(input: &mut &str) -> PResult<Offset> {
 
 /// Timezone list extracted from:
 ///   https://www.timeanddate.com/time/zones/
-fn tzname_to_offset(input: &str) -> PResult<Offset> {
+fn tzname_to_offset(input: &str) -> ModalResult<Offset> {
     let mut offset_str = match input {
         "z" => Ok("+0"),
         "yekt" => Ok("+5"),
@@ -568,7 +565,7 @@ fn tzname_to_offset(input: &str) -> PResult<Offset> {
 }
 
 /// Parse the plus or minus character and return whether it was negative
-fn plus_or_minus(input: &mut &str) -> PResult<bool> {
+fn plus_or_minus(input: &mut &str) -> ModalResult<bool> {
     s(alt(("+".value(false), "-".value(true)))).parse_next(input)
 }
 
