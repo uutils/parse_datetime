@@ -4,6 +4,7 @@ name: Basic CI
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_MIN_SRV: "1.71.1"
 
 jobs:
   check:
@@ -48,6 +49,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup component add clippy
       - run: cargo clippy --all-targets -- -D warnings
+
+  min_version:
+    name: Minimum Supported Rust Version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_MIN_SRV }}
+      - run: cargo test
 
   coverage:
     name: Code Coverage
