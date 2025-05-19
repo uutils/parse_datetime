@@ -13,7 +13,10 @@
 //! > seconds are allowed, with either comma or period preceding the fraction.
 //! > ISO 8601 fractional minutes and hours are not supported. Typically, hosts
 //! > support nanosecond timestamp resolution; excess precision is silently discarded.
-use winnow::{combinator::alt, seq, trace::trace, PResult, Parser};
+use winnow::{
+    combinator::{alt, trace},
+    seq, ModalResult, Parser,
+};
 
 use crate::items::space;
 
@@ -29,7 +32,7 @@ pub struct DateTime {
     pub(crate) time: Time,
 }
 
-pub fn parse(input: &mut &str) -> PResult<DateTime> {
+pub fn parse(input: &mut &str) -> ModalResult<DateTime> {
     seq!(DateTime {
         date: trace("date iso", alt((date::iso1, date::iso2))),
         // Note: the `T` is lowercased by the main parse function

@@ -27,16 +27,15 @@
 //! > ‘September’.
 
 use winnow::{
-    ascii::{alpha1, dec_uint},
-    combinator::{alt, opt, preceded},
+    ascii::alpha1,
+    combinator::{alt, opt, preceded, trace},
     seq,
     stream::AsChar,
     token::{take, take_while},
-    trace::trace,
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
-use super::s;
+use super::{dec_uint, s};
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
@@ -46,14 +45,14 @@ pub struct Date {
     pub year: Option<u32>,
 }
 
-pub fn parse(input: &mut &str) -> PResult<Date> {
+pub fn parse(input: &mut &str) -> ModalResult<Date> {
     alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
 
 /// Parse `YYYY-MM-DD` or `YY-MM-DD`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso1(input: &mut &str) -> PResult<Date> {
+pub fn iso1(input: &mut &str) -> ModalResult<Date> {
     seq!(Date {
         year: year.map(Some),
         _: s('-'),
@@ -67,7 +66,7 @@ pub fn iso1(input: &mut &str) -> PResult<Date> {
 /// Parse `YYYYMMDD`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso2(input: &mut &str) -> PResult<Date> {
+pub fn iso2(input: &mut &str) -> ModalResult<Date> {
     s((
         take(4usize).try_map(|s: &str| s.parse::<u32>()),
         take(2usize).try_map(|s: &str| s.parse::<u32>()),
@@ -82,7 +81,7 @@ pub fn iso2(input: &mut &str) -> PResult<Date> {
 }
 
 /// Parse `MM/DD/YYYY`, `MM/DD/YY` or `MM/DD`
-fn us(input: &mut &str) -> PResult<Date> {
+fn us(input: &mut &str) -> ModalResult<Date> {
     seq!(Date {
         month: month,
         _: s('/'),
@@ -93,7 +92,7 @@ fn us(input: &mut &str) -> PResult<Date> {
 }
 
 /// Parse `14 November 2022`, `14 Nov 2022`, "14nov2022", "14-nov-2022", "14-nov2022", "14nov-2022"
-fn literal1(input: &mut &str) -> PResult<Date> {
+fn literal1(input: &mut &str) -> ModalResult<Date> {
     seq!(Date {
         day: day,
         _: opt(s('-')),
@@ -104,7 +103,7 @@ fn literal1(input: &mut &str) -> PResult<Date> {
 }
 
 /// Parse `November 14, 2022` and `Nov 14, 2022`
-fn literal2(input: &mut &str) -> PResult<Date> {
+fn literal2(input: &mut &str) -> ModalResult<Date> {
     seq!(Date {
         month: literal_month,
         day: day,
@@ -115,7 +114,7 @@ fn literal2(input: &mut &str) -> PResult<Date> {
     .parse_next(input)
 }
 
-pub fn year(input: &mut &str) -> PResult<u32> {
+pub fn year(input: &mut &str) -> ModalResult<u32> {
     // 2147485547 is the maximum value accepted
     // by GNU, but chrono only behaves like GNU
     // for years in the range: [0, 9999], so we
@@ -140,7 +139,7 @@ pub fn year(input: &mut &str) -> PResult<u32> {
     .parse_next(input)
 }
 
-fn month(input: &mut &str) -> PResult<u32> {
+fn month(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint)
         .try_map(|x| {
             (1..=12)
@@ -151,7 +150,7 @@ fn month(input: &mut &str) -> PResult<u32> {
         .parse_next(input)
 }
 
-fn day(input: &mut &str) -> PResult<u32> {
+fn day(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint)
         .try_map(|x| {
             (1..=31)
@@ -163,7 +162,7 @@ fn day(input: &mut &str) -> PResult<u32> {
 }
 
 /// Parse the name of a month (case-insensitive)
-fn literal_month(input: &mut &str) -> PResult<u32> {
+fn literal_month(input: &mut &str) -> ModalResult<u32> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s {

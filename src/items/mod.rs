@@ -34,18 +34,18 @@ mod relative;
 mod time;
 mod weekday;
 mod epoch {
-    use winnow::{ascii::dec_int, combinator::preceded, PResult, Parser};
+    use winnow::{combinator::preceded, ModalResult, Parser};
 
-    use super::s;
-    pub fn parse(input: &mut &str) -> PResult<i32> {
+    use super::{dec_int, s};
+    pub fn parse(input: &mut &str) -> ModalResult<i32> {
         s(preceded("@", dec_int)).parse_next(input)
     }
 }
 mod timezone {
     use super::time;
-    use winnow::PResult;
+    use winnow::ModalResult;
 
-    pub(crate) fn parse(input: &mut &str) -> PResult<time::Offset> {
+    pub(crate) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
         time::timezone(input)
     }
 }
@@ -53,15 +53,14 @@ mod timezone {
 use chrono::NaiveDate;
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
 
-use winnow::error::{AddContext, ParserError, StrContext};
-use winnow::error::{ContextError, ErrMode};
-use winnow::trace::trace;
+use winnow::error::{StrContext, StrContextValue};
 use winnow::{
-    ascii::multispace0,
-    combinator::{alt, delimited, not, peek, preceded, repeat, separated},
+    ascii::{digit1, multispace0},
+    combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated, trace},
+    error::{ContextError, ErrMode, ParserError},
     stream::AsChar,
-    token::{none_of, take_while},
-    PResult, Parser,
+    token::{none_of, one_of, take_while},
+    ModalResult, Parser,
 };
 
 use crate::ParseDateTimeError;
@@ -93,7 +92,7 @@ where
 /// Parse the space in-between tokens
 ///
 /// You probably want to use the [`s`] combinator instead.
-fn space<'a, E>(input: &mut &'a str) -> PResult<(), E>
+fn space<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
 {
@@ -110,7 +109,7 @@ where
 /// The last comment should be ignored.
 ///
 /// The plus is undocumented, but it seems to be ignored.
-fn ignored_hyphen_or_plus<'a, E>(input: &mut &'a str) -> PResult<(), E>
+fn ignored_hyphen_or_plus<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
 {
@@ -127,7 +126,7 @@ where
 ///
 /// A comment is given between parentheses, which must be balanced. Any other
 /// tokens can be within the comment.
-fn comment<'a, E>(input: &mut &'a str) -> PResult<(), E>
+fn comment<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
 {
@@ -139,8 +138,45 @@ where
     .parse_next(input)
 }
 
+/// Parse a signed decimal integer.
+///
+/// Rationale for not using `winnow::ascii::dec_int`: When upgrading winnow from
+/// 0.5 to 0.7, we discovered that `winnow::ascii::dec_int` now accepts only the
+/// following two forms:
+///
+/// - 0
+/// - [+-][1-9][0-9]*
+///
+/// Inputs like [+-]0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
+/// custom implementation to support such zero-prefixed integers.
+fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
+where
+    E: ParserError<&'a str>,
+{
+    (opt(one_of(['+', '-'])), digit1)
+        .void()
+        .take()
+        .verify_map(|s: &str| s.parse().ok())
+        .parse_next(input)
+}
+
+/// Parse an unsigned decimal integer.
+///
+/// See the rationale for `dec_int` for why we don't use
+/// `winnow::ascii::dec_uint`.
+fn dec_uint<'a, E>(input: &mut &'a str) -> winnow::Result<u32, E>
+where
+    E: ParserError<&'a str>,
+{
+    digit1
+        .void()
+        .take()
+        .verify_map(|s: &str| s.parse().ok())
+        .parse_next(input)
+}
+
 // Parse an item
-pub fn parse_one(input: &mut &str) -> PResult<Item> {
+pub fn parse_one(input: &mut &str) -> ModalResult<Item> {
     trace(
         "parse_one",
         alt((
@@ -157,7 +193,7 @@ pub fn parse_one(input: &mut &str) -> PResult<Item> {
     .parse_next(input)
 }
 
-pub fn parse(input: &mut &str) -> PResult<Vec<Item>> {
+pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
     let mut items = Vec::new();
     let mut date_seen = false;
     let mut time_seen = false;
@@ -170,12 +206,13 @@ pub fn parse(input: &mut &str) -> PResult<Vec<Item>> {
                 match item {
                     Item::DateTime(ref dt) => {
                         if date_seen || time_seen {
-                            return Err(ErrMode::Backtrack(ContextError::new().add_context(
-                                &input,
-                                StrContext::Expected(winnow::error::StrContextValue::Description(
+                            let mut ctx_err = ContextError::new();
+                            ctx_err.push(StrContext::Expected(
+                                winnow::error::StrContextValue::Description(
                                     "date or time cannot appear more than once",
-                                )),
-                            )));
+                                ),
+                            ));
+                            return Err(ErrMode::Backtrack(ctx_err));
                         }
 
                         date_seen = true;
@@ -186,12 +223,11 @@ pub fn parse(input: &mut &str) -> PResult<Vec<Item>> {
                     }
                     Item::Date(ref d) => {
                         if date_seen {
-                            return Err(ErrMode::Backtrack(ContextError::new().add_context(
-                                &input,
-                                StrContext::Expected(winnow::error::StrContextValue::Description(
-                                    "date cannot appear more than once",
-                                )),
+                            let mut ctx_err = ContextError::new();
+                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                                "date cannot appear more than once",
                             )));
+                            return Err(ErrMode::Backtrack(ctx_err));
                         }
 
                         date_seen = true;
@@ -201,34 +237,31 @@ pub fn parse(input: &mut &str) -> PResult<Vec<Item>> {
                     }
                     Item::Time(_) => {
                         if time_seen {
-                            return Err(ErrMode::Backtrack(ContextError::new().add_context(
-                                &input,
-                                StrContext::Expected(winnow::error::StrContextValue::Description(
-                                    "time cannot appear more than once",
-                                )),
+                            let mut ctx_err = ContextError::new();
+                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                                "time cannot appear more than once",
                             )));
+                            return Err(ErrMode::Backtrack(ctx_err));
                         }
                         time_seen = true;
                     }
                     Item::Year(_) => {
                         if year_seen {
-                            return Err(ErrMode::Backtrack(ContextError::new().add_context(
-                                &input,
-                                StrContext::Expected(winnow::error::StrContextValue::Description(
-                                    "year cannot appear more than once",
-                                )),
+                            let mut ctx_err = ContextError::new();
+                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                                "year cannot appear more than once",
                             )));
+                            return Err(ErrMode::Backtrack(ctx_err));
                         }
                         year_seen = true;
                     }
                     Item::TimeZone(_) => {
                         if tz_seen {
-                            return Err(ErrMode::Backtrack(ContextError::new().add_context(
-                                &input,
-                                StrContext::Expected(winnow::error::StrContextValue::Description(
-                                    "timezone cannot appear more than once",
-                                )),
+                            let mut ctx_err = ContextError::new();
+                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                                "timezone cannot appear more than once",
                             )));
+                            return Err(ErrMode::Backtrack(ctx_err));
                         }
                         tz_seen = true;
                     }
