@@ -53,18 +53,18 @@ use winnow::{
 use super::{dec_uint, relative, s};
 
 #[derive(PartialEq, Debug, Clone, Default)]
-pub struct Offset {
+pub(crate) struct Offset {
     pub(crate) negative: bool,
     pub(crate) hours: u32,
     pub(crate) minutes: u32,
 }
 
 #[derive(PartialEq, Clone, Debug, Default)]
-pub struct Time {
-    pub hour: u32,
-    pub minute: u32,
-    pub second: f64,
-    pub offset: Option<Offset>,
+pub(crate) struct Time {
+    pub(crate) hour: u32,
+    pub(crate) minute: u32,
+    pub(crate) second: f64,
+    pub(crate) offset: Option<Offset>,
 }
 
 impl Offset {
@@ -132,14 +132,14 @@ enum Suffix {
     Pm,
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Time> {
+pub(crate) fn parse(input: &mut &str) -> ModalResult<Time> {
     alt((am_pm_time, iso)).parse_next(input)
 }
 
 /// Parse an ISO 8601 time string
 ///
 /// Also used by the [`combined`](super::combined) module
-pub fn iso(input: &mut &str) -> ModalResult<Time> {
+pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
     alt((
         (hour24, timezone).map(|(hour, offset)| Time {
             hour,
@@ -213,7 +213,7 @@ fn second(input: &mut &str) -> ModalResult<f64> {
     s(float).verify(|x| *x < 60.0).parse_next(input)
 }
 
-pub(crate) fn timezone(input: &mut &str) -> ModalResult<Offset> {
+pub(super) fn timezone(input: &mut &str) -> ModalResult<Offset> {
     alt((timezone_num, timezone_name_offset)).parse_next(input)
 }
 

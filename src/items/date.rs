@@ -39,20 +39,20 @@ use super::{dec_uint, s};
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
-pub struct Date {
-    pub day: u32,
-    pub month: u32,
-    pub year: Option<u32>,
+pub(crate) struct Date {
+    pub(crate) day: u32,
+    pub(crate) month: u32,
+    pub(crate) year: Option<u32>,
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Date> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Date> {
     alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
 
 /// Parse `YYYY-MM-DD` or `YY-MM-DD`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso1(input: &mut &str) -> ModalResult<Date> {
+pub(super) fn iso1(input: &mut &str) -> ModalResult<Date> {
     seq!(Date {
         year: year.map(Some),
         _: s('-'),
@@ -66,7 +66,7 @@ pub fn iso1(input: &mut &str) -> ModalResult<Date> {
 /// Parse `YYYYMMDD`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso2(input: &mut &str) -> ModalResult<Date> {
+pub(super) fn iso2(input: &mut &str) -> ModalResult<Date> {
     s((
         take(4usize).try_map(|s: &str| s.parse::<u32>()),
         take(2usize).try_map(|s: &str| s.parse::<u32>()),
@@ -114,7 +114,7 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
     .parse_next(input)
 }
 
-pub fn year(input: &mut &str) -> ModalResult<u32> {
+pub(super) fn year(input: &mut &str) -> ModalResult<u32> {
     // 2147485547 is the maximum value accepted
     // by GNU, but chrono only behaves like GNU
     // for years in the range: [0, 9999], so we

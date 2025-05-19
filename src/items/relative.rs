@@ -40,7 +40,7 @@ use winnow::{
 use super::{ordinal::ordinal, s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Relative {
+pub(crate) enum Relative {
     Years(i32),
     Months(i32),
     Days(i32),
@@ -63,7 +63,7 @@ impl Relative {
     }
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Relative> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Relative> {
     alt((
         s("tomorrow").value(Relative::Days(1)),
         s("yesterday").value(Relative::Days(-1)),

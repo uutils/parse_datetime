@@ -27,12 +27,12 @@ use super::{
 };
 
 #[derive(PartialEq, Debug, Clone, Default)]
-pub struct DateTime {
+pub(crate) struct DateTime {
     pub(crate) date: Date,
     pub(crate) time: Time,
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<DateTime> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<DateTime> {
     seq!(DateTime {
         date: trace("date iso", alt((date::iso1, date::iso2))),
         // Note: the `T` is lowercased by the main parse function

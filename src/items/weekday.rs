@@ -37,7 +37,7 @@ pub(crate) enum Day {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct Weekday {
+pub(crate) struct Weekday {
     pub(crate) offset: i32,
     pub(crate) day: Day,
 }
@@ -55,7 +55,7 @@ impl From<Day> for chrono::Weekday {
         }
     }
 }
-pub fn parse(input: &mut &str) -> ModalResult<Weekday> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Weekday> {
     seq!(Weekday {
         offset: opt(ordinal).map(|o| o.unwrap_or_default()),
         day: day,

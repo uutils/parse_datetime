@@ -38,7 +38,7 @@ mod epoch {
     use winnow::{combinator::preceded, ModalResult, Parser};
 
     use super::{dec_int, s};
-    pub fn parse(input: &mut &str) -> ModalResult<i32> {
+    pub(super) fn parse(input: &mut &str) -> ModalResult<i32> {
         s(preceded("@", dec_int)).parse_next(input)
     }
 }
@@ -47,7 +47,7 @@ mod timezone {
     use super::time;
     use winnow::ModalResult;
 
-    pub(crate) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
+    pub(super) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
         time::timezone(input)
     }
 }
@@ -67,7 +67,7 @@ use winnow::{
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
-pub enum Item {
+pub(crate) enum Item {
     Timestamp(i32),
     Year(u32),
     DateTime(combined::DateTime),
@@ -177,7 +177,7 @@ where
 }
 
 // Parse an item
-pub fn parse_one(input: &mut &str) -> ModalResult<Item> {
+fn parse_one(input: &mut &str) -> ModalResult<Item> {
     trace(
         "parse_one",
         alt((
@@ -202,7 +202,7 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
     )
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
+pub(crate) fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
     let mut items = Vec::new();
     let mut date_seen = false;
     let mut time_seen = false;
