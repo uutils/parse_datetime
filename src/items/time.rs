@@ -50,6 +50,8 @@ use winnow::{
     ModalResult, Parser,
 };
 
+use crate::ParseDateTimeError;
+
 use super::{dec_uint, relative, s};
 
 #[derive(PartialEq, Debug, Clone, Default)]
@@ -95,22 +97,33 @@ impl Offset {
     }
 }
 
-impl From<Offset> for chrono::FixedOffset {
-    fn from(
+impl TryFrom<Offset> for chrono::FixedOffset {
+    type Error = ParseDateTimeError;
+
+    fn try_from(
         Offset {
             negative,
             hours,
             minutes,
         }: Offset,
-    ) -> Self {
+    ) -> Result<Self, Self::Error> {
         let secs = hours * 3600 + minutes * 60;
 
-        if negative {
-            FixedOffset::west_opt(secs.try_into().expect("secs overflow"))
-                .expect("timezone overflow")
+        let offset = if negative {
+            FixedOffset::west_opt(
+                secs.try_into()
+                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
+            )
+            .ok_or(ParseDateTimeError::InvalidInput)?
         } else {
-            FixedOffset::east_opt(secs.try_into().unwrap()).unwrap()
-        }
+            FixedOffset::east_opt(
+                secs.try_into()
+                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
+            )
+            .ok_or(ParseDateTimeError::InvalidInput)?
+        };
+
+        Ok(offset)
     }
 }
 
