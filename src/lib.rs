@@ -666,7 +666,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("28 feb 2023 + 1 day")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2023-03-01T00:00:00+00:00"
             );
@@ -678,7 +678,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-01-31 + 1 month")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2024-03-02T00:00:00+00:00",
             );
@@ -686,7 +686,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-02-29 + 1 month")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2024-03-29T00:00:00+00:00",
             );
