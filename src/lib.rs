@@ -280,6 +280,12 @@ mod tests {
                 .unwrap();
             assert_eq!(actual, expected);
         }
+
+        #[test]
+        fn offset_overflow() {
+            assert!(parse_datetime("m+12").is_err());
+            assert!(parse_datetime("24:00").is_err());
+        }
     }
 
     #[cfg(test)]

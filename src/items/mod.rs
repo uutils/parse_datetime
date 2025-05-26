@@ -303,7 +303,7 @@ fn with_timezone_restore(
     offset: time::Offset,
     at: DateTime<FixedOffset>,
 ) -> Option<DateTime<FixedOffset>> {
-    let offset: FixedOffset = chrono::FixedOffset::from(offset);
+    let offset: FixedOffset = chrono::FixedOffset::try_from(offset).ok()?;
     let copy = at;
     let x = at
         .with_timezone(&offset)
@@ -360,7 +360,9 @@ fn at_date_inner(date: Vec<Item>, mut d: DateTime<FixedOffset>) -> Option<DateTi
                     },
                 ..
             }) => {
-                let offset = offset.map(chrono::FixedOffset::from).unwrap_or(*d.offset());
+                let offset = offset
+                    .and_then(|o| chrono::FixedOffset::try_from(o).ok())
+                    .unwrap_or(*d.offset());
 
                 d = new_date(
                     year.map(|x| x as i32).unwrap_or(d.year()),
@@ -379,7 +381,10 @@ fn at_date_inner(date: Vec<Item>, mut d: DateTime<FixedOffset>) -> Option<DateTi
                 second,
                 offset,
             }) => {
-                let offset = offset.map(chrono::FixedOffset::from).unwrap_or(*d.offset());
+                let offset = offset
+                    .and_then(|o| chrono::FixedOffset::try_from(o).ok())
+                    .unwrap_or(*d.offset());
+
                 d = new_date(
                     d.year(),
                     d.month(),
