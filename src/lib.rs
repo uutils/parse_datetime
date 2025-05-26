@@ -212,6 +212,7 @@ mod tests {
 
     #[cfg(test)]
     mod offsets {
+        use chrono::FixedOffset;
         use chrono::{Local, NaiveDate};
 
         use crate::parse_datetime;
@@ -258,12 +259,25 @@ mod tests {
 
         #[test]
         fn test_datetime_with_offset() {
-            let actual = parse_datetime("1997-01-19 08:17:48 +0").unwrap();
+            let actual = parse_datetime("1997-01-19 08:17:48 +2").unwrap();
             let expected = NaiveDate::from_ymd_opt(1997, 1, 19)
                 .unwrap()
                 .and_hms_opt(8, 17, 48)
                 .unwrap()
-                .and_utc();
+                .and_local_timezone(FixedOffset::east_opt(2 * 3600).unwrap())
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_datetime_with_timezone() {
+            let actual = parse_datetime("1997-01-19 08:17:48 BRT").unwrap();
+            let expected = NaiveDate::from_ymd_opt(1997, 1, 19)
+                .unwrap()
+                .and_hms_opt(8, 17, 48)
+                .unwrap()
+                .and_local_timezone(FixedOffset::west_opt(3 * 3600).unwrap())
+                .unwrap();
             assert_eq!(actual, expected);
         }
     }
@@ -652,7 +666,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("28 feb 2023 + 1 day")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2023-03-01T00:00:00+00:00"
             );
@@ -664,7 +678,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-01-31 + 1 month")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2024-03-02T00:00:00+00:00",
             );
@@ -672,7 +686,7 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-02-29 + 1 month")
                     .unwrap()
-                    .format("%+")
+                    .format("%Y-%m-%dT%H:%M:%S%:z")
                     .to_string(),
                 "2024-03-29T00:00:00+00:00",
             );

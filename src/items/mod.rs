@@ -518,7 +518,7 @@ mod tests {
         // https://github.com/uutils/coreutils/issues/5177
         assert_eq!(
             "2023-07-27T13:53:54+00:00",
-            test_eq_fmt("%+", "@1690466034")
+            test_eq_fmt("%Y-%m-%dT%H:%M:%S%:z", "@1690466034")
         );
 
         // https://github.com/uutils/coreutils/issues/6398
@@ -527,12 +527,12 @@ mod tests {
 
         assert_eq!(
             "2024-07-17 06:14:49 +00:00",
-            test_eq_fmt("%Y-%m-%d %H:%M:%S %Z", "Jul 17 06:14:49 2024 GMT"),
+            test_eq_fmt("%Y-%m-%d %H:%M:%S %:z", "Jul 17 06:14:49 2024 GMT"),
         );
 
         assert_eq!(
             "2024-07-17 06:14:49 -03:00",
-            test_eq_fmt("%Y-%m-%d %H:%M:%S %Z", "Jul 17 06:14:49 2024 BRT"),
+            test_eq_fmt("%Y-%m-%d %H:%M:%S %:z", "Jul 17 06:14:49 2024 BRT"),
         );
     }
 }
