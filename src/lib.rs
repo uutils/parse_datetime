@@ -165,7 +165,13 @@ mod tests {
 
         #[test]
         fn invalid_formats() {
-            let invalid_dts = vec!["NotADate", "202104", "202104-12T22:37:47"];
+            let invalid_dts = vec![
+                "NotADate",
+                "202104",
+                "202104-12T22:37:47",
+                "a774e26sec", // 774e26 is not a valid seconds value (we don't accept E-notation)
+                "12.",        // Invalid floating point number
+            ];
             for dt in invalid_dts {
                 assert_eq!(parse_datetime(dt), Err(ParseDateTimeError::InvalidInput));
             }
