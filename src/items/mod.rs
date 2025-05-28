@@ -145,9 +145,9 @@ where
 /// following two forms:
 ///
 /// - 0
-/// - [+-][1-9][0-9]*
+/// - [+-]?[1-9][0-9]*
 ///
-/// Inputs like [+-]0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
+/// Inputs like [+-]?0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
 /// custom implementation to support such zero-prefixed integers.
 fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
 where
@@ -169,6 +169,23 @@ where
     E: ParserError<&'a str>,
 {
     digit1
+        .void()
+        .take()
+        .verify_map(|s: &str| s.parse().ok())
+        .parse_next(input)
+}
+
+/// Parse a float number.
+///
+/// Rationale for not using `winnow::ascii::float`: the `float` parser provided
+/// by winnow accepts E-notation numbers (e.g., `1.23e4`), whereas GNU date
+/// rejects such numbers. To remain compatible with GNU date, we provide a
+/// custom implementation that only accepts inputs like [+-]?[0-9]+(\.[0-9]+)?.
+fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
+where
+    E: ParserError<&'a str>,
+{
+    (opt(one_of(['+', '-'])), digit1, opt(preceded('.', digit1)))
         .void()
         .take()
         .verify_map(|s: &str| s.parse().ok())
