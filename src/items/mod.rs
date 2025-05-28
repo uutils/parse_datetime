@@ -33,6 +33,7 @@ mod ordinal;
 mod relative;
 mod time;
 mod weekday;
+
 mod epoch {
     use winnow::{combinator::preceded, ModalResult, Parser};
 
@@ -41,6 +42,7 @@ mod epoch {
         s(preceded("@", dec_int)).parse_next(input)
     }
 }
+
 mod timezone {
     use super::time;
     use winnow::ModalResult;
@@ -53,12 +55,11 @@ mod timezone {
 use chrono::NaiveDate;
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
 
-use winnow::error::{StrContext, StrContextValue};
 use winnow::{
     ascii::{digit1, multispace0},
     combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated, trace},
-    error::{ContextError, ErrMode, ParserError},
-    stream::AsChar,
+    error::{AddContext, ContextError, ErrMode, ParserError, StrContext, StrContextValue},
+    stream::{AsChar, Stream},
     token::{none_of, one_of, take_while},
     ModalResult, Parser,
 };
@@ -145,9 +146,9 @@ where
 /// following two forms:
 ///
 /// - 0
-/// - [+-][1-9][0-9]*
+/// - [+-]?[1-9][0-9]*
 ///
-/// Inputs like [+-]0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
+/// Inputs like [+-]?0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
 /// custom implementation to support such zero-prefixed integers.
 fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
 where
@@ -175,6 +176,23 @@ where
         .parse_next(input)
 }
 
+/// Parse a float number.
+///
+/// Rationale for not using `winnow::ascii::float`: the `float` parser provided
+/// by winnow accepts E-notation numbers (e.g., `1.23e4`), whereas GNU date
+/// rejects such numbers. To remain compatible with GNU date, we provide a
+/// custom implementation that only accepts inputs like [+-]?[0-9]+(\.[0-9]+)?.
+fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
+where
+    E: ParserError<&'a str>,
+{
+    (opt(one_of(['+', '-'])), digit1, opt(preceded('.', digit1)))
+        .void()
+        .take()
+        .verify_map(|s: &str| s.parse().ok())
+        .parse_next(input)
+}
+
 // Parse an item
 pub fn parse_one(input: &mut &str) -> ModalResult<Item> {
     trace(
@@ -193,6 +211,14 @@ pub fn parse_one(input: &mut &str) -> ModalResult<Item> {
     .parse_next(input)
 }
 
+fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError> {
+    ErrMode::Cut(ContextError::new()).add_context(
+        input,
+        &input.checkpoint(),
+        StrContext::Expected(StrContextValue::Description(reason)),
+    )
+}
+
 pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
     let mut items = Vec::new();
     let mut date_seen = false;
@@ -206,13 +232,10 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
                 match item {
                     Item::DateTime(ref dt) => {
                         if date_seen || time_seen {
-                            let mut ctx_err = ContextError::new();
-                            ctx_err.push(StrContext::Expected(
-                                winnow::error::StrContextValue::Description(
-                                    "date or time cannot appear more than once",
-                                ),
+                            return Err(expect_error(
+                                input,
+                                "date or time cannot appear more than once",
                             ));
-                            return Err(ErrMode::Backtrack(ctx_err));
                         }
 
                         date_seen = true;
@@ -223,11 +246,7 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
                     }
                     Item::Date(ref d) => {
                         if date_seen {
-                            let mut ctx_err = ContextError::new();
-                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                                "date cannot appear more than once",
-                            )));
-                            return Err(ErrMode::Backtrack(ctx_err));
+                            return Err(expect_error(input, "date cannot appear more than once"));
                         }
 
                         date_seen = true;
@@ -235,33 +254,27 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
                             year_seen = true;
                         }
                     }
-                    Item::Time(_) => {
+                    Item::Time(ref t) => {
                         if time_seen {
-                            let mut ctx_err = ContextError::new();
-                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                                "time cannot appear more than once",
-                            )));
-                            return Err(ErrMode::Backtrack(ctx_err));
+                            return Err(expect_error(input, "time cannot appear more than once"));
                         }
                         time_seen = true;
+                        if t.offset.is_some() {
+                            tz_seen = true;
+                        }
                     }
                     Item::Year(_) => {
                         if year_seen {
-                            let mut ctx_err = ContextError::new();
-                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                                "year cannot appear more than once",
-                            )));
-                            return Err(ErrMode::Backtrack(ctx_err));
+                            return Err(expect_error(input, "year cannot appear more than once"));
                         }
                         year_seen = true;
                     }
                     Item::TimeZone(_) => {
                         if tz_seen {
-                            let mut ctx_err = ContextError::new();
-                            ctx_err.push(StrContext::Expected(StrContextValue::Description(
+                            return Err(expect_error(
+                                input,
                                 "timezone cannot appear more than once",
-                            )));
-                            return Err(ErrMode::Backtrack(ctx_err));
+                            ));
                         }
                         tz_seen = true;
                     }
@@ -276,7 +289,7 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
 
     space.parse_next(input)?;
     if !input.is_empty() {
-        return Err(ErrMode::Backtrack(ContextError::new()));
+        return Err(expect_error(input, "unexpected input"));
     }
 
     Ok(items)
@@ -539,5 +552,47 @@ mod tests {
             "2024-07-17 06:14:49 -03:00",
             test_eq_fmt("%Y-%m-%d %H:%M:%S %:z", "Jul 17 06:14:49 2024 BRT"),
         );
+    }
+
+    #[test]
+    fn invalid() {
+        let result = parse(&mut "2025-05-19 2024-05-20 06:14:49");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("date or time cannot appear more than once"));
+
+        let result = parse(&mut "2025-05-19 2024-05-20");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("date cannot appear more than once"));
+
+        let result = parse(&mut "06:14:49 06:14:49");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("time cannot appear more than once"));
+
+        let result = parse(&mut "2025-05-19 2024");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("year cannot appear more than once"));
+
+        let result = parse(&mut "2025-05-19 +00:00 +01:00");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("timezone cannot appear more than once"));
+
+        let result = parse(&mut "2025-05-19 abcdef");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unexpected input"));
     }
 }
