@@ -32,12 +32,12 @@
 //! > ‘this thursday’.
 
 use winnow::{
-    ascii::{alpha1, float},
+    ascii::alpha1,
     combinator::{alt, opt},
     ModalResult, Parser,
 };
 
-use super::{ordinal::ordinal, s};
+use super::{float, ordinal::ordinal, s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Relative {
