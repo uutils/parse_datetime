@@ -258,10 +258,18 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
                         if time_seen {
                             return Err(expect_error(input, "time cannot appear more than once"));
                         }
-                        time_seen = true;
+
                         if t.offset.is_some() {
+                            if tz_seen {
+                                return Err(expect_error(
+                                    input,
+                                    "timezone cannot appear more than once",
+                                ));
+                            }
                             tz_seen = true;
                         }
+
+                        time_seen = true;
                     }
                     Item::Year(_) => {
                         if year_seen {
@@ -585,6 +593,13 @@ mod tests {
             .contains("year cannot appear more than once"));
 
         let result = parse(&mut "2025-05-19 +00:00 +01:00");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("timezone cannot appear more than once"));
+
+        let result = parse(&mut "m1y");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
