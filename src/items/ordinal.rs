@@ -1,12 +1,13 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use super::{dec_uint, s};
 use winnow::{
     ascii::alpha1,
     combinator::{alt, opt},
     ModalResult, Parser,
 };
+
+use super::primitive::{dec_uint, s};
 
 pub fn ordinal(input: &mut &str) -> ModalResult<i32> {
     alt((text_ordinal, number_ordinal)).parse_next(input)

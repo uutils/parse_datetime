@@ -22,7 +22,7 @@ use crate::items::space;
 
 use super::{
     date::{self, Date},
-    s,
+    primitive::s,
     time::{self, Time},
 };
 

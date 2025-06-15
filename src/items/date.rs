@@ -35,7 +35,7 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use super::{dec_uint, s};
+use super::primitive::{dec_uint, s};
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]

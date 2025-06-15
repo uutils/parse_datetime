@@ -30,6 +30,7 @@
 mod combined;
 mod date;
 mod ordinal;
+mod primitive;
 mod relative;
 mod time;
 mod weekday;
@@ -37,15 +38,17 @@ mod weekday;
 mod epoch {
     use winnow::{combinator::preceded, ModalResult, Parser};
 
-    use super::{dec_int, s};
+    use super::primitive::{dec_int, s};
+
     pub fn parse(input: &mut &str) -> ModalResult<i32> {
         s(preceded("@", dec_int)).parse_next(input)
     }
 }
 
 mod timezone {
-    use super::time;
     use winnow::ModalResult;
+
+    use super::time;
 
     pub(crate) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
         time::timezone(input)
@@ -55,12 +58,11 @@ mod timezone {
 use chrono::NaiveDate;
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
 
+use primitive::space;
 use winnow::{
-    ascii::{digit1, multispace0},
-    combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated, trace},
-    error::{AddContext, ContextError, ErrMode, ParserError, StrContext, StrContextValue},
-    stream::{AsChar, Stream},
-    token::{none_of, one_of, take_while},
+    combinator::{alt, trace},
+    error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
+    stream::Stream,
     ModalResult, Parser,
 };
 
@@ -76,121 +78,6 @@ pub enum Item {
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
     TimeZone(time::Offset),
-}
-
-/// Allow spaces and comments before a parser
-///
-/// Every token parser should be wrapped in this to allow spaces and comments.
-/// It is only preceding, because that allows us to check mandatory whitespace
-/// after running the parser.
-fn s<'a, O, E>(p: impl Parser<&'a str, O, E>) -> impl Parser<&'a str, O, E>
-where
-    E: ParserError<&'a str>,
-{
-    preceded(space, p)
-}
-
-/// Parse the space in-between tokens
-///
-/// You probably want to use the [`s`] combinator instead.
-fn space<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    separated(0.., multispace0, alt((comment, ignored_hyphen_or_plus))).parse_next(input)
-}
-
-/// A hyphen or plus is ignored when it is not followed by a digit
-///
-/// This includes being followed by a comment! Compare these inputs:
-/// ```txt
-/// - 12 weeks
-/// - (comment) 12 weeks
-/// ```
-/// The last comment should be ignored.
-///
-/// The plus is undocumented, but it seems to be ignored.
-fn ignored_hyphen_or_plus<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    (
-        alt(('-', '+')),
-        multispace0,
-        peek(not(take_while(1, AsChar::is_dec_digit))),
-    )
-        .void()
-        .parse_next(input)
-}
-
-/// Parse a comment
-///
-/// A comment is given between parentheses, which must be balanced. Any other
-/// tokens can be within the comment.
-fn comment<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    delimited(
-        '(',
-        repeat(0.., alt((none_of(['(', ')']).void(), comment))),
-        ')',
-    )
-    .parse_next(input)
-}
-
-/// Parse a signed decimal integer.
-///
-/// Rationale for not using `winnow::ascii::dec_int`: When upgrading winnow from
-/// 0.5 to 0.7, we discovered that `winnow::ascii::dec_int` now accepts only the
-/// following two forms:
-///
-/// - 0
-/// - [+-]?[1-9][0-9]*
-///
-/// Inputs like [+-]?0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
-/// custom implementation to support such zero-prefixed integers.
-fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
-where
-    E: ParserError<&'a str>,
-{
-    (opt(one_of(['+', '-'])), digit1)
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
-}
-
-/// Parse an unsigned decimal integer.
-///
-/// See the rationale for `dec_int` for why we don't use
-/// `winnow::ascii::dec_uint`.
-fn dec_uint<'a, E>(input: &mut &'a str) -> winnow::Result<u32, E>
-where
-    E: ParserError<&'a str>,
-{
-    digit1
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
-}
-
-/// Parse a float number.
-///
-/// Rationale for not using `winnow::ascii::float`: the `float` parser provided
-/// by winnow accepts E-notation numbers (e.g., `1.23e4`), whereas GNU date
-/// rejects such numbers. To remain compatible with GNU date, we provide a
-/// custom implementation that only accepts inputs like [+-]?[0-9]+(\.[0-9]+)?.
-fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
-where
-    E: ParserError<&'a str>,
-{
-    (opt(one_of(['+', '-'])), digit1, opt(preceded('.', digit1)))
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
 }
 
 // Parse an item
