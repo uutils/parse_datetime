@@ -1,9 +1,9 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use super::s;
+use super::{dec_uint, s};
 use winnow::{
-    ascii::{alpha1, dec_uint},
+    ascii::alpha1,
     combinator::{alt, opt},
     ModalResult, Parser,
 };
