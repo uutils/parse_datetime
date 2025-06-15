@@ -37,7 +37,10 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use super::{float, ordinal::ordinal, s};
+use super::{
+    ordinal::ordinal,
+    primitive::{float, s},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Relative {

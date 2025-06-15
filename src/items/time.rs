@@ -52,7 +52,10 @@ use winnow::{
 
 use crate::ParseDateTimeError;
 
-use super::{dec_uint, relative, s};
+use super::{
+    primitive::{dec_uint, s},
+    relative,
+};
 
 #[derive(PartialEq, Debug, Clone, Default)]
 pub struct Offset {

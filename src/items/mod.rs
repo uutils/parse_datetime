@@ -30,6 +30,7 @@
 mod combined;
 mod date;
 mod ordinal;
+mod primitive;
 mod relative;
 mod time;
 mod weekday;
@@ -37,15 +38,17 @@ mod weekday;
 mod epoch {
     use winnow::{combinator::preceded, ModalResult, Parser};
 
-    use super::{dec_int, s};
+    use super::primitive::{dec_int, s};
+
     pub fn parse(input: &mut &str) -> ModalResult<i32> {
         s(preceded("@", dec_int)).parse_next(input)
     }
 }
 
 mod timezone {
-    use super::time;
     use winnow::ModalResult;
+
+    use super::time;
 
     pub(crate) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
         time::timezone(input)
@@ -55,12 +58,11 @@ mod timezone {
 use chrono::NaiveDate;
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
 
+use primitive::space;
 use winnow::{
-    ascii::{digit1, multispace0},
-    combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated, trace},
-    error::{AddContext, ContextError, ErrMode, ParserError, StrContext, StrContextValue},
-    stream::{AsChar, Stream},
-    token::{none_of, one_of, take_while},
+    combinator::{alt, trace},
+    error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
+    stream::Stream,
     ModalResult, Parser,
 };
 
@@ -76,121 +78,6 @@ pub enum Item {
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
     TimeZone(time::Offset),
-}
-
-/// Allow spaces and comments before a parser
-///
-/// Every token parser should be wrapped in this to allow spaces and comments.
-/// It is only preceding, because that allows us to check mandatory whitespace
-/// after running the parser.
-fn s<'a, O, E>(p: impl Parser<&'a str, O, E>) -> impl Parser<&'a str, O, E>
-where
-    E: ParserError<&'a str>,
-{
-    preceded(space, p)
-}
-
-/// Parse the space in-between tokens
-///
-/// You probably want to use the [`s`] combinator instead.
-fn space<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    separated(0.., multispace0, alt((comment, ignored_hyphen_or_plus))).parse_next(input)
-}
-
-/// A hyphen or plus is ignored when it is not followed by a digit
-///
-/// This includes being followed by a comment! Compare these inputs:
-/// ```txt
-/// - 12 weeks
-/// - (comment) 12 weeks
-/// ```
-/// The last comment should be ignored.
-///
-/// The plus is undocumented, but it seems to be ignored.
-fn ignored_hyphen_or_plus<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    (
-        alt(('-', '+')),
-        multispace0,
-        peek(not(take_while(1, AsChar::is_dec_digit))),
-    )
-        .void()
-        .parse_next(input)
-}
-
-/// Parse a comment
-///
-/// A comment is given between parentheses, which must be balanced. Any other
-/// tokens can be within the comment.
-fn comment<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
-where
-    E: ParserError<&'a str>,
-{
-    delimited(
-        '(',
-        repeat(0.., alt((none_of(['(', ')']).void(), comment))),
-        ')',
-    )
-    .parse_next(input)
-}
-
-/// Parse a signed decimal integer.
-///
-/// Rationale for not using `winnow::ascii::dec_int`: When upgrading winnow from
-/// 0.5 to 0.7, we discovered that `winnow::ascii::dec_int` now accepts only the
-/// following two forms:
-///
-/// - 0
-/// - [+-]?[1-9][0-9]*
-///
-/// Inputs like [+-]?0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
-/// custom implementation to support such zero-prefixed integers.
-fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
-where
-    E: ParserError<&'a str>,
-{
-    (opt(one_of(['+', '-'])), digit1)
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
-}
-
-/// Parse an unsigned decimal integer.
-///
-/// See the rationale for `dec_int` for why we don't use
-/// `winnow::ascii::dec_uint`.
-fn dec_uint<'a, E>(input: &mut &'a str) -> winnow::Result<u32, E>
-where
-    E: ParserError<&'a str>,
-{
-    digit1
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
-}
-
-/// Parse a float number.
-///
-/// Rationale for not using `winnow::ascii::float`: the `float` parser provided
-/// by winnow accepts E-notation numbers (e.g., `1.23e4`), whereas GNU date
-/// rejects such numbers. To remain compatible with GNU date, we provide a
-/// custom implementation that only accepts inputs like [+-]?[0-9]+(\.[0-9]+)?.
-fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
-where
-    E: ParserError<&'a str>,
-{
-    (opt(one_of(['+', '-'])), digit1, opt(preceded('.', digit1)))
-        .void()
-        .take()
-        .verify_map(|s: &str| s.parse().ok())
-        .parse_next(input)
 }
 
 // Parse an item
@@ -345,11 +232,31 @@ fn last_day_of_month(year: i32, month: u32) -> u32 {
         .day()
 }
 
-fn at_date_inner(date: Vec<Item>, mut d: DateTime<FixedOffset>) -> Option<DateTime<FixedOffset>> {
-    d = d.with_hour(0).unwrap();
-    d = d.with_minute(0).unwrap();
-    d = d.with_second(0).unwrap();
-    d = d.with_nanosecond(0).unwrap();
+fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<FixedOffset>> {
+    let mut d = at
+        .with_hour(0)
+        .unwrap()
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap();
+
+    // This flag is used by relative items to determine which date/time to use.
+    // If any date/time item is set, it will use that; otherwise, it will use
+    // the `at` value.
+    let date_time_set = date.iter().any(|item| {
+        matches!(
+            item,
+            Item::Timestamp(_)
+                | Item::Date(_)
+                | Item::DateTime(_)
+                | Item::Year(_)
+                | Item::Time(_)
+                | Item::Weekday(_)
+        )
+    });
 
     for item in date {
         match item {
@@ -416,54 +323,84 @@ fn at_date_inner(date: Vec<Item>, mut d: DateTime<FixedOffset>) -> Option<DateTi
                     offset,
                 )?;
             }
-            Item::Weekday(weekday::Weekday {
-                offset: _, // TODO: use the offset
-                day,
-            }) => {
-                let mut beginning_of_day = d
-                    .with_hour(0)
-                    .unwrap()
-                    .with_minute(0)
-                    .unwrap()
-                    .with_second(0)
-                    .unwrap()
-                    .with_nanosecond(0)
-                    .unwrap();
+            Item::Weekday(weekday::Weekday { offset: x, day }) => {
+                let mut x = x;
                 let day = day.into();
 
-                while beginning_of_day.weekday() != day {
-                    beginning_of_day += chrono::Duration::days(1);
+                // If the current day is not the target day, we need to adjust
+                // the x value to ensure we find the correct day.
+                //
+                // Consider this:
+                // Assuming today is Monday, next Friday is actually THIS Friday;
+                // but next Monday is indeed NEXT Monday.
+                if d.weekday() != day && x > 0 {
+                    x -= 1;
                 }
 
-                d = beginning_of_day
-            }
-            Item::Relative(relative::Relative::Years(x)) => {
-                d = d.with_year(d.year() + x)?;
-            }
-            Item::Relative(relative::Relative::Months(x)) => {
-                // *NOTE* This is done in this way to conform to
-                // GNU behavior.
-                let days = last_day_of_month(d.year(), d.month());
-                if x >= 0 {
-                    d += d
-                        .date_naive()
-                        .checked_add_days(chrono::Days::new((days * x as u32) as u64))?
-                        .signed_duration_since(d.date_naive());
+                // Calculate the delta to the target day.
+                //
+                // Assuming today is Thursday, here are some examples:
+                //
+                // Example 1: last Thursday (x = -1, day = Thursday)
+                //            delta = (3 - 3) % 7 + (-1) * 7 = -7
+                //
+                // Example 2: last Monday (x = -1, day = Monday)
+                //            delta = (0 - 3) % 7 + (-1) * 7 = -3
+                //
+                // Example 3: next Monday (x = 1, day = Monday)
+                //            delta = (0 - 3) % 7 + (0) * 7 = 4
+                // (Note that we have adjusted the x value above)
+                //
+                // Example 4: next Thursday (x = 1, day = Thursday)
+                //            delta = (3 - 3) % 7 + (1) * 7 = 7
+                let delta = (day.num_days_from_monday() as i32
+                    - d.weekday().num_days_from_monday() as i32)
+                    .rem_euclid(7)
+                    + x * 7;
+
+                d = if delta < 0 {
+                    d.checked_sub_days(chrono::Days::new((-delta) as u64))?
                 } else {
-                    d += d
-                        .date_naive()
-                        .checked_sub_days(chrono::Days::new((days * -x as u32) as u64))?
-                        .signed_duration_since(d.date_naive());
+                    d.checked_add_days(chrono::Days::new(delta as u64))?
                 }
             }
-            Item::Relative(relative::Relative::Days(x)) => d += chrono::Duration::days(x.into()),
-            Item::Relative(relative::Relative::Hours(x)) => d += chrono::Duration::hours(x.into()),
-            Item::Relative(relative::Relative::Minutes(x)) => {
-                d += chrono::Duration::minutes(x.into());
-            }
-            // Seconds are special because they can be given as a float
-            Item::Relative(relative::Relative::Seconds(x)) => {
-                d += chrono::Duration::seconds(x as i64);
+            Item::Relative(rel) => {
+                // If date and/or time is set, use the set value; otherwise, use
+                // the reference value.
+                if !date_time_set {
+                    d = at;
+                }
+
+                match rel {
+                    relative::Relative::Years(x) => {
+                        d = d.with_year(d.year() + x)?;
+                    }
+                    relative::Relative::Months(x) => {
+                        // *NOTE* This is done in this way to conform to
+                        // GNU behavior.
+                        let days = last_day_of_month(d.year(), d.month());
+                        if x >= 0 {
+                            d += d
+                                .date_naive()
+                                .checked_add_days(chrono::Days::new((days * x as u32) as u64))?
+                                .signed_duration_since(d.date_naive());
+                        } else {
+                            d += d
+                                .date_naive()
+                                .checked_sub_days(chrono::Days::new((days * -x as u32) as u64))?
+                                .signed_duration_since(d.date_naive());
+                        }
+                    }
+                    relative::Relative::Days(x) => d += chrono::Duration::days(x.into()),
+                    relative::Relative::Hours(x) => d += chrono::Duration::hours(x.into()),
+                    relative::Relative::Minutes(x) => {
+                        d += chrono::Duration::minutes(x.into());
+                    }
+                    // Seconds are special because they can be given as a float
+                    relative::Relative::Seconds(x) => {
+                        d += chrono::Duration::seconds(x as i64);
+                    }
+                }
             }
             Item::TimeZone(offset) => {
                 d = with_timezone_restore(offset, d)?;
@@ -476,9 +413,9 @@ fn at_date_inner(date: Vec<Item>, mut d: DateTime<FixedOffset>) -> Option<DateTi
 
 pub(crate) fn at_date(
     date: Vec<Item>,
-    d: DateTime<FixedOffset>,
+    at: DateTime<FixedOffset>,
 ) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
-    at_date_inner(date, d).ok_or(ParseDateTimeError::InvalidInput)
+    at_date_inner(date, at).ok_or(ParseDateTimeError::InvalidInput)
 }
 
 pub(crate) fn at_local(date: Vec<Item>) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
@@ -488,10 +425,12 @@ pub(crate) fn at_local(date: Vec<Item>) -> Result<DateTime<FixedOffset>, ParseDa
 #[cfg(test)]
 mod tests {
     use super::{at_date, date::Date, parse, time::Time, Item};
-    use chrono::{DateTime, FixedOffset};
+    use chrono::{
+        DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+    };
 
     fn at_utc(date: Vec<Item>) -> DateTime<FixedOffset> {
-        at_date(date, chrono::Utc::now().fixed_offset()).unwrap()
+        at_date(date, Utc::now().fixed_offset()).unwrap()
     }
 
     fn test_eq_fmt(fmt: &str, input: &str) -> String {
@@ -609,5 +548,81 @@ mod tests {
         let result = parse(&mut "2025-05-19 abcdef");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unexpected input"));
+    }
+
+    #[test]
+    fn relative_weekday() {
+        // Jan 1 2025 is a Wed
+        let now = Utc
+            .from_utc_datetime(&NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            ))
+            .fixed_offset();
+
+        assert_eq!(
+            at_date(parse(&mut "last wed").unwrap(), now).unwrap(),
+            now - chrono::Duration::days(7)
+        );
+        assert_eq!(at_date(parse(&mut "this wed").unwrap(), now).unwrap(), now);
+        assert_eq!(
+            at_date(parse(&mut "next wed").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(7)
+        );
+        assert_eq!(
+            at_date(parse(&mut "last thu").unwrap(), now).unwrap(),
+            now - chrono::Duration::days(6)
+        );
+        assert_eq!(
+            at_date(parse(&mut "this thu").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(1)
+        );
+        assert_eq!(
+            at_date(parse(&mut "next thu").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(1)
+        );
+        assert_eq!(
+            at_date(parse(&mut "1 wed").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(7)
+        );
+        assert_eq!(
+            at_date(parse(&mut "1 thu").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(1)
+        );
+        assert_eq!(
+            at_date(parse(&mut "2 wed").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(14)
+        );
+        assert_eq!(
+            at_date(parse(&mut "2 thu").unwrap(), now).unwrap(),
+            now + chrono::Duration::days(8)
+        );
+    }
+
+    #[test]
+    fn relative_date_time() {
+        let now = Utc::now().fixed_offset();
+
+        let result = at_date(parse(&mut "2 days ago").unwrap(), now).unwrap();
+        assert_eq!(result, now - chrono::Duration::days(2));
+        assert_eq!(result.hour(), now.hour());
+        assert_eq!(result.minute(), now.minute());
+        assert_eq!(result.second(), now.second());
+
+        let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 0);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
+
+        let result = at_date(parse(&mut "3 weeks").unwrap(), now).unwrap();
+        assert_eq!(result, now + chrono::Duration::days(21));
+        assert_eq!(result.hour(), now.hour());
+        assert_eq!(result.minute(), now.minute());
+        assert_eq!(result.second(), now.second());
+
+        let result = at_date(parse(&mut "2025-01-01 3 weeks").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 0);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
     }
 }
