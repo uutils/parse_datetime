@@ -21,7 +21,11 @@
 //! >
 //! > A comma following a day of the week item is ignored.
 
-use winnow::{ascii::alpha1, combinator::opt, seq, ModalResult, Parser};
+use winnow::{
+    ascii::alpha1,
+    combinator::{opt, terminated},
+    seq, ModalResult, Parser,
+};
 
 use super::{ordinal::ordinal, primitive::s};
 
@@ -55,10 +59,26 @@ impl From<Day> for chrono::Weekday {
         }
     }
 }
+
+/// Parse a weekday item.
+///
+/// Grammar:
+///
+/// ```ebnf
+/// weekday = [ ordinal ] day [ "," ] ;
+///
+/// day = "monday" | "mon" | "mon."
+///     | "tuesday" | "tue" | "tue." | "tues"
+///     | "wednesday" | "wed" | "wed." | "wednes"
+///     | "thursday" | "thu" | "thu." | "thur" | "thurs"
+///     | "friday" | "fri" | "fri."
+///     | "saturday" | "sat" | "sat."
+///     | "sunday" | "sun" | "sun." ;
+/// ```
 pub fn parse(input: &mut &str) -> ModalResult<Weekday> {
     seq!(Weekday {
         offset: opt(ordinal).map(|o| o.unwrap_or_default()),
-        day: day,
+        day: terminated(day, opt(s(","))),
     })
     .parse_next(input)
 }
@@ -130,6 +150,19 @@ mod tests {
                 Weekday {
                     offset: -1,
                     day: Day::Wednesday,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn optional_comma() {
+        for mut s in ["monday,", "mon,", "mon.,", "mon. ,"] {
+            assert_eq!(
+                parse(&mut s).unwrap(),
+                Weekday {
+                    offset: 0,
+                    day: Day::Monday,
                 }
             );
         }
