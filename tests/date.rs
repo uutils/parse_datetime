@@ -76,17 +76,17 @@ fn test_absolute_date_numeric(#[case] input: &str, #[case] expected: &str) {
 
 #[rstest]
 #[case::us_style("11/14", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_full_month_at_back("14 november", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_short_month_in_front("nov 14", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_short_month_at_back("14 nov", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_full_month_at_back("14 november", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_short_month_in_front("nov 14", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_short_month_at_back("14 nov", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_long_month_at_back_hyphen("14-november", 2022, "2022-11-14 00:00:00+00:00")]
-#[case::aphabetical_short_month_at_back_hyphen("14-nov", 2022, "2022-11-14 00:00:00+00:00")]
-fn test_date_ommititing_year(#[case] input: &str, #[case] year: u32, #[case] expected: &str) {
+#[case::alphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_full_month_at_back("14 november", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_short_month_in_front("nov 14", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_short_month_at_back("14 nov", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_full_month_at_back("14 november", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_short_month_in_front("nov 14", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_short_month_at_back("14 nov", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_long_month_at_back_hyphen("14-november", 2022, "2022-11-14 00:00:00+00:00")]
+#[case::alphabetical_short_month_at_back_hyphen("14-nov", 2022, "2022-11-14 00:00:00+00:00")]
+fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expected: &str) {
     use chrono::DateTime;
     use common::check_relative;
 
