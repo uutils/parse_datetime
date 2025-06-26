@@ -34,12 +34,10 @@ pub fn check_time(input: &str, expected: &str, format: &str, base: Option<DateTi
 #[case::full_time_with_spaces("12 : 34 : 56", "12:34:56.000000000")]
 #[case::full_time_midnight("00:00:00", "00:00:00.000000000")]
 #[case::full_time_almost_midnight("23:59:59", "23:59:59.000000000")]
-/* TODO: https://github.com/uutils/parse_datetime/issues/165
 #[case::full_time_decimal_seconds("12:34:56.666", "12:34:56.666000000")]
 #[case::full_time_decimal_seconds("12:34:56.999999999", "12:34:56.999999999")]
 #[case::full_time_decimal_seconds("12:34:56.9999999999", "12:34:56.999999999")]
 #[case::full_time_decimal_seconds_after_comma("12:34:56,666", "12:34:56.666000000")]
-*/
 #[case::without_seconds("12:34", "12:34:00.000000000")]
 fn test_time_24h_format(#[case] input: &str, #[case] expected: &str) {
     check_time(input, expected, "%H:%M:%S%.9f", None);
@@ -54,10 +52,8 @@ fn test_time_24h_format(#[case] input: &str, #[case] expected: &str) {
 #[case::full_time_capital("12:34:56pm", "12:34:56.000000000")]
 #[case::full_time_midnight("00:00:00", "00:00:00.000000000")]
 #[case::full_time_almost_midnight("23:59:59", "23:59:59.000000000")]
-/* TODO: https://github.com/uutils/parse_datetime/issues/165
 #[case::full_time_decimal_seconds("12:34:56.666pm", "12:34:56.666000000")]
 #[case::full_time_decimal_seconds_after_comma("12:34:56,666pm", "12:34:56.666000000")]
-*/
 #[case::without_seconds("12:34pm", "12:34:00.000000000")]
 fn test_time_12h_format(#[case] input: &str, #[case] expected: &str) {
     check_time(input, expected, "%H:%M:%S%.9f", None);

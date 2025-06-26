@@ -120,9 +120,13 @@ pub(super) fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
 where
     E: ParserError<&'a str>,
 {
-    (opt(one_of(['+', '-'])), digit1, opt(preceded('.', digit1)))
+    (
+        opt(one_of(['+', '-'])),
+        digit1,
+        opt(preceded(one_of(['.', ',']), digit1)),
+    )
         .void()
         .take()
-        .verify_map(|s: &str| s.parse().ok())
+        .verify_map(|s: &str| s.replace(",", ".").parse().ok())
         .parse_next(input)
 }

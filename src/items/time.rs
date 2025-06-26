@@ -41,7 +41,7 @@ use std::fmt::Display;
 
 use chrono::FixedOffset;
 use winnow::{
-    ascii::{digit1, float},
+    ascii::digit1,
     combinator::{alt, opt, peek, preceded},
     error::{ContextError, ErrMode, StrContext, StrContextValue},
     seq,
@@ -53,7 +53,7 @@ use winnow::{
 use crate::ParseDateTimeError;
 
 use super::{
-    primitive::{dec_uint, s},
+    primitive::{dec_uint, float, s},
     relative,
 };
 
@@ -226,7 +226,14 @@ fn minute(input: &mut &str) -> ModalResult<u32> {
 
 /// Parse a number of seconds (preceded by whitespace)
 fn second(input: &mut &str) -> ModalResult<f64> {
-    s(float).verify(|x| *x < 60.0).parse_next(input)
+    s(float)
+        .verify(|x| *x < 60.0)
+        .map(|x| {
+            // Truncates the fractional part of seconds to 9 digits.
+            let factor = 10f64.powi(9);
+            (x * factor).trunc() / factor
+        })
+        .parse_next(input)
 }
 
 pub(crate) fn timezone(input: &mut &str) -> ModalResult<Offset> {
