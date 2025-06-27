@@ -840,7 +840,7 @@ mod tests {
         let make_timezone = |input: &mut &str| {
             timezone(input)
                 .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
-                .map(|offset| format!("{}", offset))
+                .map(|offset| format!("{offset}"))
                 .expect("expect tests to succeed")
         };
 
