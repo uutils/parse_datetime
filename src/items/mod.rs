@@ -190,6 +190,7 @@ pub fn parse(input: &mut &str) -> ModalResult<Vec<Item>> {
     Ok(items)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn new_date(
     year: i32,
     month: u32,
@@ -197,10 +198,11 @@ fn new_date(
     hour: u32,
     minute: u32,
     second: u32,
+    nano: u32,
     offset: FixedOffset,
 ) -> Option<DateTime<FixedOffset>> {
     let newdate = NaiveDate::from_ymd_opt(year, month, day)
-        .and_then(|naive| naive.and_hms_opt(hour, minute, second))?;
+        .and_then(|naive| naive.and_hms_nano_opt(hour, minute, second, nano))?;
 
     Some(DateTime::<FixedOffset>::from_local(newdate, offset))
 }
@@ -220,7 +222,8 @@ fn with_timezone_restore(
         .with_year(copy.year())?
         .with_hour(copy.hour())?
         .with_minute(copy.minute())?
-        .with_second(copy.second())?;
+        .with_second(copy.second())?
+        .with_nanosecond(copy.nanosecond())?;
     Some(x)
 }
 
@@ -274,6 +277,7 @@ fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<
                     d.hour(),
                     d.minute(),
                     d.second(),
+                    d.nanosecond(),
                     *d.offset(),
                 )?;
             }
@@ -299,6 +303,7 @@ fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<
                     hour,
                     minute,
                     second as u32,
+                    (second.fract() * 10f64.powi(9)).round() as u32,
                     offset,
                 )?;
             }
@@ -320,6 +325,7 @@ fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<
                     hour,
                     minute,
                     second as u32,
+                    (second.fract() * 10f64.powi(9)).round() as u32,
                     offset,
                 )?;
             }
@@ -493,6 +499,16 @@ mod tests {
         assert_eq!(
             "2024-07-17 06:14:49 +00:00",
             test_eq_fmt("%Y-%m-%d %H:%M:%S %:z", "Jul 17 06:14:49 2024 GMT"),
+        );
+
+        assert_eq!(
+            "2024-07-17 06:14:49.567 +00:00",
+            test_eq_fmt("%Y-%m-%d %H:%M:%S%.f %:z", "Jul 17 06:14:49.567 2024 GMT"),
+        );
+
+        assert_eq!(
+            "2024-07-17 06:14:49.567 +00:00",
+            test_eq_fmt("%Y-%m-%d %H:%M:%S%.f %:z", "Jul 17 06:14:49,567 2024 GMT"),
         );
 
         assert_eq!(
