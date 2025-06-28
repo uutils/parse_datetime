@@ -143,7 +143,7 @@ impl Display for Offset {
 }
 
 #[derive(Clone)]
-enum Suffix {
+enum Meridiem {
     Am,
     Pm,
 }
@@ -178,30 +178,37 @@ pub fn iso(input: &mut &str) -> ModalResult<Time> {
 ///
 /// The hours are restricted to 12 or lower in this format
 fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
-    seq!(
+    let (h, m, s, meridiem) = seq!(
         hour12,
         opt(preceded(colon, minute)),
         opt(preceded(colon, second)),
         alt((
-            s("am").value(Suffix::Am),
-            s("a.m.").value(Suffix::Am),
-            s("pm").value(Suffix::Pm),
-            s("p.m.").value(Suffix::Pm)
+            s("am").value(Meridiem::Am),
+            s("a.m.").value(Meridiem::Am),
+            s("pm").value(Meridiem::Pm),
+            s("p.m.").value(Meridiem::Pm)
         )),
     )
-    .map(|(h, m, s, suffix)| {
-        let mut h = h % 12;
-        if let Suffix::Pm = suffix {
-            h += 12;
-        }
-        Time {
-            hour: h,
-            minute: m.unwrap_or(0),
-            second: s.unwrap_or(0.0),
-            offset: None,
-        }
+    .parse_next(input)?;
+
+    if h == 0 {
+        let mut ctx_err = ContextError::new();
+        ctx_err.push(StrContext::Expected(StrContextValue::Description(
+            "hour must be greater than 0 when meridiem is specified",
+        )));
+        return Err(ErrMode::Cut(ctx_err));
+    }
+
+    let mut h = h % 12;
+    if let Meridiem::Pm = meridiem {
+        h += 12;
+    }
+    Ok(Time {
+        hour: h,
+        minute: m.unwrap_or(0),
+        second: s.unwrap_or(0.0),
+        offset: None,
     })
-    .parse_next(input)
 }
 
 /// Parse a colon preceded by whitespace
@@ -631,6 +638,12 @@ mod tests {
                 "Format string: {old_s}"
             );
         }
+    }
+
+    #[test]
+    fn invalid() {
+        assert!(parse(&mut "00:00am").is_err());
+        assert!(parse(&mut "00:00:00am").is_err());
     }
 
     #[test]

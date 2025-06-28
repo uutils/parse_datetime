@@ -107,10 +107,8 @@ fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &st
 #[case("23:59:60")]
 #[case("13:00:00am")]
 #[case("13:00:00pm")]
-/* TODO: https://github.com/uutils/parse_datetime/issues/166
 #[case("00:00:00am")]
 #[case("00:00:00pm")]
-*/
 #[case("23:59:59 a.m")]
 #[case("23:59:59 pm.")]
 #[case("23:59:59+24:01")]
