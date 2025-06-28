@@ -54,13 +54,15 @@ pub enum Relative {
 }
 
 impl Relative {
+    // TODO: determine how to handle multiplication overflows,
+    // using saturating_mul for now.
     fn mul(self, n: i32) -> Self {
         match self {
-            Self::Years(x) => Self::Years(n * x),
-            Self::Months(x) => Self::Months(n * x),
-            Self::Days(x) => Self::Days(n * x),
-            Self::Hours(x) => Self::Hours(n * x),
-            Self::Minutes(x) => Self::Minutes(n * x),
+            Self::Years(x) => Self::Years(n.saturating_mul(x)),
+            Self::Months(x) => Self::Months(n.saturating_mul(x)),
+            Self::Days(x) => Self::Days(n.saturating_mul(x)),
+            Self::Hours(x) => Self::Hours(n.saturating_mul(x)),
+            Self::Minutes(x) => Self::Minutes(n.saturating_mul(x)),
             Self::Seconds(x) => Self::Seconds(f64::from(n) * x),
         }
     }

@@ -356,7 +356,7 @@ fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<
                 let delta = (day.num_days_from_monday() as i32
                     - d.weekday().num_days_from_monday() as i32)
                     .rem_euclid(7)
-                    + x * 7;
+                    + x.checked_mul(7)?;
 
                 d = if delta < 0 {
                     d.checked_sub_days(chrono::Days::new((-delta) as u64))?
@@ -394,11 +394,11 @@ fn at_date_inner(date: Vec<Item>, at: DateTime<FixedOffset>) -> Option<DateTime<
                     relative::Relative::Days(x) => d += chrono::Duration::days(x.into()),
                     relative::Relative::Hours(x) => d += chrono::Duration::hours(x.into()),
                     relative::Relative::Minutes(x) => {
-                        d += chrono::Duration::minutes(x.into());
+                        d += chrono::Duration::try_minutes(x.into())?;
                     }
                     // Seconds are special because they can be given as a float
                     relative::Relative::Seconds(x) => {
-                        d += chrono::Duration::seconds(x as i64);
+                        d += chrono::Duration::try_seconds(x as i64)?;
                     }
                 }
             }
