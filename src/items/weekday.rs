@@ -29,7 +29,7 @@ use winnow::{
 
 use super::{ordinal::ordinal, primitive::s};
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub(crate) enum Day {
     Monday,
     Tuesday,
