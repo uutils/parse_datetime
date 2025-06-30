@@ -29,35 +29,15 @@
 #![allow(deprecated)]
 mod combined;
 mod date;
+mod epoch;
 mod ordinal;
 mod primitive;
 mod relative;
 mod time;
+mod timezone;
 mod weekday;
 
-mod epoch {
-    use winnow::{combinator::preceded, ModalResult, Parser};
-
-    use super::primitive::{dec_int, s};
-
-    pub fn parse(input: &mut &str) -> ModalResult<i32> {
-        s(preceded("@", dec_int)).parse_next(input)
-    }
-}
-
-mod timezone {
-    use winnow::ModalResult;
-
-    use super::time;
-
-    pub(crate) fn parse(input: &mut &str) -> ModalResult<time::Offset> {
-        time::timezone(input)
-    }
-}
-
-use chrono::NaiveDate;
-use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike};
-
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Timelike};
 use primitive::space;
 use winnow::{
     combinator::{alt, trace},
