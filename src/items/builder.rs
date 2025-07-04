@@ -33,13 +33,11 @@ impl DateTimeBuilder {
         self
     }
 
+    /// Timestamp value is exclusive to other date/time components. Caller of
+    /// the builder must ensure that it is not combined with other items.
     pub(super) fn set_timestamp(mut self, ts: i32) -> Result<Self, &'static str> {
-        if self.timestamp.is_some() {
-            Err("timestamp cannot appear more than once")
-        } else {
-            self.timestamp = Some(ts);
-            Ok(self)
-        }
+        self.timestamp = Some(ts);
+        Ok(self)
     }
 
     pub(super) fn set_year(mut self, year: u32) -> Result<Self, &'static str> {

@@ -5,6 +5,13 @@ use winnow::{combinator::preceded, ModalResult, Parser};
 
 use super::primitive::{dec_int, s};
 
+/// Parse a timestamp in the form of `@1234567890`.
+///
+/// Grammar:
+///
+/// ```ebnf
+/// timestamp = "@" dec_int ;
+/// ```
 pub fn parse(input: &mut &str) -> ModalResult<i32> {
     s(preceded("@", dec_int)).parse_next(input)
 }

@@ -45,7 +45,7 @@ use builder::DateTimeBuilder;
 use chrono::{DateTime, FixedOffset};
 use primitive::space;
 use winnow::{
-    combinator::{alt, trace},
+    combinator::{alt, eof, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
     stream::Stream,
     ModalResult, Parser,
@@ -65,26 +65,6 @@ pub enum Item {
     TimeZone(time::Offset),
 }
 
-/// Parse an item.
-/// TODO: timestamp values are exclusive with other items. See
-/// https://github.com/uutils/parse_datetime/issues/156
-pub fn parse_one(input: &mut &str) -> ModalResult<Item> {
-    trace(
-        "parse_one",
-        alt((
-            combined::parse.map(Item::DateTime),
-            date::parse.map(Item::Date),
-            time::parse.map(Item::Time),
-            relative::parse.map(Item::Relative),
-            weekday::parse.map(Item::Weekday),
-            epoch::parse.map(Item::Timestamp),
-            timezone::parse.map(Item::TimeZone),
-            date::year.map(Item::Year),
-        )),
-    )
-    .parse_next(input)
-}
-
 fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError> {
     ErrMode::Cut(ContextError::new()).add_context(
         input,
@@ -93,11 +73,41 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
     )
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+/// Parse an item.
+///
+/// Grammar:
+///
+/// ```ebnf
+/// item = combined | date | time | relative | weekday | timezone | year ;
+/// ```
+fn parse_item(input: &mut &str) -> ModalResult<Item> {
+    trace(
+        "parse_item",
+        alt((
+            combined::parse.map(Item::DateTime),
+            date::parse.map(Item::Date),
+            time::parse.map(Item::Time),
+            relative::parse.map(Item::Relative),
+            weekday::parse.map(Item::Weekday),
+            timezone::parse.map(Item::TimeZone),
+            date::year.map(Item::Year),
+        )),
+    )
+    .parse_next(input)
+}
+
+/// Parse a sequence of items.
+///
+/// Grammar:
+///
+/// ```ebnf
+/// items = item, { space, item } ;
+/// ```
+fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     let mut builder = DateTimeBuilder::new();
 
     loop {
-        match parse_one.parse_next(input) {
+        match parse_item.parse_next(input) {
             Ok(item) => match item {
                 Item::Timestamp(ts) => {
                     builder = builder
@@ -145,6 +155,38 @@ pub fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     }
 
     Ok(builder)
+}
+
+/// Parse a timestamp.
+///
+/// From the GNU docs:
+///
+/// (Timestamp) Such a number cannot be combined with any other date item, as it
+/// specifies a complete timestamp.
+fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    trace(
+        "parse_timestamp",
+        terminated(epoch::parse.map(Item::Timestamp), eof),
+    )
+    .verify_map(|ts: Item| {
+        if let Item::Timestamp(ts) = ts {
+            DateTimeBuilder::new().set_timestamp(ts).ok()
+        } else {
+            None
+        }
+    })
+    .parse_next(input)
+}
+
+/// Parse a date and time string.
+///
+/// Grammar:
+///
+/// ```ebnf
+/// date_time = timestamp | items ;
+/// ```
+pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
 }
 
 pub(crate) fn at_date(
@@ -285,6 +327,14 @@ mod tests {
             .contains("time offset and timezone are mutually exclusive"));
 
         let result = parse(&mut "2025-05-19 abcdef");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unexpected input"));
+
+        let result = parse(&mut "@1690466034 2025-05-19");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unexpected input"));
+
+        let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unexpected input"));
     }
