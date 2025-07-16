@@ -42,7 +42,7 @@ use std::fmt::Display;
 use chrono::FixedOffset;
 use winnow::{
     ascii::digit1,
-    combinator::{alt, opt, peek, preceded},
+    combinator::{alt, eof, opt, peek, preceded, terminated},
     error::{ContextError, ErrMode, StrContext, StrContextValue},
     seq,
     stream::AsChar,
@@ -182,12 +182,15 @@ fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
         hour12,
         opt(preceded(colon, minute)),
         opt(preceded(colon, second)),
-        alt((
-            s("am").value(Meridiem::Am),
-            s("a.m.").value(Meridiem::Am),
-            s("pm").value(Meridiem::Pm),
-            s("p.m.").value(Meridiem::Pm)
-        )),
+        terminated(
+            alt((
+                s("am").value(Meridiem::Am),
+                s("a.m.").value(Meridiem::Am),
+                s("pm").value(Meridiem::Pm),
+                s("p.m.").value(Meridiem::Pm)
+            )),
+            eof
+        )
     )
     .parse_next(input)?;
 
