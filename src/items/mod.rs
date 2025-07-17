@@ -65,44 +65,63 @@ pub enum Item {
     TimeZone(time::Offset),
 }
 
-fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError> {
-    ErrMode::Cut(ContextError::new()).add_context(
-        input,
-        &input.checkpoint(),
-        StrContext::Expected(StrContextValue::Description(reason)),
-    )
+/// Build a `DateTime<FixedOffset>` from a `DateTimeBuilder` and a base date.
+pub(crate) fn at_date(
+    builder: DateTimeBuilder,
+    base: DateTime<FixedOffset>,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    builder
+        .set_base(base)
+        .build()
+        .ok_or(ParseDateTimeError::InvalidInput)
 }
 
-/// Parse an item.
+/// Build a `DateTime<FixedOffset>` from a `DateTimeBuilder` and the current
+/// time.
+pub(crate) fn at_local(
+    builder: DateTimeBuilder,
+) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+    builder.build().ok_or(ParseDateTimeError::InvalidInput)
+}
+
+/// Parse a date and time string.
 ///
 /// Grammar:
 ///
 /// ```ebnf
-/// item = combined | date | time | relative | weekday | timezone | year ;
+/// spec = timestamp | items ;
+///
+/// timestamp = "@" , dec_int ;
+///
+/// items = item , { item } ;
+/// item = datetime | date | time | relative | weekday | timezone | year ;
 /// ```
-fn parse_item(input: &mut &str) -> ModalResult<Item> {
+pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
+}
+
+/// Parse a timestamp.
+///
+/// From the GNU docs:
+///
+/// > (Timestamp) Such a number cannot be combined with any other date item, as
+/// > it specifies a complete timestamp.
+fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace(
-        "parse_item",
-        alt((
-            combined::parse.map(Item::DateTime),
-            date::parse.map(Item::Date),
-            time::parse.map(Item::Time),
-            relative::parse.map(Item::Relative),
-            weekday::parse.map(Item::Weekday),
-            timezone::parse.map(Item::TimeZone),
-            date::year.map(Item::Year),
-        )),
+        "parse_timestamp",
+        terminated(epoch::parse.map(Item::Timestamp), eof),
     )
+    .verify_map(|ts: Item| {
+        if let Item::Timestamp(ts) = ts {
+            DateTimeBuilder::new().set_timestamp(ts).ok()
+        } else {
+            None
+        }
+    })
     .parse_next(input)
 }
 
 /// Parse a sequence of items.
-///
-/// Grammar:
-///
-/// ```ebnf
-/// items = item, { space, item } ;
-/// ```
 fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     let mut builder = DateTimeBuilder::new();
 
@@ -157,52 +176,30 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     Ok(builder)
 }
 
-/// Parse a timestamp.
-///
-/// From the GNU docs:
-///
-/// (Timestamp) Such a number cannot be combined with any other date item, as it
-/// specifies a complete timestamp.
-fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+/// Parse an item.
+fn parse_item(input: &mut &str) -> ModalResult<Item> {
     trace(
-        "parse_timestamp",
-        terminated(epoch::parse.map(Item::Timestamp), eof),
+        "parse_item",
+        alt((
+            combined::parse.map(Item::DateTime),
+            date::parse.map(Item::Date),
+            time::parse.map(Item::Time),
+            relative::parse.map(Item::Relative),
+            weekday::parse.map(Item::Weekday),
+            timezone::parse.map(Item::TimeZone),
+            date::year.map(Item::Year),
+        )),
     )
-    .verify_map(|ts: Item| {
-        if let Item::Timestamp(ts) = ts {
-            DateTimeBuilder::new().set_timestamp(ts).ok()
-        } else {
-            None
-        }
-    })
     .parse_next(input)
 }
 
-/// Parse a date and time string.
-///
-/// Grammar:
-///
-/// ```ebnf
-/// date_time = timestamp | items ;
-/// ```
-pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
-}
-
-pub(crate) fn at_date(
-    builder: DateTimeBuilder,
-    base: DateTime<FixedOffset>,
-) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
-    builder
-        .set_base(base)
-        .build()
-        .ok_or(ParseDateTimeError::InvalidInput)
-}
-
-pub(crate) fn at_local(
-    builder: DateTimeBuilder,
-) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
-    builder.build().ok_or(ParseDateTimeError::InvalidInput)
+/// Create an error with context for unexpected input.
+fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError> {
+    ErrMode::Cut(ContextError::new()).add_context(
+        input,
+        &input.checkpoint(),
+        StrContext::Expected(StrContextValue::Description(reason)),
+    )
 }
 
 #[cfg(test)]
