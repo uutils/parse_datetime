@@ -73,7 +73,7 @@ pub struct Time {
 }
 
 impl Offset {
-    fn merge(self, offset: Offset) -> Option<Offset> {
+    fn merge(self, offset: Offset) -> Offset {
         fn combine(a: u32, neg_a: bool, b: u32, neg_b: bool) -> (u32, bool) {
             if neg_a == neg_b {
                 (a + b, neg_a)
@@ -92,11 +92,11 @@ impl Offset {
         let hours = hours_minutes / 60;
         let minutes = hours_minutes % 60;
 
-        Some(Offset {
+        Offset {
             negative,
             hours,
             minutes,
-        })
+        }
     }
 }
 
@@ -345,9 +345,7 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     // Only process if the input cannot be parsed as a relative time.
     if peek(relative::parse).parse_next(input).is_err() {
         if let Ok(other_tz) = timezone_num.parse_next(input) {
-            let newtz = tz
-                .merge(other_tz)
-                .ok_or(ErrMode::Cut(ContextError::new()))?;
+            let newtz = tz.merge(other_tz);
 
             return Ok(newtz);
         };
