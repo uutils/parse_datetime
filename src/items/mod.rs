@@ -54,7 +54,7 @@ use winnow::{
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
-pub enum Item {
+pub(crate) enum Item {
     Timestamp(i32),
     Year(u32),
     DateTime(combined::DateTime),
@@ -95,6 +95,14 @@ pub(crate) fn at_local(
 ///
 /// items = item , { item } ;
 /// item = datetime | date | time | relative | weekday | timezone | year ;
+///
+/// datetime = iso_date , [ "T" | "t" | whitespace ] , iso_time ;
+///
+/// iso_date = year , [ delem ] , month , [ delem ] , day ;
+/// year = dec_int ;
+/// month = dec_int ;
+/// day = dec_int ;
+/// delem = [ { whitespace } ] , "-" , [ { whitespace } ] ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)

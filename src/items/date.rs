@@ -29,13 +29,14 @@
 use winnow::{
     ascii::alpha1,
     combinator::{alt, opt, preceded, trace},
+    error::ErrMode,
     seq,
     stream::AsChar,
-    token::{take, take_while},
+    token::take_while,
     ModalResult, Parser,
 };
 
-use super::primitive::{dec_uint, s};
+use super::primitive::{ctx_err, dec_uint, s};
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
@@ -45,39 +46,112 @@ pub struct Date {
     pub year: Option<u32>,
 }
 
+impl TryFrom<(&str, u32, u32)> for Date {
+    type Error = &'static str;
+
+    /// Create a `Date` from a tuple of `(year, month, day)`.
+    ///
+    /// Note: The `year` is represented as a `&str` to handle a specific GNU
+    /// compatibility quirk. According to the GNU documentation: "if the year is
+    /// 68 or smaller, then 2000 is added to it; otherwise, if year is less than
+    /// 100, then 1900 is added to it." This adjustment only applies to
+    /// two-digit year strings. For example, `"00"` is interpreted as `2000`,
+    /// whereas `"0"`, `"000"`, or `"0000"` are interpreted as `0`.
+    fn try_from(value: (&str, u32, u32)) -> Result<Self, Self::Error> {
+        let (year_str, month, day) = value;
+
+        let mut year = year_str
+            .parse::<u32>()
+            .map_err(|_| "year must be a valid number")?;
+
+        // If year is 68 or smaller, then 2000 is added to it; otherwise, if year
+        // is less than 100, then 1900 is added to it.
+        //
+        // GNU quirk: this only applies to two-digit years. For example,
+        // "98-01-01" will be parsed as "1998-01-01", while "098-01-01" will be
+        // parsed as "0098-01-01".
+        if year_str.len() == 2 {
+            if year <= 68 {
+                year += 2000
+            } else if year < 100 {
+                year += 1900
+            }
+        }
+
+        // 2147485547 is the maximum value accepted by GNU, but chrono only
+        // behaves like GNU for years in the range: [0, 9999], so we keep in the
+        // range [0, 9999].
+        //
+        // See discussion in https://github.com/uutils/parse_datetime/issues/160.
+        if year > 9999 {
+            return Err("year must be no greater than 9999");
+        }
+
+        if !(1..=12).contains(&month) {
+            return Err("month must be between 1 and 12");
+        }
+
+        let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+
+        if !(1..=31).contains(&day)
+            || (month == 2 && day > (if is_leap_year { 29 } else { 28 }))
+            || ((month == 4 || month == 6 || month == 9 || month == 11) && day > 30)
+        {
+            return Err("day is not valid for the given month");
+        }
+
+        Ok(Date {
+            day,
+            month,
+            year: Some(year),
+        })
+    }
+}
+
 pub fn parse(input: &mut &str) -> ModalResult<Date> {
     alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
 
-/// Parse `YYYY-MM-DD` or `YY-MM-DD`
+/// Parse `[year]-[month]-[day]`
 ///
 /// This is also used by [`combined`](super::combined).
 pub fn iso1(input: &mut &str) -> ModalResult<Date> {
-    seq!(Date {
-        year: year.map(Some),
-        _: s('-'),
-        month: month,
-        _: s('-'),
-        day: day,
-    })
-    .parse_next(input)
+    let (year, _, month, _, day) = (
+        // `year` must be a `&str`, see comment in `TryFrom` impl for `Date`.
+        s(take_while(1.., AsChar::is_dec_digit)),
+        s('-'),
+        s(dec_uint),
+        s('-'),
+        s(dec_uint),
+    )
+        .parse_next(input)?;
+
+    (year, month, day)
+        .try_into()
+        .map_err(|e| ErrMode::Cut(ctx_err(e)))
 }
 
-/// Parse `YYYYMMDD`
+/// Parse `[year][month][day]`
 ///
 /// This is also used by [`combined`](super::combined).
 pub fn iso2(input: &mut &str) -> ModalResult<Date> {
-    s((
-        take(4usize).try_map(|s: &str| s.parse::<u32>()),
-        take(2usize).try_map(|s: &str| s.parse::<u32>()),
-        take(2usize).try_map(|s: &str| s.parse::<u32>()),
-    ))
-    .map(|(year, month, day): (u32, u32, u32)| Date {
-        day,
-        month,
-        year: Some(year),
-    })
-    .parse_next(input)
+    let date_str = take_while(5.., AsChar::is_dec_digit).parse_next(input)?;
+    let len = date_str.len();
+
+    // `year` must be a `&str`, see comment in `TryFrom` impl for `Date`.
+    let year = &date_str[..len - 4];
+
+    let month = date_str[len - 4..len - 2]
+        .parse::<u32>()
+        .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
+
+    let day = date_str[len - 2..]
+        .parse::<u32>()
+        .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid number")))?;
+
+    (year, month, day)
+        .try_into()
+        .map_err(|e| ErrMode::Cut(ctx_err(e)))
 }
 
 /// Parse `MM/DD/YYYY`, `MM/DD/YY` or `MM/DD`
@@ -201,6 +275,94 @@ mod tests {
     // 14-nov-2022
     // 14nov2022
     // ```
+
+    #[test]
+    fn iso1() {
+        let reference = Date {
+            year: Some(1),
+            month: 1,
+            day: 1,
+        };
+
+        for mut s in ["1-1-1", "1 - 1 - 1", "1-01-01", "1-001-001", "001-01-01"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        // GNU quirk: when year string is 2 characters long and year is 68 or
+        // smaller, 2000 is added to it.
+        let reference = Date {
+            year: Some(2001),
+            month: 1,
+            day: 1,
+        };
+
+        for mut s in ["01-1-1", "01-01-01"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        // GNU quirk: when year string is 2 characters long and year is less
+        // than 100, 1900 is added to it.
+        let reference = Date {
+            year: Some(1970),
+            month: 1,
+            day: 1,
+        };
+
+        for mut s in ["70-1-1", "70-01-01"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        for mut s in ["01-00-01", "01-13-01", "01-01-32", "01-02-29", "01-04-31"] {
+            let old_s = s.to_owned();
+            assert!(parse(&mut s).is_err(), "Format string: {old_s}");
+        }
+    }
+
+    #[test]
+    fn iso2() {
+        let reference = Date {
+            year: Some(1),
+            month: 1,
+            day: 1,
+        };
+
+        for mut s in ["10101", "0010101", "00010101", "000010101"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        // GNU quirk: when year string is 2 characters long and year is 68 or
+        // smaller, 2000 is added to it.
+        let reference = Date {
+            year: Some(2001),
+            month: 1,
+            day: 1,
+        };
+
+        let mut s = "010101";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+
+        // GNU quirk: when year string is 2 characters long and year is less
+        // than 100, 1900 is added to it.
+        let reference = Date {
+            year: Some(1970),
+            month: 1,
+            day: 1,
+        };
+
+        let mut s = "700101";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+
+        for mut s in ["010001", "011301", "010132", "010229", "010431"] {
+            let old_s = s.to_owned();
+            assert!(parse(&mut s).is_err(), "Format string: {old_s}");
+        }
+    }
 
     #[test]
     fn with_year() {

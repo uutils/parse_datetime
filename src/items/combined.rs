@@ -12,7 +12,8 @@
 //! > In this format, the time of day should use 24-hour notation. Fractional
 //! > seconds are allowed, with either comma or period preceding the fraction.
 //! > ISO 8601 fractional minutes and hours are not supported. Typically, hosts
-//! > support nanosecond timestamp resolution; excess precision is silently discarded.
+//! > support nanosecond timestamp resolution; excess precision is silently
+//! > discarded.
 use winnow::{
     combinator::{alt, trace},
     seq, ModalResult, Parser,
@@ -27,17 +28,17 @@ use super::{
 };
 
 #[derive(PartialEq, Debug, Clone, Default)]
-pub struct DateTime {
+pub(crate) struct DateTime {
     pub(crate) date: Date,
     pub(crate) time: Time,
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<DateTime> {
+pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTime> {
     seq!(DateTime {
-        date: trace("date iso", alt((date::iso1, date::iso2))),
+        date: trace("iso_date", alt((date::iso1, date::iso2))),
         // Note: the `T` is lowercased by the main parse function
         _: alt((s('t').void(), (' ', space).void())),
-        time: trace("time iso", time::iso),
+        time: trace("iso_time", time::iso),
     })
     .parse_next(input)
 }
