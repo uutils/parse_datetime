@@ -222,7 +222,6 @@ mod tests {
         use chrono::{Local, NaiveDate};
 
         use crate::parse_datetime;
-        use crate::ParseDateTimeError;
 
         #[test]
         fn test_positive_offsets() {
@@ -250,15 +249,6 @@ mod tests {
                 let actual = parse_datetime(offset).unwrap();
                 assert_eq!(expected, format!("{}", actual.format("%Y%m%d%H%M%z")));
             }
-        }
-
-        #[test]
-        fn invalid_offset_format() {
-            let offset = "UTC+01005";
-            assert_eq!(
-                parse_datetime(offset),
-                Err(ParseDateTimeError::InvalidInput)
-            );
         }
 
         #[test]

@@ -41,7 +41,6 @@ use std::fmt::Display;
 
 use chrono::FixedOffset;
 use winnow::{
-    ascii::digit1,
     combinator::{alt, opt, peek, preceded},
     error::{ContextError, ErrMode, StrContext, StrContextValue},
     seq,
@@ -178,7 +177,7 @@ pub fn iso(input: &mut &str) -> ModalResult<Time> {
 ///
 /// The hours are restricted to 12 or lower in this format
 fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
-    let (h, m, s, meridiem) = seq!(
+    let (h, m, s, meridiem) = (
         hour12,
         opt(preceded(colon, minute)),
         opt(preceded(colon, second)),
@@ -186,10 +185,10 @@ fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
             s("am").value(Meridiem::Am),
             s("a.m.").value(Meridiem::Am),
             s("pm").value(Meridiem::Pm),
-            s("p.m.").value(Meridiem::Pm)
+            s("p.m.").value(Meridiem::Pm),
         )),
     )
-    .parse_next(input)?;
+        .parse_next(input)?;
 
     if h == 0 {
         let mut ctx_err = ContextError::new();
@@ -288,14 +287,7 @@ fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
 /// Parse a timezone offset with a colon separating hours and minutes
 fn timezone_colon(input: &mut &str) -> ModalResult<(u32, u32)> {
     seq!(
-        s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| {
-            // parse will fail on empty input
-            if x.is_empty() {
-                Ok(0)
-            } else {
-                x.parse()
-            }
-        }),
+        s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| x.parse()),
         _: colon,
         s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| x.parse()),
     )
@@ -304,26 +296,21 @@ fn timezone_colon(input: &mut &str) -> ModalResult<(u32, u32)> {
 
 /// Parse a timezone offset without colon
 fn timezone_colonless(input: &mut &str) -> ModalResult<(u32, u32)> {
-    if let Ok(x) = peek(s(digit1::<&str, ContextError>)).parse_next(input) {
-        if x.len() > 4 {
-            let mut ctx_err = ContextError::new();
-            ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                "timezone offset cannot be more than 4 digits",
-            )));
-            return Err(ErrMode::Cut(ctx_err));
-        }
-    }
-
-    // TODO: GNU date supports number strings with leading zeroes, e.g.,
-    // `UTC+000001100` is valid.
-    s(take_while(0..=4, AsChar::is_dec_digit))
-        .verify_map(|x: &str| {
-            Some(match x.len() {
+    s(take_while(0.., AsChar::is_dec_digit))
+        .verify_map(|s: &str| {
+            // GNU date supports number strings with leading zeroes, e.g.,
+            // `UTC+000001100` is valid.
+            let s = if s.len() > 4 {
+                s.trim_start_matches('0')
+            } else {
+                s
+            };
+            Some(match s.len() {
                 0 => (0, 0),
-                1 | 2 => (x.parse().ok()?, 0),
+                1 | 2 => (s.parse().ok()?, 0),
                 // The minutes are the last two characters here, for some reason.
-                3 => (x[..1].parse().ok()?, x[1..].parse().ok()?),
-                4 => (x[..2].parse().ok()?, x[2..].parse().ok()?),
+                3 => (s[..1].parse().ok()?, s[1..].parse().ok()?),
+                4 => (s[..2].parse().ok()?, s[2..].parse().ok()?),
                 _ => return None,
             })
         })
@@ -852,6 +839,8 @@ mod tests {
 
         assert_eq!("(0, 0)", aux(&mut "0000"));
         assert_eq!("(12, 34)", aux(&mut "1234"));
+        assert_eq!("(12, 34)", aux(&mut "00001234"));
+        assert!(timezone_colonless(&mut "12345").is_err());
     }
 
     #[test]
