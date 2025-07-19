@@ -233,8 +233,6 @@ mod tests {
                 "Z+07:00",
                 "Z+0700",
                 "Z+07",
-                "+07",
-                "+7",
             ];
 
             let expected = format!("{}{}", Local::now().format("%Y%m%d"), "0000+0700");
@@ -389,21 +387,6 @@ mod tests {
         }
     }
 
-    #[cfg(test)]
-    mod timeonly {
-        use crate::parse_datetime_at_date;
-        use chrono::{Local, TimeZone};
-        use std::env;
-        #[test]
-        fn test_time_only() {
-            env::set_var("TZ", "UTC");
-            let test_date = Local.with_ymd_and_hms(2024, 3, 3, 0, 0, 0).unwrap();
-            let parsed_time = parse_datetime_at_date(test_date, "9:04:30 PM +0530")
-                .unwrap()
-                .timestamp();
-            assert_eq!(parsed_time, 1709480070);
-        }
-    }
     /// Used to test example code presented in the README.
     mod readme_test {
         use crate::parse_datetime;
@@ -470,8 +453,6 @@ mod tests {
             "1997-01-01 00:00:00 +0000",
             "1997-01-01 00:00:00 +00",
             "199701010000 +0000",
-            "199701010000UTC+0000",
-            "199701010000Z+0000",
             "1997-01-01 00:00 +0000",
             "1997-01-01 00:00:00 +0000",
             "1997-01-01T00:00:00+0000",
@@ -538,8 +519,6 @@ mod tests {
             "1997-01-01 00:00:00 +0000 +1 year",
             "1997-01-01 00:00:00 +00 +1 year",
             "199701010000 +0000 +1 year",
-            "199701010000UTC+0000 +1 year",
-            "199701010000Z+0000 +1 year",
             "1997-01-01T00:00:00Z +1 year",
             "1997-01-01 00:00 +0000 +1 year",
             "1997-01-01 00:00:00 +0000 +1 year",
@@ -600,22 +579,6 @@ mod tests {
             let actual = crate::parse_datetime(s).unwrap();
             assert_eq!(actual, expected);
         }
-    }
-
-    #[test]
-    fn test_time_only() {
-        use chrono::{FixedOffset, Local};
-        std::env::set_var("TZ", "UTC");
-
-        let offset = FixedOffset::east_opt(5 * 60 * 60 + 1800).unwrap();
-        let expected = Local::now()
-            .date_naive()
-            .and_hms_opt(21, 4, 30)
-            .unwrap()
-            .and_local_timezone(offset)
-            .unwrap();
-        let actual = crate::parse_datetime("9:04:30 PM +0530").unwrap();
-        assert_eq!(actual, expected);
     }
 
     #[test]

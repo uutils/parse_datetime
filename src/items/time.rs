@@ -157,7 +157,7 @@ pub fn parse(input: &mut &str) -> ModalResult<Time> {
 /// Also used by the [`combined`](super::combined) module
 pub fn iso(input: &mut &str) -> ModalResult<Time> {
     alt((
-        (hour24, timezone).map(|(hour, offset)| Time {
+        (hour24, timezone_num).map(|(hour, offset)| Time {
             hour,
             minute: 0,
             second: 0.0,
@@ -168,7 +168,7 @@ pub fn iso(input: &mut &str) -> ModalResult<Time> {
             _: colon,
             minute: minute,
             second: opt(preceded(colon, second)).map(|s| s.unwrap_or(0.0)),
-            offset: opt(timezone)
+            offset: opt(timezone_num)
         }),
     ))
     .parse_next(input)
@@ -244,7 +244,7 @@ fn second(input: &mut &str) -> ModalResult<f64> {
 }
 
 pub(crate) fn timezone(input: &mut &str) -> ModalResult<Offset> {
-    alt((timezone_num, timezone_name_offset)).parse_next(input)
+    timezone_name_offset.parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`
@@ -864,13 +864,25 @@ mod tests {
                 .expect("expect tests to succeed")
         };
 
-        assert_eq!("+00:00", make_timezone(&mut "+00:00"));
-        assert_eq!("+00:00", make_timezone(&mut "+0000"));
-        assert_eq!("-00:00", make_timezone(&mut "-0000"));
         assert_eq!("+00:00", make_timezone(&mut "gmt"));
         assert_eq!("+01:00", make_timezone(&mut "a"));
         assert_eq!("+00:00", make_timezone(&mut "utc"));
         assert_eq!("-02:00", make_timezone(&mut "brst"));
         assert_eq!("-03:00", make_timezone(&mut "brt"));
+    }
+
+    #[test]
+    fn test_timezone_num() {
+        use super::timezone_num;
+        let make_timezone = |input: &mut &str| {
+            timezone_num(input)
+                .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
+                .map(|offset| format!("{offset}"))
+                .expect("expect tests to succeed")
+        };
+
+        assert_eq!("+00:00", make_timezone(&mut "+00:00"));
+        assert_eq!("+00:00", make_timezone(&mut "+0000"));
+        assert_eq!("-00:00", make_timezone(&mut "-0000"));
     }
 }
