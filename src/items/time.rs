@@ -42,7 +42,7 @@ use std::fmt::Display;
 use chrono::FixedOffset;
 use winnow::{
     combinator::{alt, opt, peek, preceded},
-    error::{ContextError, ErrMode, StrContext, StrContextValue},
+    error::{ContextError, ErrMode},
     seq,
     stream::AsChar,
     token::take_while,
@@ -52,7 +52,7 @@ use winnow::{
 use crate::ParseDateTimeError;
 
 use super::{
-    primitive::{dec_uint, float, s},
+    primitive::{ctx_err, dec_uint, float, s},
     relative,
 };
 
@@ -191,11 +191,9 @@ fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
         .parse_next(input)?;
 
     if h == 0 {
-        let mut ctx_err = ContextError::new();
-        ctx_err.push(StrContext::Expected(StrContextValue::Description(
+        return Err(ErrMode::Cut(ctx_err(
             "hour must be greater than 0 when meridiem is specified",
         )));
-        return Err(ErrMode::Cut(ctx_err));
     }
 
     let mut h = h % 12;
@@ -261,19 +259,11 @@ fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
         .parse_next(input)
         .and_then(|(negative, (hours, minutes))| {
             if !(0..=12).contains(&hours) {
-                let mut ctx_err = ContextError::new();
-                ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                    "timezone hour between 0 and 12",
-                )));
-                return Err(ErrMode::Cut(ctx_err));
+                return Err(ErrMode::Cut(ctx_err("timezone hour between 0 and 12")));
             }
 
             if !(0..=60).contains(&minutes) {
-                let mut ctx_err = ContextError::new();
-                ctx_err.push(StrContext::Expected(StrContextValue::Description(
-                    "timezone minute between 0 and 60",
-                )));
-                return Err(ErrMode::Cut(ctx_err));
+                return Err(ErrMode::Cut(ctx_err("timezone minute between 0 and 60")));
             }
 
             Ok(Offset {
