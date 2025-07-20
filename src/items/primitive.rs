@@ -6,7 +6,7 @@
 use winnow::{
     ascii::{digit1, multispace0},
     combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated},
-    error::ParserError,
+    error::{ContextError, ParserError, StrContext, StrContextValue},
     stream::AsChar,
     token::{none_of, one_of, take_while},
     Parser,
@@ -129,4 +129,11 @@ where
         .take()
         .verify_map(|s: &str| s.replace(",", ".").parse().ok())
         .parse_next(input)
+}
+
+/// Create a context error with a reason.
+pub(super) fn ctx_err(reason: &'static str) -> ContextError {
+    let mut err = ContextError::new();
+    err.push(StrContext::Expected(StrContextValue::Description(reason)));
+    err
 }
