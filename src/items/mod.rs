@@ -98,11 +98,11 @@ pub(crate) fn at_local(
 ///
 /// datetime = iso_date , [ "T" | "t" | whitespace ] , iso_time ;
 ///
-/// iso_date = year , [ delem ] , month , [ delem ] , day ;
+/// iso_date = year , [ delim ] , month , [ delim ] , day ;
 /// year = dec_int ;
 /// month = dec_int ;
 /// day = dec_int ;
-/// delem = [ { whitespace } ] , "-" , [ { whitespace } ] ;
+/// delim = [ { whitespace } ] , "-" , [ { whitespace } ] ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
