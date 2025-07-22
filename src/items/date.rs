@@ -73,7 +73,7 @@ impl TryFrom<(&str, u32, u32)> for Date {
         if year_str.len() == 2 {
             if year <= 68 {
                 year += 2000
-            } else if year < 100 {
+            } else {
                 year += 1900
             }
         }
