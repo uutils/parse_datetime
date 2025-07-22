@@ -27,17 +27,15 @@
 //! > ‘September’.
 
 use winnow::{
-    ascii::alpha1,
-    combinator::{alt, opt, preceded, trace},
+    ascii::{alpha1, multispace1},
+    combinator::{alt, eof, opt, preceded, terminated, trace},
     error::ErrMode,
-    seq,
     stream::AsChar,
     token::take_while,
     ModalResult, Parser,
 };
 
 use super::primitive::{ctx_err, dec_uint, s};
-use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Date {
@@ -220,27 +218,58 @@ fn us(input: &mut &str) -> ModalResult<Date> {
     }
 }
 
-/// Parse `14 November 2022`, `14 Nov 2022`, "14nov2022", "14-nov-2022", "14-nov2022", "14nov-2022"
+/// Parse `14 November 2022`, `14 Nov 2022`, "14nov2022", "14-nov-2022",
+/// "14-nov2022", "14nov-2022".
 fn literal1(input: &mut &str) -> ModalResult<Date> {
-    seq!(Date {
-        day: day,
-        _: opt(s('-')),
-        month: literal_month,
-        year: opt(preceded(opt(s('-')), year)),
-    })
-    .parse_next(input)
+    let (day, _, month, year) = (
+        s(dec_uint),
+        opt(s('-')),
+        s(literal_month),
+        opt(terminated(
+            preceded(opt(s('-')), s(take_while(1.., AsChar::is_dec_digit))),
+            // The year must be followed by a space or end of input.
+            alt((multispace1, eof)),
+        )),
+    )
+        .parse_next(input)?;
+
+    match year {
+        Some(year) => (year, month, day)
+            .try_into()
+            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+        None => (month, day)
+            .try_into()
+            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+    }
 }
 
-/// Parse `November 14, 2022` and `Nov 14, 2022`
+/// Parse `November 14, 2022`, `Nov 14, 2022`, and `Nov 14 2022`.
 fn literal2(input: &mut &str) -> ModalResult<Date> {
-    seq!(Date {
-        month: literal_month,
-        day: day,
-        // FIXME: GNU requires _some_ space between the day and the year,
-        // probably to distinguish with floats.
-        year: opt(preceded(s(","), year)),
-    })
-    .parse_next(input)
+    let (month, day, year) = (
+        s(literal_month),
+        s(dec_uint),
+        opt(terminated(
+            preceded(
+                // GNU quirk: for formats like `Nov 14, 2022`, there must be some
+                // space between the comma and the year. This is probably to
+                // distinguish with floats.
+                opt(s(terminated(',', multispace1))),
+                s(take_while(1.., AsChar::is_dec_digit)),
+            ),
+            // The year must be followed by a space or end of input.
+            alt((multispace1, eof)),
+        )),
+    )
+        .parse_next(input)?;
+
+    match year {
+        Some(year) => (year, month, day)
+            .try_into()
+            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+        None => (month, day)
+            .try_into()
+            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+    }
 }
 
 pub fn year(input: &mut &str) -> ModalResult<u32> {
@@ -266,17 +295,6 @@ pub fn year(input: &mut &str) -> ModalResult<u32> {
         ),
     )
     .parse_next(input)
-}
-
-fn day(input: &mut &str) -> ModalResult<u32> {
-    s(dec_uint)
-        .try_map(|x| {
-            (1..=31)
-                .contains(&x)
-                .then_some(x)
-                .ok_or(ParseDateTimeError::InvalidInput)
-        })
-        .parse_next(input)
 }
 
 /// Parse the name of a month (case-insensitive)
@@ -460,6 +478,110 @@ mod tests {
             let old_s = s.to_owned();
             assert!(parse(&mut s).is_err(), "Format string: {old_s}");
         }
+    }
+
+    #[test]
+    fn literal1() {
+        let reference = Date {
+            year: Some(2022),
+            month: 11,
+            day: 14,
+        };
+
+        for mut s in [
+            "14 november 2022",
+            "14 nov 2022",
+            "14-nov-2022",
+            "14-nov2022",
+            "14nov2022",
+            "14nov      2022",
+        ] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
+            month: 11,
+            day: 14,
+        };
+
+        for mut s in ["14 november", "14 nov", "14-nov", "14nov"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
+            month: 11,
+            day: 14,
+        };
+
+        // Year must be followed by a space or end of input.
+        let mut s = "14 nov 2022a";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        assert_eq!(s, " 2022a");
+
+        let mut s = "14 nov-2022a";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        assert_eq!(s, "-2022a");
+    }
+
+    #[test]
+    fn literal2() {
+        let reference = Date {
+            year: Some(2022),
+            month: 11,
+            day: 14,
+        };
+
+        for mut s in [
+            "november 14 2022",
+            "november 14, 2022",
+            "november 14     ,     2022",
+            "nov 14 2022",
+            "nov14 2022",
+            "nov14, 2022",
+        ] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
+            month: 11,
+            day: 14,
+        };
+
+        for mut s in ["november 14", "nov 14", "nov14"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
+            month: 11,
+            day: 14,
+        };
+
+        // There must be some space between the comma and the year.
+        let mut s = "november 14,2022";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        assert_eq!(s, ",2022");
+
+        // Year must be followed by a space or end of input.
+        let mut s = "november 14 2022a";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        assert_eq!(s, " 2022a");
+
+        let mut s = "november 14, 2022a";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        assert_eq!(s, ", 2022a");
     }
 
     #[test]

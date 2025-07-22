@@ -97,7 +97,7 @@ pub(crate) fn at_local(
 /// item = datetime | date | time | relative | weekday | timezone | year ;
 ///
 /// datetime = date , [ "T" | "t" | whitespace ] , iso_time ;
-/// date = iso_date | us_date ;
+/// date = iso_date | us_date | literal1_date | literal2_date ;
 ///
 /// iso_date = year , [ iso_date_delim ] , month , [ iso_date_delim ] , day ;
 /// iso_date_delim = [ { whitespace } ] , "-" , [ { whitespace } ] ;
@@ -105,9 +105,28 @@ pub(crate) fn at_local(
 /// us_date = month , [ us_date_delim ] , day , [ [ us_date_delim ] , year ];
 /// us_date_delim = [ { whitespace } ] , "/" , [ { whitespace } ] ;
 ///
+/// literal1_date = day , [ literal1_date_delim ] , literal_month , [ [ literal1_date_delim ] , year ] ;
+/// literal1_date_delim = { whitespace } | [ { whitespace } ] , "-" , [ { whitespace } ] ;
+///
+/// literal2_date = literal_month , [ { whitespace } ] , day , [ [ literal2_date_delim ] , year ] ;
+/// literal2_date_delim = { whitespace } | [ { whitespace } ] , "," , [ { whitespace } ] ;
+///
 /// year = dec_int ;
 /// month = dec_int ;
 /// day = dec_int ;
+///
+/// literal_month = "january" | "jan"
+///               | "february" | "feb"
+///               | "march" | "mar"
+///               | "april" | "apr"
+///               | "may"
+///               | "june" | "jun"
+///               | "july" | "jul"
+///               | "august" | "aug"
+///               | "september" | "sept" | "sep"
+///               | "october" | "oct"
+///               | "november" | "nov"
+///               | "december" | "dec" ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
