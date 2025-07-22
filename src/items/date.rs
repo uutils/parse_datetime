@@ -108,6 +108,30 @@ impl TryFrom<(&str, u32, u32)> for Date {
     }
 }
 
+impl TryFrom<(u32, u32)> for Date {
+    type Error = &'static str;
+
+    /// Create a `Date` from a tuple of `(month, day)`.
+    fn try_from((month, day): (u32, u32)) -> Result<Self, Self::Error> {
+        if !(1..=12).contains(&month) {
+            return Err("month must be between 1 and 12");
+        }
+
+        if !(1..=31).contains(&day)
+            || (month == 2 && day > 29)
+            || ((month == 4 || month == 6 || month == 9 || month == 11) && day > 30)
+        {
+            return Err("day is not valid for the given month");
+        }
+
+        Ok(Date {
+            day,
+            month,
+            year: None,
+        })
+    }
+}
+
 pub fn parse(input: &mut &str) -> ModalResult<Date> {
     alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
@@ -154,15 +178,46 @@ pub fn iso2(input: &mut &str) -> ModalResult<Date> {
         .map_err(|e| ErrMode::Cut(ctx_err(e)))
 }
 
-/// Parse `MM/DD/YYYY`, `MM/DD/YY` or `MM/DD`
+/// Parse `[year]/[month]/[day]` or `[month]/[day]/[year]` or `[month]/[day]`.
 fn us(input: &mut &str) -> ModalResult<Date> {
-    seq!(Date {
-        month: month,
-        _: s('/'),
-        day: day,
-        year: opt(preceded(s('/'), year)),
-    })
-    .parse_next(input)
+    let (s1, _, n, s2) = (
+        s(take_while(1.., AsChar::is_dec_digit)),
+        s('/'),
+        s(dec_uint),
+        opt(preceded(s('/'), s(take_while(1.., AsChar::is_dec_digit)))),
+    )
+        .parse_next(input)?;
+
+    match s2 {
+        Some(s2) if s1.len() >= 4 => {
+            // [year]/[month]/[day]
+            //
+            // GNU quirk: interpret as [year]/[month]/[day] if the first part is at
+            // least 4 characters long.
+            let day = s2
+                .parse::<u32>()
+                .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid number")))?;
+            (s1, n, day)
+                .try_into()
+                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        }
+        Some(s2) => {
+            // [month]/[day]/[year]
+            let month = s1
+                .parse::<u32>()
+                .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
+            (s2, month, n)
+                .try_into()
+                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        }
+        None => {
+            // [month]/[day]
+            let month = s1
+                .parse::<u32>()
+                .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
+            (month, n).try_into().map_err(|e| ErrMode::Cut(ctx_err(e)))
+        }
+    }
 }
 
 /// Parse `14 November 2022`, `14 Nov 2022`, "14nov2022", "14-nov-2022", "14-nov2022", "14nov-2022"
@@ -211,17 +266,6 @@ pub fn year(input: &mut &str) -> ModalResult<u32> {
         ),
     )
     .parse_next(input)
-}
-
-fn month(input: &mut &str) -> ModalResult<u32> {
-    s(dec_uint)
-        .try_map(|x| {
-            (1..=12)
-                .contains(&x)
-                .then_some(x)
-                .ok_or(ParseDateTimeError::InvalidInput)
-        })
-        .parse_next(input)
 }
 
 fn day(input: &mut &str) -> ModalResult<u32> {
@@ -280,11 +324,11 @@ mod tests {
     fn iso1() {
         let reference = Date {
             year: Some(1),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        for mut s in ["1-1-1", "1 - 1 - 1", "1-01-01", "1-001-001", "001-01-01"] {
+        for mut s in ["1-2-3", "1 - 2 - 3", "1-02-03", "1-002-003", "001-02-03"] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
@@ -293,11 +337,11 @@ mod tests {
         // smaller, 2000 is added to it.
         let reference = Date {
             year: Some(2001),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        for mut s in ["01-1-1", "01-01-01"] {
+        for mut s in ["01-2-3", "01-02-03"] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
@@ -306,11 +350,11 @@ mod tests {
         // than 100, 1900 is added to it.
         let reference = Date {
             year: Some(1970),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        for mut s in ["70-1-1", "70-01-01"] {
+        for mut s in ["70-2-3", "70-02-03"] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
@@ -325,11 +369,11 @@ mod tests {
     fn iso2() {
         let reference = Date {
             year: Some(1),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        for mut s in ["10101", "0010101", "00010101", "000010101"] {
+        for mut s in ["10203", "0010203", "00010203", "000010203"] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
@@ -338,11 +382,11 @@ mod tests {
         // smaller, 2000 is added to it.
         let reference = Date {
             year: Some(2001),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        let mut s = "010101";
+        let mut s = "010203";
         let old_s = s.to_owned();
         assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
 
@@ -350,15 +394,69 @@ mod tests {
         // than 100, 1900 is added to it.
         let reference = Date {
             year: Some(1970),
-            month: 1,
-            day: 1,
+            month: 2,
+            day: 3,
         };
 
-        let mut s = "700101";
+        let mut s = "700203";
         let old_s = s.to_owned();
         assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
 
         for mut s in ["010001", "011301", "010132", "010229", "010431"] {
+            let old_s = s.to_owned();
+            assert!(parse(&mut s).is_err(), "Format string: {old_s}");
+        }
+    }
+
+    #[test]
+    fn us() {
+        let reference = Date {
+            year: Some(1),
+            month: 2,
+            day: 3,
+        };
+
+        for mut s in ["2/3/1", "2 / 3 / 1", "02/03/ 001", "0001/2/3"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
+            month: 2,
+            day: 3,
+        };
+
+        for mut s in ["2/3", "2 / 3"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        // GNU quirk: when year string is 2 characters long and year is 68 or
+        // smaller, 2000 is added to it.
+        let reference = Date {
+            year: Some(2001),
+            month: 2,
+            day: 3,
+        };
+
+        let mut s = "2/3/01";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+
+        // GNU quirk: when year string is 2 characters long and year is less
+        // than 100, 1900 is added to it.
+        let reference = Date {
+            year: Some(1970),
+            month: 2,
+            day: 3,
+        };
+
+        let mut s = "2/3/70";
+        let old_s = s.to_owned();
+        assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+
+        for mut s in ["00/01/01", "13/01/01", "01/32/01", "02/30/01", "04/31/01"] {
             let old_s = s.to_owned();
             assert!(parse(&mut s).is_err(), "Format string: {old_s}");
         }
