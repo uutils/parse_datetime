@@ -61,21 +61,7 @@ impl From<Day> for chrono::Weekday {
 }
 
 /// Parse a weekday item.
-///
-/// Grammar:
-///
-/// ```ebnf
-/// weekday = [ ordinal ] day [ "," ] ;
-///
-/// day = "monday" | "mon" | "mon."
-///     | "tuesday" | "tue" | "tue." | "tues"
-///     | "wednesday" | "wed" | "wed." | "wednes"
-///     | "thursday" | "thu" | "thu." | "thur" | "thurs"
-///     | "friday" | "fri" | "fri."
-///     | "saturday" | "sat" | "sat."
-///     | "sunday" | "sun" | "sun." ;
-/// ```
-pub fn parse(input: &mut &str) -> ModalResult<Weekday> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Weekday> {
     seq!(Weekday {
         offset: opt(ordinal).map(|o| o.unwrap_or_default()),
         day: terminated(day, opt(s(","))),
