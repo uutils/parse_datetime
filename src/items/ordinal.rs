@@ -9,7 +9,7 @@ use winnow::{
 
 use super::primitive::{dec_uint, s};
 
-pub fn ordinal(input: &mut &str) -> ModalResult<i32> {
+pub(super) fn ordinal(input: &mut &str) -> ModalResult<i32> {
     alt((text_ordinal, number_ordinal)).parse_next(input)
 }
 

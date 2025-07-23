@@ -114,9 +114,9 @@ pub(crate) fn at_local(
 /// literal2_date = literal_month , [ { whitespace } ] , day , [ [ literal2_date_delim ] , year ] ;
 /// literal2_date_delim = { whitespace } | [ { whitespace } ] , "," , [ { whitespace } ] ;
 ///
-/// year = dec_int ;
-/// month = dec_int ;
-/// day = dec_int ;
+/// year = dec_uint ;
+/// month = dec_uint ;
+/// day = dec_uint ;
 ///
 /// literal_month = "january" | "jan"
 ///               | "february" | "feb"
@@ -130,6 +130,25 @@ pub(crate) fn at_local(
 ///               | "october" | "oct"
 ///               | "november" | "nov"
 ///               | "december" | "dec" ;
+///
+/// weekday = [ ordinal ] day [ "," ] ;
+///
+/// ordinal = number_ordinal | text_ordinal ;
+///
+/// number_ordinal = [ "+" | "-" ] , dec_uint ;
+///
+/// text_ordinal = "last" | "this" | "next" | "first"
+///              | "third" | "fourth" | "fifth" | "sixth"
+///              | "seventh" | "eighth" | "ninth" | "tenth"
+///              | "eleventh" | "twelfth" ;
+///
+/// day = "monday" | "mon" | "mon."
+///     | "tuesday" | "tue" | "tue." | "tues"
+///     | "wednesday" | "wed" | "wed." | "wednes"
+///     | "thursday" | "thu" | "thu." | "thur" | "thurs"
+///     | "friday" | "fri" | "fri."
+///     | "saturday" | "sat" | "sat."
+///     | "sunday" | "sun" | "sun." ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
