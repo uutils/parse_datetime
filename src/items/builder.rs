@@ -105,16 +105,28 @@ impl DateTimeBuilder {
 
     pub(super) fn build(self) -> Option<DateTime<FixedOffset>> {
         let base = self.base.unwrap_or_else(|| chrono::Local::now().into());
-        let mut dt = new_date(
-            base.year(),
-            base.month(),
-            base.day(),
-            0,
-            0,
-            0,
-            0,
-            *base.offset(),
-        )?;
+
+        // If any of the following items are set, we truncate the time portion
+        // of the base date to zero; otherwise, we use the base date as is.
+        let mut dt = if self.timestamp.is_none()
+            && self.date.is_none()
+            && self.time.is_none()
+            && self.weekday.is_none()
+            && self.timezone.is_none()
+        {
+            base
+        } else {
+            new_date(
+                base.year(),
+                base.month(),
+                base.day(),
+                0,
+                0,
+                0,
+                0,
+                *base.offset(),
+            )?
+        };
 
         if let Some(ts) = self.timestamp {
             // TODO: How to make the fract -> nanosecond conversion more precise?
@@ -221,14 +233,6 @@ impl DateTimeBuilder {
         }
 
         for rel in self.relative {
-            if self.timestamp.is_none()
-                && self.date.is_none()
-                && self.time.is_none()
-                && self.weekday.is_none()
-            {
-                dt = base;
-            }
-
             match rel {
                 relative::Relative::Years(x) => {
                     dt = dt.with_year(dt.year() + x)?;
@@ -254,7 +258,7 @@ impl DateTimeBuilder {
                 relative::Relative::Minutes(x) => {
                     dt += chrono::Duration::try_minutes(x.into())?;
                 }
-                // Seconds are special because they can be given as a float
+                // Seconds are special because they can be given as a float.
                 relative::Relative::Seconds(x) => {
                     dt += chrono::Duration::try_seconds(x as i64)?;
                 }
