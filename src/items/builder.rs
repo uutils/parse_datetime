@@ -13,7 +13,7 @@ use super::{date, relative, time, weekday};
 #[derive(Debug, Default)]
 pub struct DateTimeBuilder {
     base: Option<DateTime<FixedOffset>>,
-    timestamp: Option<i32>,
+    timestamp: Option<f64>,
     date: Option<date::Date>,
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
@@ -35,7 +35,7 @@ impl DateTimeBuilder {
 
     /// Timestamp value is exclusive to other date/time components. Caller of
     /// the builder must ensure that it is not combined with other items.
-    pub(super) fn set_timestamp(mut self, ts: i32) -> Result<Self, &'static str> {
+    pub(super) fn set_timestamp(mut self, ts: f64) -> Result<Self, &'static str> {
         self.timestamp = Some(ts);
         Ok(self)
     }
@@ -117,10 +117,24 @@ impl DateTimeBuilder {
         )?;
 
         if let Some(ts) = self.timestamp {
-            dt = chrono::Utc
-                .timestamp_opt(ts.into(), 0)
-                .unwrap()
-                .with_timezone(&dt.timezone());
+            // TODO: How to make the fract -> nanosecond conversion more precise?
+            // Maybe considering using the
+            // [rust_decimal](https://crates.io/crates/rust_decimal) crate?
+            match chrono::Utc.timestamp_opt(ts as i64, (ts.fract() * 10f64.powi(9)).round() as u32)
+            {
+                chrono::MappedLocalTime::Single(t) => {
+                    // If the timestamp is valid, we can use it directly.
+                    dt = t.with_timezone(&dt.timezone());
+                }
+                chrono::MappedLocalTime::Ambiguous(earliest, _latest) => {
+                    // TODO: When there is a fold in the local time, which value
+                    // do we choose? For now, we use the earliest one.
+                    dt = earliest.with_timezone(&dt.timezone());
+                }
+                chrono::MappedLocalTime::None => {
+                    return None; // Invalid timestamp
+                }
+            }
         }
 
         if let Some(date::Date { year, month, day }) = self.date {
