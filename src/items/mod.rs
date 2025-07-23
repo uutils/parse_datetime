@@ -18,12 +18,14 @@
 //! >  - pure numbers.
 //!
 //! We put all of those in separate modules:
+//!  - [`combined`]
 //!  - [`date`]
+//!  - [`epoch`]
+//!  - [`relative`]
 //!  - [`time`]
 //!  - [`timezone`]
-//!  - [`combined`]
 //!  - [`weekday`]
-//!  - [`relative`]
+//!  - [`year`]
 
 #![allow(deprecated)]
 
@@ -35,6 +37,7 @@ mod relative;
 mod time;
 mod timezone;
 mod weekday;
+mod year;
 
 // utility modules
 mod builder;
@@ -219,7 +222,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             relative::parse.map(Item::Relative),
             weekday::parse.map(Item::Weekday),
             timezone::parse.map(Item::TimeZone),
-            date::year.map(Item::Year),
+            year::parse.map(Item::Year),
         )),
     )
     .parse_next(input)

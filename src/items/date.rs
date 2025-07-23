@@ -28,14 +28,17 @@
 
 use winnow::{
     ascii::{alpha1, multispace1},
-    combinator::{alt, eof, opt, preceded, terminated, trace},
+    combinator::{alt, eof, opt, preceded, terminated},
     error::ErrMode,
     stream::AsChar,
     token::take_while,
     ModalResult, Parser,
 };
 
-use super::primitive::{ctx_err, dec_uint, s};
+use super::{
+    primitive::{ctx_err, dec_uint, s},
+    year::{year_from_str, year_str},
+};
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Date {
@@ -50,40 +53,11 @@ impl TryFrom<(&str, u32, u32)> for Date {
     /// Create a `Date` from a tuple of `(year, month, day)`.
     ///
     /// Note: The `year` is represented as a `&str` to handle a specific GNU
-    /// compatibility quirk. According to the GNU documentation: "if the year is
-    /// 68 or smaller, then 2000 is added to it; otherwise, if year is less than
-    /// 100, then 1900 is added to it." This adjustment only applies to
-    /// two-digit year strings. For example, `"00"` is interpreted as `2000`,
-    /// whereas `"0"`, `"000"`, or `"0000"` are interpreted as `0`.
+    /// compatibility quirk. See the comment in [`year`](super::year) for more
+    /// details.
     fn try_from(value: (&str, u32, u32)) -> Result<Self, Self::Error> {
         let (year_str, month, day) = value;
-
-        let mut year = year_str
-            .parse::<u32>()
-            .map_err(|_| "year must be a valid number")?;
-
-        // If year is 68 or smaller, then 2000 is added to it; otherwise, if year
-        // is less than 100, then 1900 is added to it.
-        //
-        // GNU quirk: this only applies to two-digit years. For example,
-        // "98-01-01" will be parsed as "1998-01-01", while "098-01-01" will be
-        // parsed as "0098-01-01".
-        if year_str.len() == 2 {
-            if year <= 68 {
-                year += 2000
-            } else {
-                year += 1900
-            }
-        }
-
-        // 2147485547 is the maximum value accepted by GNU, but chrono only
-        // behaves like GNU for years in the range: [0, 9999], so we keep in the
-        // range [0, 9999].
-        //
-        // See discussion in https://github.com/uutils/parse_datetime/issues/160.
-        if year > 9999 {
-            return Err("year must be no greater than 9999");
-        }
+        let year = year_from_str(year_str)?;
 
         if !(1..=12).contains(&month) {
             return Err("month must be between 1 and 12");
@@ -138,15 +112,8 @@ pub fn parse(input: &mut &str) -> ModalResult<Date> {
 ///
 /// This is also used by [`combined`](super::combined).
 pub fn iso1(input: &mut &str) -> ModalResult<Date> {
-    let (year, _, month, _, day) = (
-        // `year` must be a `&str`, see comment in `TryFrom` impl for `Date`.
-        s(take_while(1.., AsChar::is_dec_digit)),
-        s('-'),
-        s(dec_uint),
-        s('-'),
-        s(dec_uint),
-    )
-        .parse_next(input)?;
+    let (year, _, month, _, day) =
+        (year_str, s('-'), s(dec_uint), s('-'), s(dec_uint)).parse_next(input)?;
 
     (year, month, day)
         .try_into()
@@ -160,7 +127,6 @@ pub fn iso2(input: &mut &str) -> ModalResult<Date> {
     let date_str = take_while(5.., AsChar::is_dec_digit).parse_next(input)?;
     let len = date_str.len();
 
-    // `year` must be a `&str`, see comment in `TryFrom` impl for `Date`.
     let year = &date_str[..len - 4];
 
     let month = date_str[len - 4..len - 2]
@@ -226,7 +192,7 @@ fn literal1(input: &mut &str) -> ModalResult<Date> {
         opt(s('-')),
         s(literal_month),
         opt(terminated(
-            preceded(opt(s('-')), s(take_while(1.., AsChar::is_dec_digit))),
+            preceded(opt(s('-')), year_str),
             // The year must be followed by a space or end of input.
             alt((multispace1, eof)),
         )),
@@ -254,7 +220,7 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
                 // space between the comma and the year. This is probably to
                 // distinguish with floats.
                 opt(s(terminated(',', multispace1))),
-                s(take_while(1.., AsChar::is_dec_digit)),
+                year_str,
             ),
             // The year must be followed by a space or end of input.
             alt((multispace1, eof)),
@@ -270,31 +236,6 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
             .try_into()
             .map_err(|e| ErrMode::Cut(ctx_err(e))),
     }
-}
-
-pub fn year(input: &mut &str) -> ModalResult<u32> {
-    // 2147485547 is the maximum value accepted
-    // by GNU, but chrono only behaves like GNU
-    // for years in the range: [0, 9999], so we
-    // keep in the range [0, 9999]
-    trace(
-        "year",
-        s(
-            take_while(1..=4, AsChar::is_dec_digit).map(|number_str: &str| {
-                let year = number_str.parse::<u32>().unwrap();
-                if number_str.len() == 2 {
-                    if year <= 68 {
-                        year + 2000
-                    } else {
-                        year + 1900
-                    }
-                } else {
-                    year
-                }
-            }),
-        ),
-    )
-    .parse_next(input)
 }
 
 /// Parse the name of a month (case-insensitive)
@@ -638,29 +579,5 @@ mod tests {
         ] {
             assert_eq!(parse(&mut s).unwrap(), reference);
         }
-    }
-
-    #[test]
-    fn test_year() {
-        use super::year;
-
-        // the minimun input length is 2
-        // assert!(year(&mut "0").is_err());
-        // -> GNU accepts year 0
-        // test $(date -d '1-1-1' '+%Y') -eq '0001'
-
-        // test $(date -d '68-1-1' '+%Y') -eq '2068'
-        // 2-characters are converted to 19XX/20XX
-        assert_eq!(year(&mut "10").unwrap(), 2010u32);
-        assert_eq!(year(&mut "68").unwrap(), 2068u32);
-        assert_eq!(year(&mut "69").unwrap(), 1969u32);
-        assert_eq!(year(&mut "99").unwrap(), 1999u32);
-        // 3,4-characters are converted verbatim
-        assert_eq!(year(&mut "468").unwrap(), 468u32);
-        assert_eq!(year(&mut "469").unwrap(), 469u32);
-        assert_eq!(year(&mut "1568").unwrap(), 1568u32);
-        assert_eq!(year(&mut "1569").unwrap(), 1569u32);
-        // consumes at most 4 characters from the input
-        //assert_eq!(year(&mut "1234567").unwrap(), 1234u32);
     }
 }
