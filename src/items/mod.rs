@@ -92,63 +92,93 @@ pub(crate) fn at_local(
 /// Grammar:
 ///
 /// ```ebnf
-/// spec = timestamp | items ;
+/// spec                = timestamp | items ;
 ///
-/// timestamp = "@" , dec_int ;
+/// timestamp           = "@" , float ;
 ///
-/// items = item , { item } ;
-/// item = datetime | date | time | relative | weekday | timezone | year ;
+/// items               = item , { item } ;
+/// item                = datetime | date | time | relative | weekday | timezone | year ;
 ///
-/// datetime = date , [ "T" | "t" | whitespace ] , iso_time ;
-/// date = iso_date | us_date | literal1_date | literal2_date ;
+/// datetime            = date , [ "t" | whitespace ] , iso_time ;
 ///
-/// iso_date = year , [ iso_date_delim ] , month , [ iso_date_delim ] , day ;
-/// iso_date_delim = [ { whitespace } ] , "-" , [ { whitespace } ] ;
+/// date                = iso_date | us_date | literal1_date | literal2_date ;
 ///
-/// us_date = month , [ us_date_delim ] , day , [ [ us_date_delim ] , year ];
-/// us_date_delim = [ { whitespace } ] , "/" , [ { whitespace } ] ;
+/// iso_date            = year , [ iso_date_delim ] , month , [ iso_date_delim ] , day ;
+/// iso_date_delim      = optional_whitespace , "-" , optional_whitespace ;
 ///
-/// literal1_date = day , [ literal1_date_delim ] , literal_month , [ [ literal1_date_delim ] , year ] ;
-/// literal1_date_delim = { whitespace } | [ { whitespace } ] , "-" , [ { whitespace } ] ;
+/// us_date             = month , [ us_date_delim ] , day , [ us_date_delim , year ];
+/// us_date_delim       = optional_whitespace , "/" , optional_whitespace ;
 ///
-/// literal2_date = literal_month , [ { whitespace } ] , day , [ [ literal2_date_delim ] , year ] ;
-/// literal2_date_delim = { whitespace } | [ { whitespace } ] , "," , [ { whitespace } ] ;
+/// literal1_date       = day , [ literal1_date_delim ] , literal_month , [ literal1_date_delim , year ] ;
+/// literal1_date_delim = (optional_whitespace , "-" , optional_whitespace) | optional_whitespace ;
 ///
-/// year = dec_uint ;
-/// month = dec_uint ;
-/// day = dec_uint ;
+/// literal2_date       = literal_month , optional_whitespace , day , [ literal2_date_delim , year ] ;
+/// literal2_date_delim = (optional_whitespace , "," , optional_whitespace) | optional_whitespace ;
 ///
-/// literal_month = "january" | "jan"
-///               | "february" | "feb"
-///               | "march" | "mar"
-///               | "april" | "apr"
-///               | "may"
-///               | "june" | "jun"
-///               | "july" | "jul"
-///               | "august" | "aug"
-///               | "september" | "sept" | "sep"
-///               | "october" | "oct"
-///               | "november" | "nov"
-///               | "december" | "dec" ;
+/// year                = dec_uint ;
+/// month               = dec_uint ;
+/// day                 = dec_uint ;
 ///
-/// weekday = [ ordinal ] day [ "," ] ;
+/// literal_month       = "january" | "jan"
+///                     | "february" | "feb"
+///                     | "march" | "mar"
+///                     | "april" | "apr"
+///                     | "may"
+///                     | "june" | "jun"
+///                     | "july" | "jul"
+///                     | "august" | "aug"
+///                     | "september" | "sept" | "sep"
+///                     | "october" | "oct"
+///                     | "november" | "nov"
+///                     | "december" | "dec" ;
 ///
-/// ordinal = number_ordinal | text_ordinal ;
+/// time                = iso_time | meridiem_time ;
 ///
-/// number_ordinal = [ "+" | "-" ] , dec_uint ;
+/// iso_time            = hour24 , [ ":" , minute , [ ":" , second ] ] , [ time_offset ] ;
 ///
-/// text_ordinal = "last" | "this" | "next" | "first"
-///              | "third" | "fourth" | "fifth" | "sixth"
-///              | "seventh" | "eighth" | "ninth" | "tenth"
-///              | "eleventh" | "twelfth" ;
+/// meridiem_time       = hour12 , [ ":" , minute , [ ":" , second ] ] , meridiem ;
+/// meridiem            = "am" | "pm" | "a.m." | "p.m." ;
 ///
-/// day = "monday" | "mon" | "mon."
-///     | "tuesday" | "tue" | "tue." | "tues"
-///     | "wednesday" | "wed" | "wed." | "wednes"
-///     | "thursday" | "thu" | "thu." | "thur" | "thurs"
-///     | "friday" | "fri" | "fri."
-///     | "saturday" | "sat" | "sat."
-///     | "sunday" | "sun" | "sun." ;
+/// hour24              = dec_uint ;
+/// hour12              = dec_uint ;
+/// minute              = dec_uint ;
+/// second              = dec_uint ;
+///
+/// time_offset         = ( "+" | "-" ) , dec_uint , [ ":" , dec_uint ] ;
+///
+/// relative            = [ numeric_ordinal  ] , unit , [ "ago" ] | day_shift ;
+///
+/// unit                = "year" | "years"
+///                     | "month" | "months"
+///                     | "fortnight" | "fortnights"
+///                     | "week" | "weeks"
+///                     | "day" | "days"
+///                     | "hour" | "hours"
+///                     | "minute" | "minutes" | "min" | "mins"
+///                     | "second" | "seconds" | "sec" | "secs" ;
+///
+/// day_shift           = "tomorrow" | "yesterday" | "today" | "now" ;
+///
+/// weekday             = [ ordinal ] , day , [ "," ] ;
+///
+/// ordinal             = numeric_ordinal | text_ordinal ;
+/// numeric_ordinal     = [ "+" | "-" ] , dec_uint ;
+/// text_ordinal        = "last" | "this" | "next" | "first"
+///                     | "third" | "fourth" | "fifth" | "sixth"
+///                     | "seventh" | "eighth" | "ninth" | "tenth"
+///                     | "eleventh" | "twelfth" ;
+///
+/// day                 = "monday" | "mon" | "mon."
+///                     | "tuesday" | "tue" | "tue." | "tues"
+///                     | "wednesday" | "wed" | "wed." | "wednes"
+///                     | "thursday" | "thu" | "thu." | "thur" | "thurs"
+///                     | "friday" | "fri" | "fri."
+///                     | "saturday" | "sat" | "sat."
+///                     | "sunday" | "sun" | "sun." ;
+///
+/// timezone            = named_zone , [ time_offset ] ;
+///
+/// optional_whitespace = { whitespace } ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
