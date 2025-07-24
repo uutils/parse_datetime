@@ -84,6 +84,7 @@ where
 ///
 /// Inputs like [+-]?0[0-9]* (e.g., `+012`) are therefore rejected. We provide a
 /// custom implementation to support such zero-prefixed integers.
+#[allow(unused)]
 pub(super) fn dec_int<'a, E>(input: &mut &'a str) -> winnow::Result<i32, E>
 where
     E: ParserError<&'a str>,
