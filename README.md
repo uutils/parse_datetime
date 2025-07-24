@@ -10,7 +10,7 @@ A Rust crate for parsing human-readable relative time strings and human-readable
 
 - Parses a variety of human-readable and standard time formats.
 - Supports positive and negative durations.
-- Allows for chaining time units (e.g., "1 hour 2 minutes" or "2 days and 2 hours").
+- Allows for chaining time units (e.g., "1 hour 2 minutes" or "2 days 2 hours ago").
 - Calculate durations relative to a specified date.
 - Relies on Chrono
 
@@ -58,7 +58,6 @@ The `parse_datetime` and `parse_datetime_at_date` functions support absolute dat
 - "tomorrow"
 - use "ago" for the past
 - use "next" or "last" with `unit` (e.g., "next week", "last year")
-- combined units with "and" or "," (e.g., "2 years and 1 month", "1 day, 2 hours" or "2 weeks 1 second")
 - unix timestamps (for example "@0" "@1344000")
 
 `num` can be a positive or negative integer.

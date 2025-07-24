@@ -233,6 +233,7 @@ impl DateTimeBuilder {
         }
 
         for rel in self.relative {
+            // TODO: Handle potential overflows in the addition operations.
             match rel {
                 relative::Relative::Years(x) => {
                     dt = dt.with_year(dt.year() + x)?;
