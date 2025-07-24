@@ -446,6 +446,12 @@ mod tests {
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
+        let result = at_date(parse(&mut "2 days 3 days ago").unwrap(), now).unwrap();
+        assert_eq!(result, now - chrono::Duration::days(1));
+        assert_eq!(result.hour(), now.hour());
+        assert_eq!(result.minute(), now.minute());
+        assert_eq!(result.second(), now.second());
+
         let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now).unwrap();
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
