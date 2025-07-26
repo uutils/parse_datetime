@@ -15,4 +15,4 @@ winnow = "0.7.10"
 num-traits = "0.2.19"
 
 [dev-dependencies]
-rstest = "0.25"
+rstest = "0.26"
