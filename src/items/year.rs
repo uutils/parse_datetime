@@ -10,13 +10,9 @@
 //! strings. For example, `"00"` is interpreted as `2000`, whereas `"0"`,
 //! `"000"`, or `"0000"` are interpreted as `0`.
 
-use winnow::{error::ErrMode, stream::AsChar, token::take_while, ModalResult, Parser};
+use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
 
-use super::primitive::{ctx_err, s};
-
-pub(super) fn parse(input: &mut &str) -> ModalResult<u32> {
-    year_from_str(year_str(input)?).map_err(|e| ErrMode::Cut(ctx_err(e)))
-}
+use super::primitive::s;
 
 // TODO: Leverage `TryFrom` trait.
 pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
@@ -56,23 +52,23 @@ pub(super) fn year_str<'a>(input: &mut &'a str) -> ModalResult<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse;
+    use super::year_from_str;
 
     #[test]
     fn test_year() {
         // 2-characters are converted to 19XX/20XX
-        assert_eq!(parse(&mut "10").unwrap(), 2010u32);
-        assert_eq!(parse(&mut "68").unwrap(), 2068u32);
-        assert_eq!(parse(&mut "69").unwrap(), 1969u32);
-        assert_eq!(parse(&mut "99").unwrap(), 1999u32);
+        assert_eq!(year_from_str("10").unwrap(), 2010u32);
+        assert_eq!(year_from_str("68").unwrap(), 2068u32);
+        assert_eq!(year_from_str("69").unwrap(), 1969u32);
+        assert_eq!(year_from_str("99").unwrap(), 1999u32);
 
         // 3,4-characters are converted verbatim
-        assert_eq!(parse(&mut "468").unwrap(), 468u32);
-        assert_eq!(parse(&mut "469").unwrap(), 469u32);
-        assert_eq!(parse(&mut "1568").unwrap(), 1568u32);
-        assert_eq!(parse(&mut "1569").unwrap(), 1569u32);
+        assert_eq!(year_from_str("468").unwrap(), 468u32);
+        assert_eq!(year_from_str("469").unwrap(), 469u32);
+        assert_eq!(year_from_str("1568").unwrap(), 1568u32);
+        assert_eq!(year_from_str("1569").unwrap(), 1569u32);
 
         // years greater than 9999 are not accepted
-        assert!(parse(&mut "10000").is_err());
+        assert!(year_from_str("10000").is_err());
     }
 }

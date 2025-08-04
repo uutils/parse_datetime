@@ -214,7 +214,7 @@ fn colon(input: &mut &str) -> ModalResult<()> {
 }
 
 /// Parse a number of hours in `0..24`(preceded by whitespace)
-fn hour24(input: &mut &str) -> ModalResult<u32> {
+pub(super) fn hour24(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint).verify(|x| *x < 24).parse_next(input)
 }
 
@@ -224,7 +224,7 @@ fn hour12(input: &mut &str) -> ModalResult<u32> {
 }
 
 /// Parse a number of minutes (preceded by whitespace)
-fn minute(input: &mut &str) -> ModalResult<u32> {
+pub(super) fn minute(input: &mut &str) -> ModalResult<u32> {
     s(dec_uint).verify(|x| *x < 60).parse_next(input)
 }
 
