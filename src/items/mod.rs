@@ -33,6 +33,7 @@
 mod combined;
 mod date;
 mod epoch;
+mod pure;
 mod relative;
 mod time;
 mod timezone;
@@ -59,13 +60,13 @@ use crate::ParseDateTimeError;
 #[derive(PartialEq, Debug)]
 pub(crate) enum Item {
     Timestamp(f64),
-    Year(u32),
     DateTime(combined::DateTime),
     Date(date::Date),
     Time(time::Time),
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
     TimeZone(time::Offset),
+    Pure(String),
 }
 
 /// Build a `DateTime<FixedOffset>` from a `DateTimeBuilder` and a base date.
@@ -97,7 +98,7 @@ pub(crate) fn at_local(
 /// timestamp           = "@" , float ;
 ///
 /// items               = item , { item } ;
-/// item                = datetime | date | time | relative | weekday | timezone | year ;
+/// item                = datetime | date | time | relative | weekday | timezone | pure ;
 ///
 /// datetime            = date , [ "t" | whitespace ] , iso_time ;
 ///
@@ -178,6 +179,8 @@ pub(crate) fn at_local(
 ///
 /// timezone            = named_zone , [ time_offset ] ;
 ///
+/// pure               = { digit }
+///
 /// optional_whitespace = { whitespace } ;
 /// ```
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
@@ -217,9 +220,6 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
                         .set_timestamp(ts)
                         .map_err(|e| expect_error(input, e))?;
                 }
-                Item::Year(year) => {
-                    builder = builder.set_year(year).map_err(|e| expect_error(input, e))?;
-                }
                 Item::DateTime(dt) => {
                     builder = builder
                         .set_date(dt.date)
@@ -246,6 +246,9 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
                 Item::Relative(rel) => {
                     builder = builder.push_relative(rel);
                 }
+                Item::Pure(pure) => {
+                    builder = builder.set_pure(pure).map_err(|e| expect_error(input, e))?;
+                }
             },
             Err(ErrMode::Backtrack(_)) => break,
             Err(e) => return Err(e),
@@ -271,7 +274,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             relative::parse.map(Item::Relative),
             weekday::parse.map(Item::Weekday),
             timezone::parse.map(Item::TimeZone),
-            year::parse.map(Item::Year),
+            pure::parse.map(Item::Pure),
         )),
     )
     .parse_next(input)
@@ -290,7 +293,8 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 mod tests {
     use super::{at_date, parse, DateTimeBuilder};
     use chrono::{
-        DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+        DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike,
+        Utc,
     };
 
     fn at_utc(builder: DateTimeBuilder) -> DateTime<FixedOffset> {
@@ -386,13 +390,6 @@ mod tests {
             .to_string()
             .contains("time cannot appear more than once"));
 
-        let result = parse(&mut "2025-05-19 2024");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("year cannot appear more than once"));
-
         let result = parse(&mut "2025-05-19 +00:00 +01:00");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unexpected input"));
@@ -415,6 +412,46 @@ mod tests {
         let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unexpected input"));
+
+        // Pure number as year (too large).
+        let result = parse(&mut "jul 18 12:30 10000");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("year must be no greater than 9999"));
+
+        // Pure number as time (too long).
+        let result = parse(&mut "01:02 12345");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("pure number must be 1-4 digits when interpreted as time"));
+
+        // Pure number as time (repeated time).
+        let result = parse(&mut "01:02 1234");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("time cannot appear more than once"));
+
+        // Pure number as time (invalid hour).
+        let result = parse(&mut "jul 18 2025 2400");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid hour in pure number"));
+
+        // Pure number as time (invalid minute).
+        let result = parse(&mut "jul 18 2025 2360");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid minute in pure number"));
     }
 
     #[test]
@@ -497,5 +534,31 @@ mod tests {
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
+    }
+
+    #[test]
+    fn pure() {
+        let now = Utc::now().fixed_offset();
+
+        // Pure number as year.
+        let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now).unwrap();
+        assert_eq!(result.year(), 2025);
+
+        // Pure number as time.
+        let result = at_date(parse(&mut "1230").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 12);
+        assert_eq!(result.minute(), 30);
+
+        let result = at_date(parse(&mut "123").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 1);
+        assert_eq!(result.minute(), 23);
+
+        let result = at_date(parse(&mut "12").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 12);
+        assert_eq!(result.minute(), 0);
+
+        let result = at_date(parse(&mut "1").unwrap(), now).unwrap();
+        assert_eq!(result.hour(), 1);
+        assert_eq!(result.minute(), 0);
     }
 }

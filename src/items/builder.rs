@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Timelike};
 
-use super::{date, relative, time, weekday};
+use super::{date, relative, time, weekday, year};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -38,24 +38,6 @@ impl DateTimeBuilder {
     pub(super) fn set_timestamp(mut self, ts: f64) -> Result<Self, &'static str> {
         self.timestamp = Some(ts);
         Ok(self)
-    }
-
-    pub(super) fn set_year(mut self, year: u32) -> Result<Self, &'static str> {
-        if let Some(date) = self.date.as_mut() {
-            if date.year.is_some() {
-                Err("year cannot appear more than once")
-            } else {
-                date.year = Some(year);
-                Ok(self)
-            }
-        } else {
-            self.date = Some(date::Date {
-                day: 1,
-                month: 1,
-                year: Some(year),
-            });
-            Ok(self)
-        }
     }
 
     pub(super) fn set_date(mut self, date: date::Date) -> Result<Self, &'static str> {
@@ -101,6 +83,39 @@ impl DateTimeBuilder {
     pub(super) fn push_relative(mut self, relative: relative::Relative) -> Self {
         self.relative.push(relative);
         self
+    }
+
+    /// Sets a pure number that can be interpreted as either a year or time
+    /// depending on the current state of the builder.
+    ///
+    /// If a date is already set but lacks a year, the number is interpreted as
+    /// a year. Otherwise, it's interpreted as a time in HHMM, HMM, HH, or H
+    /// format.
+    pub(super) fn set_pure(mut self, pure: String) -> Result<Self, &'static str> {
+        if let Some(date) = self.date.as_mut() {
+            if date.year.is_none() {
+                date.year = Some(year::year_from_str(&pure)?);
+                return Ok(self);
+            }
+        }
+
+        let (mut hour_str, mut minute_str) = match pure.len() {
+            1..=2 => (pure.as_str(), "0"),
+            3..=4 => pure.split_at(pure.len() - 2),
+            _ => {
+                return Err("pure number must be 1-4 digits when interpreted as time");
+            }
+        };
+
+        let hour = time::hour24(&mut hour_str).map_err(|_| "invalid hour in pure number")?;
+        let minute = time::minute(&mut minute_str).map_err(|_| "invalid minute in pure number")?;
+
+        let time = time::Time {
+            hour,
+            minute,
+            ..Default::default()
+        };
+        self.set_time(time)
     }
 
     pub(super) fn build(self) -> Option<DateTime<FixedOffset>> {
