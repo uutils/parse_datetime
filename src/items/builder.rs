@@ -17,6 +17,7 @@ pub(crate) struct DateTimeBuilder {
     date: Option<date::Date>,
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
+    conversion_timezone: Option<FixedOffset>,
     timezone: Option<timezone::Offset>,
     relative: Vec<relative::Relative>,
 }
@@ -106,9 +107,20 @@ impl DateTimeBuilder {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         }
-
         self.relative.push(relative);
         Ok(self)
+    }
+
+    pub(super) fn set_conversion_timezone(
+        mut self,
+        conversion_timezone: time::Offset,
+    ) -> Result<Self, &'static str> {
+        if self.conversion_timezone.is_some() {
+            Err("TZ= cannot appear more than once")
+        } else {
+            self.conversion_timezone = Some(conversion_timezone);
+            Ok(self)
+        }
     }
 
     /// Sets a pure number that can be interpreted as either a year or time
@@ -312,6 +324,12 @@ impl DateTimeBuilder {
         }
 
         if let Some(offset) = self.timezone {
+            dt = with_timezone_restore(offset, dt)?;
+        }
+
+        if let Some(mut offset) = self.conversion_timezone {
+            // Reuse with_timezone_restore with a swapped offset
+            offset.negative = !offset.negative;
             dt = with_timezone_restore(offset, dt)?;
         }
 
