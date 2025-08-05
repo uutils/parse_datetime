@@ -18,6 +18,7 @@ pub struct DateTimeBuilder {
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
     timezone: Option<time::Offset>,
+    conversion_timezone: Option<time::Offset>,
     relative: Vec<relative::Relative>,
 }
 
@@ -94,6 +95,15 @@ impl DateTimeBuilder {
             Err("time offset and timezone are mutually exclusive")
         } else {
             self.timezone = Some(timezone);
+            Ok(self)
+        }
+    }
+
+    pub(super) fn set_conversion_timezone(mut self, conversion_timezone: time::Offset) -> Result<Self, &'static str> {
+        if self.conversion_timezone.is_some() {
+            Err("TZ= cannot appear more than once")
+        } else {
+            self.conversion_timezone = Some(conversion_timezone);
             Ok(self)
         }
     }
@@ -267,6 +277,12 @@ impl DateTimeBuilder {
         }
 
         if let Some(offset) = self.timezone {
+            dt = with_timezone_restore(offset, dt)?;
+        }
+
+        if let Some(mut offset) = self.conversion_timezone {
+            // Reuse with_timezone_restore with a swapped offset
+            offset.negative = !offset.negative;
             dt = with_timezone_restore(offset, dt)?;
         }
 

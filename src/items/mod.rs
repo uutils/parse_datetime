@@ -38,6 +38,7 @@ mod time;
 mod timezone;
 mod weekday;
 mod year;
+mod conversion_timezone;
 
 // utility modules
 mod builder;
@@ -58,6 +59,7 @@ use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
 pub(crate) enum Item {
+    ConversionTimeZone(time::Offset),
     Timestamp(f64),
     Year(u32),
     DateTime(combined::DateTime),
@@ -212,6 +214,11 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     loop {
         match parse_item.parse_next(input) {
             Ok(item) => match item {
+                Item::ConversionTimeZone(tz) => {
+                    builder = builder
+                        .set_conversion_timezone(tz)
+                        .map_err(|e| expect_error(input, e))?;
+                }
                 Item::Timestamp(ts) => {
                     builder = builder
                         .set_timestamp(ts)
@@ -265,6 +272,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
     trace(
         "parse_item",
         alt((
+            conversion_timezone::parse.map(Item::ConversionTimeZone),
             combined::parse.map(Item::DateTime),
             date::parse.map(Item::Date),
             time::parse.map(Item::Time),
