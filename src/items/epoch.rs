@@ -1,6 +1,20 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+//! From the GNU docs:
+//!
+//! > If you precede a number with ‘@’, it represents an internal timestamp as
+//! > a count of seconds.  The number can contain an internal decimal point
+//! > (either ‘.’ or ‘,’); any excess precision not supported by the internal
+//! > representation is truncated toward minus infinity.  Such a number cannot
+//! > be combined with any other date item, as it specifies a complete
+//! > timestamp.
+//! >
+//! >    On most hosts, these counts ignore the presence of leap seconds.  For
+//! > example, on most hosts ‘@1483228799’ represents 2016-12-31 23:59:59 UTC,
+//! > ‘@1483228800’ represents 2017-01-01 00:00:00 UTC, and there is no way to
+//! > represent the intervening leap second 2016-12-31 23:59:60 UTC.
+
 use winnow::{combinator::preceded, ModalResult, Parser};
 
 use super::primitive::{float, s};

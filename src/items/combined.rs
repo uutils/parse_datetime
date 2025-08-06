@@ -21,16 +21,12 @@ use winnow::{
 
 use crate::items::space;
 
-use super::{
-    date::{self, Date},
-    primitive::s,
-    time::{self, Time},
-};
+use super::{date, primitive::s, time};
 
 #[derive(PartialEq, Debug, Clone, Default)]
 pub(crate) struct DateTime {
-    pub(crate) date: Date,
-    pub(crate) time: Time,
+    pub(crate) date: date::Date,
+    pub(crate) time: time::Time,
 }
 
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTime> {
