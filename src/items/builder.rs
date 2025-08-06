@@ -11,7 +11,7 @@ use super::{date, relative, time, weekday, year};
 /// date and time using the `set_base()` method before calling `build()`, or
 /// leave it unset to use the current date and time as the base.
 #[derive(Debug, Default)]
-pub struct DateTimeBuilder {
+pub(crate) struct DateTimeBuilder {
     base: Option<DateTime<FixedOffset>>,
     timestamp: Option<f64>,
     date: Option<date::Date>,
@@ -289,7 +289,7 @@ impl DateTimeBuilder {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, deprecated)]
 fn new_date(
     year: i32,
     month: u32,

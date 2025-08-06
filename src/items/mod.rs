@@ -21,13 +21,12 @@
 //!  - [`combined`]
 //!  - [`date`]
 //!  - [`epoch`]
+//!  - [`pure`]
 //!  - [`relative`]
 //!  - [`time`]
 //!  - [`timezone`]
 //!  - [`weekday`]
 //!  - [`year`]
-
-#![allow(deprecated)]
 
 // date and time items
 mod combined;
