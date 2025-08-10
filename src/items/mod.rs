@@ -243,7 +243,9 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
                         .map_err(|e| expect_error(input, e))?;
                 }
                 Item::Relative(rel) => {
-                    builder = builder.push_relative(rel);
+                    builder = builder
+                        .push_relative(rel)
+                        .map_err(|e| expect_error(input, e))?;
                 }
                 Item::Pure(pure) => {
                     builder = builder.set_pure(pure).map_err(|e| expect_error(input, e))?;
