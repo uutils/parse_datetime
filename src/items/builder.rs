@@ -33,56 +33,82 @@ impl DateTimeBuilder {
         self
     }
 
-    /// Timestamp value is exclusive to other date/time components. Caller of
-    /// the builder must ensure that it is not combined with other items.
+    /// Sets a timestamp value. Timestamp values are exclusive to other date/time
+    /// items (date, time, weekday, timezone, relative adjustments).
     pub(super) fn set_timestamp(mut self, ts: f64) -> Result<Self, &'static str> {
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot appear more than once");
+        } else if self.date.is_some()
+            || self.time.is_some()
+            || self.weekday.is_some()
+            || self.timezone.is_some()
+            || !self.relative.is_empty()
+        {
+            return Err("timestamp cannot be combined with other date/time items");
+        }
+
         self.timestamp = Some(ts);
         Ok(self)
     }
 
     pub(super) fn set_date(mut self, date: date::Date) -> Result<Self, &'static str> {
-        if self.date.is_some() || self.timestamp.is_some() {
-            Err("date cannot appear more than once")
-        } else {
-            self.date = Some(date);
-            Ok(self)
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        } else if self.date.is_some() {
+            return Err("date cannot appear more than once");
         }
+
+        self.date = Some(date);
+        Ok(self)
     }
 
     pub(super) fn set_time(mut self, time: time::Time) -> Result<Self, &'static str> {
-        if self.time.is_some() || self.timestamp.is_some() {
-            Err("time cannot appear more than once")
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        } else if self.time.is_some() {
+            return Err("time cannot appear more than once");
         } else if self.timezone.is_some() && time.offset.is_some() {
-            Err("time offset and timezone are mutually exclusive")
-        } else {
-            self.time = Some(time);
-            Ok(self)
+            return Err("time offset and timezone are mutually exclusive");
         }
+
+        self.time = Some(time);
+        Ok(self)
     }
 
     pub(super) fn set_weekday(mut self, weekday: weekday::Weekday) -> Result<Self, &'static str> {
-        if self.weekday.is_some() {
-            Err("weekday cannot appear more than once")
-        } else {
-            self.weekday = Some(weekday);
-            Ok(self)
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        } else if self.weekday.is_some() {
+            return Err("weekday cannot appear more than once");
         }
+
+        self.weekday = Some(weekday);
+        Ok(self)
     }
 
     pub(super) fn set_timezone(mut self, timezone: time::Offset) -> Result<Self, &'static str> {
-        if self.timezone.is_some() {
-            Err("timezone cannot appear more than once")
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        } else if self.timezone.is_some() {
+            return Err("timezone cannot appear more than once");
         } else if self.time.as_ref().and_then(|t| t.offset.as_ref()).is_some() {
-            Err("time offset and timezone are mutually exclusive")
-        } else {
-            self.timezone = Some(timezone);
-            Ok(self)
+            return Err("time offset and timezone are mutually exclusive");
         }
+
+        self.timezone = Some(timezone);
+        Ok(self)
     }
 
-    pub(super) fn push_relative(mut self, relative: relative::Relative) -> Self {
+    pub(super) fn push_relative(
+        mut self,
+        relative: relative::Relative,
+    ) -> Result<Self, &'static str> {
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        }
+
         self.relative.push(relative);
-        self
+        Ok(self)
     }
 
     /// Sets a pure number that can be interpreted as either a year or time
@@ -92,6 +118,10 @@ impl DateTimeBuilder {
     /// a year. Otherwise, it's interpreted as a time in HHMM, HMM, HH, or H
     /// format.
     pub(super) fn set_pure(mut self, pure: String) -> Result<Self, &'static str> {
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        }
+
         if let Some(date) = self.date.as_mut() {
             if date.year.is_none() {
                 date.year = Some(year::year_from_str(&pure)?);
@@ -118,8 +148,28 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
+    fn build_from_timestamp(ts: f64, tz: &FixedOffset) -> Option<DateTime<FixedOffset>> {
+        // TODO: How to make the fract -> nanosecond conversion more precise?
+        // Maybe considering using the
+        // [rust_decimal](https://crates.io/crates/rust_decimal) crate?
+        match chrono::Utc.timestamp_opt(ts as i64, (ts.fract() * 10f64.powi(9)).round() as u32) {
+            chrono::MappedLocalTime::Single(t) => Some(t.with_timezone(tz)),
+            chrono::MappedLocalTime::Ambiguous(earliest, _latest) => {
+                // TODO: When there is a fold in the local time, which value
+                // do we choose? For now, we use the earliest one.
+                Some(earliest.with_timezone(tz))
+            }
+            chrono::MappedLocalTime::None => None, // Invalid timestamp
+        }
+    }
+
     pub(super) fn build(self) -> Option<DateTime<FixedOffset>> {
         let base = self.base.unwrap_or_else(|| chrono::Local::now().into());
+
+        // If a timestamp is set, we use it to build the DateTime object.
+        if let Some(ts) = self.timestamp {
+            return Self::build_from_timestamp(ts, base.offset());
+        }
 
         // If any of the following items are set, we truncate the time portion
         // of the base date to zero; otherwise, we use the base date as is.
@@ -142,27 +192,6 @@ impl DateTimeBuilder {
                 *base.offset(),
             )?
         };
-
-        if let Some(ts) = self.timestamp {
-            // TODO: How to make the fract -> nanosecond conversion more precise?
-            // Maybe considering using the
-            // [rust_decimal](https://crates.io/crates/rust_decimal) crate?
-            match chrono::Utc.timestamp_opt(ts as i64, (ts.fract() * 10f64.powi(9)).round() as u32)
-            {
-                chrono::MappedLocalTime::Single(t) => {
-                    // If the timestamp is valid, we can use it directly.
-                    dt = t.with_timezone(&dt.timezone());
-                }
-                chrono::MappedLocalTime::Ambiguous(earliest, _latest) => {
-                    // TODO: When there is a fold in the local time, which value
-                    // do we choose? For now, we use the earliest one.
-                    dt = earliest.with_timezone(&dt.timezone());
-                }
-                chrono::MappedLocalTime::None => {
-                    return None; // Invalid timestamp
-                }
-            }
-        }
 
         if let Some(date::Date { year, month, day }) = self.date {
             dt = new_date(
