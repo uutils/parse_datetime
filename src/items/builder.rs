@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Timelike};
 
-use super::{date, relative, time, weekday, year};
+use super::{date, relative, time, timezone, weekday, year};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -17,7 +17,7 @@ pub(crate) struct DateTimeBuilder {
     date: Option<date::Date>,
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
-    timezone: Option<time::Offset>,
+    timezone: Option<timezone::Offset>,
     relative: Vec<relative::Relative>,
 }
 
@@ -86,7 +86,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_timezone(mut self, timezone: time::Offset) -> Result<Self, &'static str> {
+    pub(super) fn set_timezone(mut self, timezone: timezone::Offset) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.timezone.is_some() {
@@ -338,7 +338,7 @@ fn new_date(
 /// Restores year, month, day, etc after applying the timezone
 /// returns None if timezone overflows the date
 fn with_timezone_restore(
-    offset: time::Offset,
+    offset: timezone::Offset,
     at: DateTime<FixedOffset>,
 ) -> Option<DateTime<FixedOffset>> {
     let offset: FixedOffset = chrono::FixedOffset::try_from(offset).ok()?;

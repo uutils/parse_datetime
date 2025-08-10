@@ -132,6 +132,14 @@ where
         .parse_next(input)
 }
 
+/// Parse a colon preceded by whitespace
+pub(super) fn colon<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
+where
+    E: ParserError<&'a str>,
+{
+    s(':').void().parse_next(input)
+}
+
 /// Create a context error with a reason.
 pub(super) fn ctx_err(reason: &'static str) -> ContextError {
     let mut err = ContextError::new();

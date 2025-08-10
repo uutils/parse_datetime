@@ -64,7 +64,7 @@ pub(crate) enum Item {
     Time(time::Time),
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
-    TimeZone(time::Offset),
+    TimeZone(timezone::Offset),
     Pure(String),
 }
 
