@@ -93,3 +93,29 @@ fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expec
     let now = DateTime::parse_from_rfc3339(&format!("{year}-06-01T00:00:00+00:00")).unwrap();
     check_relative(now, input, expected);
 }
+
+#[rstest]
+#[case::convert_timezone_ahead(r#"TZ="UTC+1" 2022-12-14"#, 2022, "2022-12-14 01:00:00+00:00")]
+#[case::convert_timezone_behind(r#"TZ="UTC-1" 2022-12-14"#, 2022, "2022-12-13 23:00:00+00:00")]
+#[case::convert_timezone_ahead_minutes(
+    r#"TZ="UTC+1:30" 2022-12-14"#,
+    2022,
+    "2022-12-14 01:30:00+00:00"
+)]
+#[case::convert_timezone_behind_minutes(
+    r#"TZ="UTC-1:30" 2022-12-14"#,
+    2022,
+    "2022-12-13 22:30:00+00:00"
+)]
+#[case::convert_named_timezone(
+    r#"TZ="America/New_York" 2022-12-14 12:00"#,
+    2022,
+    "2022-12-14 17:00:00+00:00"
+)]
+fn test_conversion_date(#[case] input: &str, #[case] year: u32, #[case] expected: &str) {
+    use chrono::DateTime;
+    use common::check_relative;
+
+    let now = DateTime::parse_from_rfc3339(&format!("{year}-06-01T00:00:00+00:00")).unwrap();
+    check_relative(now, input, expected);
+}

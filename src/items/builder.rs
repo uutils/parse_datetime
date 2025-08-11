@@ -113,7 +113,7 @@ impl DateTimeBuilder {
 
     pub(super) fn set_conversion_timezone(
         mut self,
-        conversion_timezone: time::Offset,
+        conversion_timezone: FixedOffset,
     ) -> Result<Self, &'static str> {
         if self.conversion_timezone.is_some() {
             Err("TZ= cannot appear more than once")
@@ -324,13 +324,12 @@ impl DateTimeBuilder {
         }
 
         if let Some(offset) = self.timezone {
-            dt = with_timezone_restore(offset, dt)?;
+            let offset = chrono::FixedOffset::try_from(offset).ok();
+            dt = with_timezone_restore(offset?, dt)?;
         }
 
-        if let Some(mut offset) = self.conversion_timezone {
-            // Reuse with_timezone_restore with a swapped offset
-            offset.negative = !offset.negative;
-            dt = with_timezone_restore(offset, dt)?;
+        if let Some(conversion_timezone) = self.conversion_timezone {
+            dt = with_timezone_restore(conversion_timezone, dt)?;
         }
 
         Some(dt)
@@ -357,10 +356,9 @@ fn new_date(
 /// Restores year, month, day, etc after applying the timezone
 /// returns None if timezone overflows the date
 fn with_timezone_restore(
-    offset: timezone::Offset,
+    offset: FixedOffset,
     at: DateTime<FixedOffset>,
 ) -> Option<DateTime<FixedOffset>> {
-    let offset: FixedOffset = chrono::FixedOffset::try_from(offset).ok()?;
     let copy = at;
     let x = at
         .with_timezone(&offset)
