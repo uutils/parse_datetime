@@ -100,17 +100,6 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn push_relative(
-        mut self,
-        relative: relative::Relative,
-    ) -> Result<Self, &'static str> {
-        if self.timestamp.is_some() {
-            return Err("timestamp cannot be combined with other date/time items");
-        }
-        self.relative.push(relative);
-        Ok(self)
-    }
-
     pub(super) fn set_conversion_timezone(
         mut self,
         conversion_timezone: FixedOffset,
@@ -121,6 +110,17 @@ impl DateTimeBuilder {
             self.conversion_timezone = Some(conversion_timezone);
             Ok(self)
         }
+    }
+
+    pub(super) fn push_relative(
+        mut self,
+        relative: relative::Relative,
+    ) -> Result<Self, &'static str> {
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        }
+        self.relative.push(relative);
+        Ok(self)
     }
 
     /// Sets a pure number that can be interpreted as either a year or time
