@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Timelike};
 
-use super::{date, relative, time, timezone, weekday, year};
+use super::{date, epoch, relative, time, timezone, weekday, year};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -13,7 +13,7 @@ use super::{date, relative, time, timezone, weekday, year};
 #[derive(Debug, Default)]
 pub(crate) struct DateTimeBuilder {
     base: Option<DateTime<FixedOffset>>,
-    timestamp: Option<f64>,
+    timestamp: Option<epoch::Timestamp>,
     date: Option<date::Date>,
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
@@ -35,7 +35,7 @@ impl DateTimeBuilder {
 
     /// Sets a timestamp value. Timestamp values are exclusive to other date/time
     /// items (date, time, weekday, timezone, relative adjustments).
-    pub(super) fn set_timestamp(mut self, ts: f64) -> Result<Self, &'static str> {
+    pub(super) fn set_timestamp(mut self, ts: epoch::Timestamp) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot appear more than once");
         } else if self.date.is_some()
@@ -148,15 +148,15 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
-    fn build_from_timestamp(ts: f64, tz: &FixedOffset) -> Option<DateTime<FixedOffset>> {
-        // TODO: How to make the fract -> nanosecond conversion more precise?
-        // Maybe considering using the
-        // [rust_decimal](https://crates.io/crates/rust_decimal) crate?
-        match chrono::Utc.timestamp_opt(ts as i64, (ts.fract() * 10f64.powi(9)).round() as u32) {
+    fn build_from_timestamp(
+        ts: epoch::Timestamp,
+        tz: &FixedOffset,
+    ) -> Option<DateTime<FixedOffset>> {
+        match chrono::Utc.timestamp_opt(ts.second, ts.nanosecond) {
             chrono::MappedLocalTime::Single(t) => Some(t.with_timezone(tz)),
             chrono::MappedLocalTime::Ambiguous(earliest, _latest) => {
-                // TODO: When there is a fold in the local time, which value
-                // do we choose? For now, we use the earliest one.
+                // When there is a fold in the local time, we use the earliest
+                // one.
                 Some(earliest.with_timezone(tz))
             }
             chrono::MappedLocalTime::None => None, // Invalid timestamp
@@ -210,6 +210,7 @@ impl DateTimeBuilder {
             hour,
             minute,
             second,
+            nanosecond,
             ref offset,
         }) = self.time
         {
@@ -224,8 +225,8 @@ impl DateTimeBuilder {
                 dt.day(),
                 hour,
                 minute,
-                second as u32,
-                (second.fract() * 10f64.powi(9)).round() as u32,
+                second,
+                nanosecond,
                 offset,
             )?;
         }

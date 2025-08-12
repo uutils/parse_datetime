@@ -58,7 +58,7 @@ use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
 pub(crate) enum Item {
-    Timestamp(f64),
+    Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
     Time(time::Time),

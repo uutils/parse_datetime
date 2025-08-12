@@ -55,7 +55,8 @@ mod tests {
             time: Time {
                 hour: 10,
                 minute: 10,
-                second: 55.0,
+                second: 55,
+                nanosecond: 0,
                 offset: None,
             },
         });
