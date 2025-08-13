@@ -3,8 +3,10 @@
 
 //! Primitive combinators.
 
+use std::str::FromStr;
+
 use winnow::{
-    ascii::{digit1, multispace0},
+    ascii::{digit1, multispace0, Uint},
     combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated},
     error::{ContextError, ParserError, StrContext, StrContextValue},
     stream::AsChar,
@@ -100,8 +102,9 @@ where
 ///
 /// See the rationale for `dec_int` for why we don't use
 /// `winnow::ascii::dec_uint`.
-pub(super) fn dec_uint<'a, E>(input: &mut &'a str) -> winnow::Result<u32, E>
+pub(super) fn dec_uint<'a, O, E>(input: &mut &'a str) -> winnow::Result<O, E>
 where
+    O: Uint + FromStr,
     E: ParserError<&'a str>,
 {
     digit1

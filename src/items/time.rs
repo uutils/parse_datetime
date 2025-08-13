@@ -40,11 +40,12 @@
 use winnow::{
     combinator::{alt, opt, preceded},
     error::ErrMode,
-    seq, ModalResult, Parser,
+    ModalResult, Parser,
 };
 
 use super::{
-    primitive::{colon, ctx_err, dec_uint, float, s},
+    epoch::sec_and_nsec,
+    primitive::{colon, ctx_err, dec_uint, s},
     timezone::{timezone_num, Offset},
 };
 
@@ -52,7 +53,8 @@ use super::{
 pub(crate) struct Time {
     pub hour: u32,
     pub minute: u32,
-    pub second: f64,
+    pub second: u32,
+    pub nanosecond: u32,
     pub offset: Option<Offset>,
 }
 
@@ -74,16 +76,24 @@ pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
         (hour24, timezone_num).map(|(hour, offset)| Time {
             hour,
             minute: 0,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: Some(offset),
         }),
-        seq!(Time {
-            hour: hour24,
-            _: colon,
-            minute: minute,
-            second: opt(preceded(colon, second)).map(|s| s.unwrap_or(0.0)),
-            offset: opt(timezone_num)
-        }),
+        (
+            hour24,
+            colon,
+            minute,
+            opt(preceded(colon, second)),
+            opt(timezone_num),
+        )
+            .map(|(hour, _, minute, sec_nsec, offset)| Time {
+                hour,
+                minute,
+                second: sec_nsec.map_or(0, |(s, _)| s),
+                nanosecond: sec_nsec.map_or(0, |(_, ns)| ns),
+                offset,
+            }),
     ))
     .parse_next(input)
 }
@@ -92,7 +102,7 @@ pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
 ///
 /// The hours are restricted to 12 or lower in this format
 fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
-    let (h, m, s, meridiem) = (
+    let (h, m, sec_nsec, meridiem) = (
         hour12,
         opt(preceded(colon, minute)),
         opt(preceded(colon, second)),
@@ -118,7 +128,8 @@ fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
     Ok(Time {
         hour: h,
         minute: m.unwrap_or(0),
-        second: s.unwrap_or(0.0),
+        second: sec_nsec.map_or(0, |(s, _)| s),
+        nanosecond: sec_nsec.map_or(0, |(_, ns)| ns),
         offset: None,
     })
 }
@@ -139,14 +150,9 @@ pub(super) fn minute(input: &mut &str) -> ModalResult<u32> {
 }
 
 /// Parse a number of seconds (preceded by whitespace)
-fn second(input: &mut &str) -> ModalResult<f64> {
-    s(float)
-        .verify(|x| *x < 60.0)
-        .map(|x| {
-            // Truncates the fractional part of seconds to 9 digits.
-            let factor = 10f64.powi(9);
-            (x * factor).trunc() / factor
-        })
+fn second(input: &mut &str) -> ModalResult<(u32, u32)> {
+    sec_and_nsec
+        .verify_map(|(s, ns)| if s < 60 { Some((s as u32, ns)) } else { None })
         .parse_next(input)
 }
 
@@ -159,7 +165,8 @@ mod tests {
         let reference = Time {
             hour: 20,
             minute: 2,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: None,
         };
 
@@ -201,7 +208,8 @@ mod tests {
         let reference = Time {
             hour: 11,
             minute: 0,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: None,
         };
 
@@ -224,11 +232,49 @@ mod tests {
     }
 
     #[test]
+    fn nanoseconds() {
+        let reference = Time {
+            hour: 11,
+            minute: 0,
+            second: 0,
+            nanosecond: 123450000,
+            offset: None,
+        };
+
+        for mut s in ["11:00:00.12345", "11:00:00.12345am"] {
+            let old_s = s.to_owned();
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
+        }
+
+        let reference = Time {
+            hour: 11,
+            minute: 0,
+            second: 0,
+            nanosecond: 123456789,
+            offset: None,
+        };
+
+        for mut s in ["11:00:00.123456789", "11:00:00.1234567890123"] {
+            let old_s = s.to_owned();
+            assert_eq!(
+                parse(&mut s).ok(),
+                Some(reference.clone()),
+                "Format string: {old_s}"
+            );
+        }
+    }
+
+    #[test]
     fn noon() {
         let reference = Time {
             hour: 12,
             minute: 0,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: None,
         };
 
@@ -254,7 +300,8 @@ mod tests {
         let reference = Time {
             hour: 0,
             minute: 0,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: None,
         };
 
@@ -273,7 +320,8 @@ mod tests {
         let reference = Time {
             hour: 1,
             minute: 23,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: Some(Offset {
                 negative: false,
                 hours: 5,
@@ -303,7 +351,8 @@ mod tests {
         let reference = Time {
             hour: 3,
             minute: 45,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: Some(Offset {
                 negative: false,
                 hours: 5,
@@ -335,7 +384,8 @@ mod tests {
         let reference = Time {
             hour: 3,
             minute: 45,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: Some(Offset {
                 negative: false,
                 hours: 0,
@@ -366,7 +416,8 @@ mod tests {
         let reference = Time {
             hour: 3,
             minute: 45,
-            second: 0.0,
+            second: 0,
+            nanosecond: 0,
             offset: Some(Offset {
                 negative: true,
                 hours: 5,
