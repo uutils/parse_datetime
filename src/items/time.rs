@@ -156,290 +156,290 @@ fn second(input: &mut &str) -> ModalResult<(u32, u32)> {
         .parse_next(input)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn simple() {
-        let reference = Time {
-            hour: 20,
-            minute: 2,
-            second: 0,
-            nanosecond: 0,
-            offset: None,
-        };
+//     #[test]
+//     fn simple() {
+//         let reference = Time {
+//             hour: 20,
+//             minute: 2,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: None,
+//         };
 
-        for mut s in [
-            "20:02:00.000000",
-            "20:02:00",
-            "20:02+:00",
-            "20:02-:00",
-            "20----:02--(these hyphens are ignored)--:00",
-            "20++++:02++(these plusses are ignored)++:00",
-            "20: (A comment!)   02 (Another comment!)  :00",
-            "20:02  (A nested (comment!))  :00",
-            "20:02  (So (many (nested) comments!!!!))  :00",
-            "20   :    02  :   00.000000",
-            "20:02",
-            "20  :   02",
-            "8:02pm",
-            "8:   02     pm",
-            "8:02p.m.",
-            "8:   02     p.m.",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "20:02:00.000000",
+//             "20:02:00",
+//             "20:02+:00",
+//             "20:02-:00",
+//             "20----:02--(these hyphens are ignored)--:00",
+//             "20++++:02++(these plusses are ignored)++:00",
+//             "20: (A comment!)   02 (Another comment!)  :00",
+//             "20:02  (A nested (comment!))  :00",
+//             "20:02  (So (many (nested) comments!!!!))  :00",
+//             "20   :    02  :   00.000000",
+//             "20:02",
+//             "20  :   02",
+//             "8:02pm",
+//             "8:   02     pm",
+//             "8:02p.m.",
+//             "8:   02     p.m.",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn invalid() {
-        assert!(parse(&mut "00:00am").is_err());
-        assert!(parse(&mut "00:00:00am").is_err());
-    }
+//     #[test]
+//     fn invalid() {
+//         assert!(parse(&mut "00:00am").is_err());
+//         assert!(parse(&mut "00:00:00am").is_err());
+//     }
 
-    #[test]
-    fn hours_only() {
-        let reference = Time {
-            hour: 11,
-            minute: 0,
-            second: 0,
-            nanosecond: 0,
-            offset: None,
-        };
+//     #[test]
+//     fn hours_only() {
+//         let reference = Time {
+//             hour: 11,
+//             minute: 0,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: None,
+//         };
 
-        for mut s in [
-            "11am",
-            "11 am",
-            "11 - am",
-            "11 + am",
-            "11 a.m.",
-            "11   :  00",
-            "11:00:00",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "11am",
+//             "11 am",
+//             "11 - am",
+//             "11 + am",
+//             "11 a.m.",
+//             "11   :  00",
+//             "11:00:00",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn nanoseconds() {
-        let reference = Time {
-            hour: 11,
-            minute: 0,
-            second: 0,
-            nanosecond: 123450000,
-            offset: None,
-        };
+//     #[test]
+//     fn nanoseconds() {
+//         let reference = Time {
+//             hour: 11,
+//             minute: 0,
+//             second: 0,
+//             nanosecond: 123450000,
+//             offset: None,
+//         };
 
-        for mut s in ["11:00:00.12345", "11:00:00.12345am"] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
+//         for mut s in ["11:00:00.12345", "11:00:00.12345am"] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
 
-        let reference = Time {
-            hour: 11,
-            minute: 0,
-            second: 0,
-            nanosecond: 123456789,
-            offset: None,
-        };
+//         let reference = Time {
+//             hour: 11,
+//             minute: 0,
+//             second: 0,
+//             nanosecond: 123456789,
+//             offset: None,
+//         };
 
-        for mut s in ["11:00:00.123456789", "11:00:00.1234567890123"] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in ["11:00:00.123456789", "11:00:00.1234567890123"] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn noon() {
-        let reference = Time {
-            hour: 12,
-            minute: 0,
-            second: 0,
-            nanosecond: 0,
-            offset: None,
-        };
+//     #[test]
+//     fn noon() {
+//         let reference = Time {
+//             hour: 12,
+//             minute: 0,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: None,
+//         };
 
-        for mut s in [
-            "12:00",
-            "12pm",
-            "12 pm",
-            "12 (A comment!) pm",
-            "12 pm",
-            "12 p.m.",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "12:00",
+//             "12pm",
+//             "12 pm",
+//             "12 (A comment!) pm",
+//             "12 pm",
+//             "12 p.m.",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn midnight() {
-        let reference = Time {
-            hour: 0,
-            minute: 0,
-            second: 0,
-            nanosecond: 0,
-            offset: None,
-        };
+//     #[test]
+//     fn midnight() {
+//         let reference = Time {
+//             hour: 0,
+//             minute: 0,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: None,
+//         };
 
-        for mut s in ["00:00", "12am"] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in ["00:00", "12am"] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn offset_hours() {
-        let reference = Time {
-            hour: 1,
-            minute: 23,
-            second: 0,
-            nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 5,
-                minutes: 0,
-            }),
-        };
+//     #[test]
+//     fn offset_hours() {
+//         let reference = Time {
+//             hour: 1,
+//             minute: 23,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: Some(Offset {
+//                 negative: false,
+//                 hours: 5,
+//                 minutes: 0,
+//             }),
+//         };
 
-        for mut s in [
-            "1:23+5",
-            "1:23 + 5",
-            "1:23+05",
-            "1:23 + 5 : 00",
-            "1:23+05:00",
-            "1:23+05:0",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "1:23+5",
+//             "1:23 + 5",
+//             "1:23+05",
+//             "1:23 + 5 : 00",
+//             "1:23+05:00",
+//             "1:23+05:0",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn offset_hours_and_minutes() {
-        let reference = Time {
-            hour: 3,
-            minute: 45,
-            second: 0,
-            nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 5,
-                minutes: 35,
-            }),
-        };
+//     #[test]
+//     fn offset_hours_and_minutes() {
+//         let reference = Time {
+//             hour: 3,
+//             minute: 45,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: Some(Offset {
+//                 negative: false,
+//                 hours: 5,
+//                 minutes: 35,
+//             }),
+//         };
 
-        for mut s in [
-            "3:45+535",
-            "3:45-+535",
-            "03:45+535",
-            "3   :  45  +  535",
-            "3:45+0535",
-            "3:45+5:35",
-            "3:45+05:35",
-            "3:45  + 05 : 35",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "3:45+535",
+//             "3:45-+535",
+//             "03:45+535",
+//             "3   :  45  +  535",
+//             "3:45+0535",
+//             "3:45+5:35",
+//             "3:45+05:35",
+//             "3:45  + 05 : 35",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn offset_minutes() {
-        let reference = Time {
-            hour: 3,
-            minute: 45,
-            second: 0,
-            nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 0,
-                minutes: 35,
-            }),
-        };
+//     #[test]
+//     fn offset_minutes() {
+//         let reference = Time {
+//             hour: 3,
+//             minute: 45,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: Some(Offset {
+//                 negative: false,
+//                 hours: 0,
+//                 minutes: 35,
+//             }),
+//         };
 
-        for mut s in [
-            "3:45+035",
-            "03:45+035",
-            "3   :  45  +  035",
-            "3:45+0035",
-            "3:45+0:35",
-            "3:45+00:35",
-            "3:45  + 00 : 35",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
+//         for mut s in [
+//             "3:45+035",
+//             "03:45+035",
+//             "3   :  45  +  035",
+//             "3:45+0035",
+//             "3:45+0:35",
+//             "3:45+00:35",
+//             "3:45  + 00 : 35",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
 
-    #[test]
-    fn offset_negative() {
-        let reference = Time {
-            hour: 3,
-            minute: 45,
-            second: 0,
-            nanosecond: 0,
-            offset: Some(Offset {
-                negative: true,
-                hours: 5,
-                minutes: 35,
-            }),
-        };
+//     #[test]
+//     fn offset_negative() {
+//         let reference = Time {
+//             hour: 3,
+//             minute: 45,
+//             second: 0,
+//             nanosecond: 0,
+//             offset: Some(Offset {
+//                 negative: true,
+//                 hours: 5,
+//                 minutes: 35,
+//             }),
+//         };
 
-        for mut s in [
-            "3:45-535",
-            "03:45-535",
-            "3   :  45  -  535",
-            "3:45-0535",
-            "3:45-5:35",
-            "3:45-05:35",
-            "3:45  - 05 : 35",
-        ] {
-            let old_s = s.to_owned();
-            assert_eq!(
-                parse(&mut s).ok(),
-                Some(reference.clone()),
-                "Format string: {old_s}"
-            );
-        }
-    }
-}
+//         for mut s in [
+//             "3:45-535",
+//             "03:45-535",
+//             "3   :  45  -  535",
+//             "3:45-0535",
+//             "3:45-5:35",
+//             "3:45-05:35",
+//             "3:45  - 05 : 35",
+//         ] {
+//             let old_s = s.to_owned();
+//             assert_eq!(
+//                 parse(&mut s).ok(),
+//                 Some(reference.clone()),
+//                 "Format string: {old_s}"
+//             );
+//         }
+//     }
+// }

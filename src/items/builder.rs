@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Timelike};
+use jiff::{civil::time, ToSpan, Zoned};
 
 use super::{date, epoch, relative, time, timezone, weekday, year};
 
@@ -12,7 +12,7 @@ use super::{date, epoch, relative, time, timezone, weekday, year};
 /// leave it unset to use the current date and time as the base.
 #[derive(Debug, Default)]
 pub(crate) struct DateTimeBuilder {
-    base: Option<DateTime<FixedOffset>>,
+    base: Option<Zoned>,
     timestamp: Option<epoch::Timestamp>,
     date: Option<date::Date>,
     time: Option<time::Time>,
@@ -28,7 +28,7 @@ impl DateTimeBuilder {
 
     /// Sets the base date and time for the builder. If not set, the current
     /// date and time will be used.
-    pub(super) fn set_base(mut self, base: DateTime<FixedOffset>) -> Self {
+    pub(super) fn set_base(mut self, base: Zoned) -> Self {
         self.base = Some(base);
         self
     }
@@ -148,27 +148,20 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
-    fn build_from_timestamp(
-        ts: epoch::Timestamp,
-        tz: &FixedOffset,
-    ) -> Option<DateTime<FixedOffset>> {
-        match chrono::Utc.timestamp_opt(ts.second, ts.nanosecond) {
-            chrono::MappedLocalTime::Single(t) => Some(t.with_timezone(tz)),
-            chrono::MappedLocalTime::Ambiguous(earliest, _latest) => {
-                // When there is a fold in the local time, we use the earliest
-                // one.
-                Some(earliest.with_timezone(tz))
-            }
-            chrono::MappedLocalTime::None => None, // Invalid timestamp
-        }
+    fn build_from_timestamp(ts: epoch::Timestamp, tz: jiff::tz::TimeZone) -> Option<Zoned> {
+        Some(
+            jiff::Timestamp::new(ts.second, ts.nanosecond as i32)
+                .ok()?
+                .to_zoned(tz),
+        )
     }
 
-    pub(super) fn build(self) -> Option<DateTime<FixedOffset>> {
-        let base = self.base.unwrap_or_else(|| chrono::Local::now().into());
+    pub(super) fn build(self) -> Option<Zoned> {
+        let base = self.base.unwrap_or(Zoned::now());
 
-        // If a timestamp is set, we use it to build the DateTime object.
+        // If a timestamp is set, we use it to build the Zoned object.
         if let Some(ts) = self.timestamp {
-            return Self::build_from_timestamp(ts, base.offset());
+            return Self::build_from_timestamp(ts, base.offset().to_time_zone());
         }
 
         // If any of the following items are set, we truncate the time portion
@@ -181,29 +174,17 @@ impl DateTimeBuilder {
         {
             base
         } else {
-            new_date(
-                base.year(),
-                base.month(),
-                base.day(),
-                0,
-                0,
-                0,
-                0,
-                *base.offset(),
-            )?
+            base.with().time(time(0, 0, 0, 0)).build().ok()?
         };
 
         if let Some(date::Date { year, month, day }) = self.date {
-            dt = new_date(
-                year.map(|x| x as i32).unwrap_or(dt.year()),
-                month,
-                day,
-                dt.hour(),
-                dt.minute(),
-                dt.second(),
-                dt.nanosecond(),
-                *dt.offset(),
-            )?;
+            dt = dt
+                .with()
+                .year(year.map(|x| x as i16).unwrap_or(dt.year()))
+                .month(month as i8)
+                .day(day as i8)
+                .build()
+                .ok()?;
         }
 
         if let Some(time::Time {
@@ -216,24 +197,32 @@ impl DateTimeBuilder {
         {
             let offset = offset
                 .clone()
-                .and_then(|o| chrono::FixedOffset::try_from(o).ok())
-                .unwrap_or(*dt.offset());
+                .and_then(|o| jiff::tz::Offset::try_from(o).ok())
+                .unwrap_or(dt.offset());
 
-            dt = new_date(
-                dt.year(),
-                dt.month(),
-                dt.day(),
-                hour,
-                minute,
-                second,
-                nanosecond,
-                offset,
-            )?;
+            dt = dt
+                .with()
+                .time(time(
+                    hour as i8,
+                    minute as i8,
+                    second as i8,
+                    nanosecond as i32,
+                ))
+                .offset(offset)
+                .build()
+                .ok()?;
         }
 
         if let Some(weekday::Weekday { offset, day }) = self.weekday {
             if self.time.is_none() {
-                dt = new_date(dt.year(), dt.month(), dt.day(), 0, 0, 0, 0, *dt.offset())?;
+                dt = dt
+                    .with()
+                    .hour(0)
+                    .minute(0)
+                    .second(0)
+                    .nanosecond(0)
+                    .build()
+                    .ok()?;
             }
 
             let mut offset = offset;
@@ -245,7 +234,7 @@ impl DateTimeBuilder {
             // Consider this:
             // Assuming today is Monday, next Friday is actually THIS Friday;
             // but next Monday is indeed NEXT Monday.
-            if dt.weekday() != day && offset > 0 {
+            if dt.date().weekday() != day && offset > 0 {
                 offset -= 1;
             }
 
@@ -265,101 +254,37 @@ impl DateTimeBuilder {
             //
             // Example 4: next Thursday (x = 1, day = Thursday)
             //            delta = (3 - 3) % 7 + (1) * 7 = 7
-            let delta = (day.num_days_from_monday() as i32
-                - dt.weekday().num_days_from_monday() as i32)
+            let delta = (day.since(jiff::civil::Weekday::Monday) as i32
+                - dt.date().weekday().since(jiff::civil::Weekday::Monday) as i32)
                 .rem_euclid(7)
                 + offset.checked_mul(7)?;
 
-            dt = if delta < 0 {
-                dt.checked_sub_days(chrono::Days::new((-delta) as u64))?
-            } else {
-                dt.checked_add_days(chrono::Days::new(delta as u64))?
-            }
+            dt = dt.checked_add(delta.days()).ok()?;
         }
 
         for rel in self.relative {
-            // TODO: Handle potential overflows in the addition operations.
             match rel {
                 relative::Relative::Years(x) => {
-                    dt = dt.with_year(dt.year() + x)?;
+                    dt = dt.with().year(dt.year() + x as i16).build().ok()?
                 }
                 relative::Relative::Months(x) => {
                     // *NOTE* This is done in this way to conform to
                     // GNU behavior.
-                    let days = last_day_of_month(dt.year(), dt.month());
-                    if x >= 0 {
-                        dt += dt
-                            .date_naive()
-                            .checked_add_days(chrono::Days::new((days * x as u32) as u64))?
-                            .signed_duration_since(dt.date_naive());
-                    } else {
-                        dt += dt
-                            .date_naive()
-                            .checked_sub_days(chrono::Days::new((days * -x as u32) as u64))?
-                            .signed_duration_since(dt.date_naive());
-                    }
+                    let days = dt.date().last_of_month().day();
+                    dt = dt.checked_add((days * x as i8).days()).ok()?;
                 }
-                relative::Relative::Days(x) => dt += chrono::Duration::days(x.into()),
-                relative::Relative::Hours(x) => dt += chrono::Duration::hours(x.into()),
-                relative::Relative::Minutes(x) => {
-                    dt += chrono::Duration::try_minutes(x.into())?;
-                }
+                relative::Relative::Days(x) => dt = dt.checked_add(x.days()).ok()?,
+                relative::Relative::Hours(x) => dt = dt.checked_add(x.hours()).ok()?,
+                relative::Relative::Minutes(x) => dt = dt.checked_add(x.minutes()).ok()?,
                 // Seconds are special because they can be given as a float.
-                relative::Relative::Seconds(x) => {
-                    dt += chrono::Duration::try_seconds(x as i64)?;
-                }
+                relative::Relative::Seconds(x) => dt = dt.checked_add((x as i64).seconds()).ok()?,
             }
         }
 
         if let Some(offset) = self.timezone {
-            dt = with_timezone_restore(offset, dt)?;
+            let tz = jiff::tz::TimeZone::fixed(offset.try_into().ok()?);
+            dt = dt.datetime().to_zoned(tz).ok()?;
         }
-
         Some(dt)
     }
-}
-
-#[allow(clippy::too_many_arguments, deprecated)]
-fn new_date(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-    nano: u32,
-    offset: FixedOffset,
-) -> Option<DateTime<FixedOffset>> {
-    let newdate = NaiveDate::from_ymd_opt(year, month, day)
-        .and_then(|naive| naive.and_hms_nano_opt(hour, minute, second, nano))?;
-
-    Some(DateTime::<FixedOffset>::from_local(newdate, offset))
-}
-
-/// Restores year, month, day, etc after applying the timezone
-/// returns None if timezone overflows the date
-fn with_timezone_restore(
-    offset: timezone::Offset,
-    at: DateTime<FixedOffset>,
-) -> Option<DateTime<FixedOffset>> {
-    let offset: FixedOffset = chrono::FixedOffset::try_from(offset).ok()?;
-    let copy = at;
-    let x = at
-        .with_timezone(&offset)
-        .with_day(copy.day())?
-        .with_month(copy.month())?
-        .with_year(copy.year())?
-        .with_hour(copy.hour())?
-        .with_minute(copy.minute())?
-        .with_second(copy.second())?
-        .with_nanosecond(copy.nanosecond())?;
-    Some(x)
-}
-
-fn last_day_of_month(year: i32, month: u32) -> u32 {
-    NaiveDate::from_ymd_opt(year, month + 1, 1)
-        .unwrap_or(NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap())
-        .pred_opt()
-        .unwrap()
-        .day()
 }

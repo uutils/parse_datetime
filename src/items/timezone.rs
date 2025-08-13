@@ -27,7 +27,6 @@
 
 use std::fmt::Display;
 
-use chrono::FixedOffset;
 use winnow::{
     combinator::{alt, peek, seq},
     error::{ContextError, ErrMode},
@@ -78,7 +77,7 @@ impl Offset {
     }
 }
 
-impl TryFrom<Offset> for chrono::FixedOffset {
+impl TryFrom<Offset> for jiff::tz::Offset {
     type Error = ParseDateTimeError;
 
     fn try_from(
@@ -88,21 +87,11 @@ impl TryFrom<Offset> for chrono::FixedOffset {
             minutes,
         }: Offset,
     ) -> Result<Self, Self::Error> {
-        let secs = hours * 3600 + minutes * 60;
+        let seconds = (hours * 3600 + minutes * 60) as i32;
+        let seconds = if negative { -seconds } else { seconds };
 
-        let offset = if negative {
-            FixedOffset::west_opt(
-                secs.try_into()
-                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
-            )
-            .ok_or(ParseDateTimeError::InvalidInput)?
-        } else {
-            FixedOffset::east_opt(
-                secs.try_into()
-                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
-            )
-            .ok_or(ParseDateTimeError::InvalidInput)?
-        };
+        let offset = jiff::tz::Offset::from_seconds(seconds)
+            .map_err(|_| ParseDateTimeError::InvalidInput)?;
 
         Ok(offset)
     }

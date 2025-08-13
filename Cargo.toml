@@ -10,9 +10,9 @@ rust-version = "1.71.1"
 
 [dependencies]
 regex = "1.10.4"
-chrono = { version="0.4.38", default-features=false, features=["std", "alloc", "clock"] }
 winnow = "0.7.10"
 num-traits = "0.2.19"
+jiff = { version = "0.2.15", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 rstest = "0.26"
