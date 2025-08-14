@@ -41,13 +41,13 @@ use super::{
 };
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
-pub struct Date {
-    pub day: u32,
-    pub month: u32,
-    pub year: Option<u32>,
+pub(crate) struct Date {
+    pub(crate) day: u8,
+    pub(crate) month: u8,
+    pub(crate) year: Option<u16>,
 }
 
-impl TryFrom<(&str, u32, u32)> for Date {
+impl TryFrom<(&str, u8, u8)> for Date {
     type Error = &'static str;
 
     /// Create a `Date` from a tuple of `(year, month, day)`.
@@ -55,7 +55,7 @@ impl TryFrom<(&str, u32, u32)> for Date {
     /// Note: The `year` is represented as a `&str` to handle a specific GNU
     /// compatibility quirk. See the comment in [`year`](super::year) for more
     /// details.
-    fn try_from(value: (&str, u32, u32)) -> Result<Self, Self::Error> {
+    fn try_from(value: (&str, u8, u8)) -> Result<Self, Self::Error> {
         let (year_str, month, day) = value;
         let year = year_from_str(year_str)?;
 
@@ -80,11 +80,11 @@ impl TryFrom<(&str, u32, u32)> for Date {
     }
 }
 
-impl TryFrom<(u32, u32)> for Date {
+impl TryFrom<(u8, u8)> for Date {
     type Error = &'static str;
 
     /// Create a `Date` from a tuple of `(month, day)`.
-    fn try_from((month, day): (u32, u32)) -> Result<Self, Self::Error> {
+    fn try_from((month, day): (u8, u8)) -> Result<Self, Self::Error> {
         if !(1..=12).contains(&month) {
             return Err("month must be between 1 and 12");
         }
@@ -104,14 +104,27 @@ impl TryFrom<(u32, u32)> for Date {
     }
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Date> {
+impl TryFrom<Date> for jiff::civil::Date {
+    type Error = &'static str;
+
+    fn try_from(date: Date) -> Result<Self, Self::Error> {
+        jiff::civil::Date::new(
+            date.year.unwrap_or(0) as i16,
+            date.month as i8,
+            date.day as i8,
+        )
+        .map_err(|_| "date is not valid")
+    }
+}
+
+pub(super) fn parse(input: &mut &str) -> ModalResult<Date> {
     alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
 }
 
 /// Parse `[year]-[month]-[day]`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso1(input: &mut &str) -> ModalResult<Date> {
+pub(super) fn iso1(input: &mut &str) -> ModalResult<Date> {
     let (year, _, month, _, day) =
         (year_str, s('-'), s(dec_uint), s('-'), s(dec_uint)).parse_next(input)?;
 
@@ -123,19 +136,13 @@ pub fn iso1(input: &mut &str) -> ModalResult<Date> {
 /// Parse `[year][month][day]`
 ///
 /// This is also used by [`combined`](super::combined).
-pub fn iso2(input: &mut &str) -> ModalResult<Date> {
+pub(super) fn iso2(input: &mut &str) -> ModalResult<Date> {
     let date_str = take_while(5.., AsChar::is_dec_digit).parse_next(input)?;
     let len = date_str.len();
 
     let year = &date_str[..len - 4];
-
-    let month = date_str[len - 4..len - 2]
-        .parse::<u32>()
-        .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
-
-    let day = date_str[len - 2..]
-        .parse::<u32>()
-        .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid number")))?;
+    let month = month_from_str(&date_str[len - 4..len - 2])?;
+    let day = day_from_str(&date_str[len - 2..])?;
 
     (year, month, day)
         .try_into()
@@ -158,27 +165,21 @@ fn us(input: &mut &str) -> ModalResult<Date> {
             //
             // GNU quirk: interpret as [year]/[month]/[day] if the first part is at
             // least 4 characters long.
-            let day = s2
-                .parse::<u32>()
-                .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid number")))?;
+            let day = day_from_str(s2)?;
             (s1, n, day)
                 .try_into()
                 .map_err(|e| ErrMode::Cut(ctx_err(e)))
         }
         Some(s2) => {
             // [month]/[day]/[year]
-            let month = s1
-                .parse::<u32>()
-                .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
+            let month = month_from_str(s1)?;
             (s2, month, n)
                 .try_into()
                 .map_err(|e| ErrMode::Cut(ctx_err(e)))
         }
         None => {
             // [month]/[day]
-            let month = s1
-                .parse::<u32>()
-                .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid number")))?;
+            let month = month_from_str(s1)?;
             (month, n).try_into().map_err(|e| ErrMode::Cut(ctx_err(e)))
         }
     }
@@ -239,7 +240,7 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
 }
 
 /// Parse the name of a month (case-insensitive)
-fn literal_month(input: &mut &str) -> ModalResult<u32> {
+fn literal_month(input: &mut &str) -> ModalResult<u8> {
     s(alpha1)
         .verify_map(|s: &str| {
             Some(match s {
@@ -259,6 +260,16 @@ fn literal_month(input: &mut &str) -> ModalResult<u32> {
             })
         })
         .parse_next(input)
+}
+
+fn month_from_str(s: &str) -> ModalResult<u8> {
+    s.parse::<u8>()
+        .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid u8 number")))
+}
+
+fn day_from_str(s: &str) -> ModalResult<u8> {
+    s.parse::<u8>()
+        .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid u8 number")))
 }
 
 #[cfg(test)]
