@@ -223,9 +223,9 @@ impl DateTimeBuilder {
                 dt.year(),
                 dt.month(),
                 dt.day(),
-                hour,
-                minute,
-                second,
+                hour as u32,
+                minute as u32,
+                second as u32,
                 nanosecond,
                 offset,
             )?;

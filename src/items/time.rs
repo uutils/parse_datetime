@@ -51,11 +51,25 @@ use super::{
 
 #[derive(PartialEq, Clone, Debug, Default)]
 pub(crate) struct Time {
-    pub hour: u32,
-    pub minute: u32,
-    pub second: u32,
-    pub nanosecond: u32,
-    pub offset: Option<Offset>,
+    pub(crate) hour: u8,
+    pub(crate) minute: u8,
+    pub(crate) second: u8,
+    pub(crate) nanosecond: u32,
+    pub(crate) offset: Option<Offset>,
+}
+
+impl TryFrom<Time> for jiff::civil::Time {
+    type Error = &'static str;
+
+    fn try_from(time: Time) -> Result<Self, Self::Error> {
+        jiff::civil::Time::new(
+            time.hour as i8,
+            time.minute as i8,
+            time.second as i8,
+            time.nanosecond as i32,
+        )
+        .map_err(|_| "time is not valid")
+    }
 }
 
 #[derive(Clone)]
@@ -134,25 +148,26 @@ fn am_pm_time(input: &mut &str) -> ModalResult<Time> {
     })
 }
 
-/// Parse a number of hours in `0..24`(preceded by whitespace)
-pub(super) fn hour24(input: &mut &str) -> ModalResult<u32> {
+/// Parse a number of hours in `0..24`.
+pub(super) fn hour24(input: &mut &str) -> ModalResult<u8> {
     s(dec_uint).verify(|x| *x < 24).parse_next(input)
 }
 
-/// Parse a number of hours in `0..=12` (preceded by whitespace)
-fn hour12(input: &mut &str) -> ModalResult<u32> {
+/// Parse a number of hours in `0..=12`.
+fn hour12(input: &mut &str) -> ModalResult<u8> {
     s(dec_uint).verify(|x| *x <= 12).parse_next(input)
 }
 
-/// Parse a number of minutes (preceded by whitespace)
-pub(super) fn minute(input: &mut &str) -> ModalResult<u32> {
+/// Parse a number of minutes in `0..60`.
+pub(super) fn minute(input: &mut &str) -> ModalResult<u8> {
     s(dec_uint).verify(|x| *x < 60).parse_next(input)
 }
 
-/// Parse a number of seconds (preceded by whitespace)
-fn second(input: &mut &str) -> ModalResult<(u32, u32)> {
+/// Parse a number of seconds in `0..60` and an optional number of nanoseconds
+/// (default to 0 if not set).
+fn second(input: &mut &str) -> ModalResult<(u8, u32)> {
     sec_and_nsec
-        .verify_map(|(s, ns)| if s < 60 { Some((s as u32, ns)) } else { None })
+        .verify_map(|(s, ns)| if s < 60 { Some((s as u8, ns)) } else { None })
         .parse_next(input)
 }
 
