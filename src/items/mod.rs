@@ -30,6 +30,7 @@
 
 // date and time items
 mod combined;
+mod conversion_timezone;
 mod date;
 mod epoch;
 mod pure;
@@ -58,6 +59,7 @@ use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
 pub(crate) enum Item {
+    ConversionTimeZone(FixedOffset),
     Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
@@ -214,6 +216,11 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     loop {
         match parse_item.parse_next(input) {
             Ok(item) => match item {
+                Item::ConversionTimeZone(tz) => {
+                    builder = builder
+                        .set_conversion_timezone(tz)
+                        .map_err(|e| expect_error(input, e))?;
+                }
                 Item::Timestamp(ts) => {
                     builder = builder
                         .set_timestamp(ts)
@@ -269,6 +276,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
     trace(
         "parse_item",
         alt((
+            conversion_timezone::parse.map(Item::ConversionTimeZone),
             combined::parse.map(Item::DateTime),
             date::parse.map(Item::Date),
             time::parse.map(Item::Time),
