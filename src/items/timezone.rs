@@ -46,13 +46,13 @@ use super::{
 #[derive(PartialEq, Debug, Clone, Default)]
 pub(crate) struct Offset {
     pub(crate) negative: bool,
-    pub(crate) hours: u32,
-    pub(crate) minutes: u32,
+    pub(crate) hours: u8,
+    pub(crate) minutes: u8,
 }
 
 impl Offset {
     fn merge(self, offset: Offset) -> Offset {
-        fn combine(a: u32, neg_a: bool, b: u32, neg_b: bool) -> (u32, bool) {
+        fn combine(a: u16, neg_a: bool, b: u16, neg_b: bool) -> (u16, bool) {
             if neg_a == neg_b {
                 (a + b, neg_a)
             } else if a > b {
@@ -61,14 +61,14 @@ impl Offset {
                 (b - a, neg_b)
             }
         }
-        let (hours_minutes, negative) = combine(
-            self.hours * 60 + self.minutes,
+        let (total_minutes, negative) = combine(
+            (self.hours as u16) * 60 + (self.minutes as u16),
             self.negative,
-            offset.hours * 60 + offset.minutes,
+            (offset.hours as u16) * 60 + (offset.minutes as u16),
             offset.negative,
         );
-        let hours = hours_minutes / 60;
-        let minutes = hours_minutes % 60;
+        let hours = (total_minutes / 60) as u8;
+        let minutes = (total_minutes % 60) as u8;
 
         Offset {
             negative,
@@ -88,21 +88,33 @@ impl TryFrom<Offset> for chrono::FixedOffset {
             minutes,
         }: Offset,
     ) -> Result<Self, Self::Error> {
-        let secs = hours * 3600 + minutes * 60;
+        let secs = (hours as i32) * 3600 + (minutes as i32) * 60;
 
         let offset = if negative {
-            FixedOffset::west_opt(
-                secs.try_into()
-                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
-            )
-            .ok_or(ParseDateTimeError::InvalidInput)?
+            FixedOffset::west_opt(secs).ok_or(ParseDateTimeError::InvalidInput)?
         } else {
-            FixedOffset::east_opt(
-                secs.try_into()
-                    .map_err(|_| ParseDateTimeError::InvalidInput)?,
-            )
-            .ok_or(ParseDateTimeError::InvalidInput)?
+            FixedOffset::east_opt(secs).ok_or(ParseDateTimeError::InvalidInput)?
         };
+
+        Ok(offset)
+    }
+}
+
+impl TryFrom<Offset> for jiff::tz::Offset {
+    type Error = ParseDateTimeError;
+
+    fn try_from(
+        Offset {
+            negative,
+            hours,
+            minutes,
+        }: Offset,
+    ) -> Result<Self, Self::Error> {
+        let secs = (hours as i32) * 3600 + (minutes as i32) * 60;
+        let secs = if negative { -secs } else { secs };
+
+        let offset =
+            jiff::tz::Offset::from_seconds(secs).map_err(|_| ParseDateTimeError::InvalidInput)?;
 
         Ok(offset)
     }
@@ -159,7 +171,7 @@ pub(super) fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
 }
 
 /// Parse a timezone offset with a colon separating hours and minutes
-fn timezone_colon(input: &mut &str) -> ModalResult<(u32, u32)> {
+fn timezone_colon(input: &mut &str) -> ModalResult<(u8, u8)> {
     seq!(
         s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| x.parse()),
         _: colon,
@@ -169,7 +181,7 @@ fn timezone_colon(input: &mut &str) -> ModalResult<(u32, u32)> {
 }
 
 /// Parse a timezone offset without colon
-fn timezone_colonless(input: &mut &str) -> ModalResult<(u32, u32)> {
+fn timezone_colonless(input: &mut &str) -> ModalResult<(u8, u8)> {
     s(take_while(0.., AsChar::is_dec_digit))
         .verify_map(|s: &str| {
             // GNU date supports number strings with leading zeroes, e.g.,
