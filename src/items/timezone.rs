@@ -27,11 +27,10 @@
 
 use std::fmt::Display;
 
-use chrono::FixedOffset;
 use winnow::{
     combinator::{alt, peek, seq},
     error::{ContextError, ErrMode},
-    stream::AsChar,
+    stream::{AsChar, Stream},
     token::take_while,
     ModalResult, Parser,
 };
@@ -78,7 +77,7 @@ impl Offset {
     }
 }
 
-impl TryFrom<Offset> for chrono::FixedOffset {
+impl TryFrom<&Offset> for jiff::tz::TimeZone {
     type Error = ParseDateTimeError;
 
     fn try_from(
@@ -86,37 +85,16 @@ impl TryFrom<Offset> for chrono::FixedOffset {
             negative,
             hours,
             minutes,
-        }: Offset,
+        }: &Offset,
     ) -> Result<Self, Self::Error> {
-        let secs = (hours as i32) * 3600 + (minutes as i32) * 60;
-
-        let offset = if negative {
-            FixedOffset::west_opt(secs).ok_or(ParseDateTimeError::InvalidInput)?
-        } else {
-            FixedOffset::east_opt(secs).ok_or(ParseDateTimeError::InvalidInput)?
-        };
-
-        Ok(offset)
-    }
-}
-
-impl TryFrom<Offset> for jiff::tz::Offset {
-    type Error = ParseDateTimeError;
-
-    fn try_from(
-        Offset {
-            negative,
-            hours,
-            minutes,
-        }: Offset,
-    ) -> Result<Self, Self::Error> {
-        let secs = (hours as i32) * 3600 + (minutes as i32) * 60;
-        let secs = if negative { -secs } else { secs };
+        let secs = (*hours as i32) * 3600 + (*minutes as i32) * 60;
+        let secs = if *negative { -secs } else { secs };
 
         let offset =
             jiff::tz::Offset::from_seconds(secs).map_err(|_| ParseDateTimeError::InvalidInput)?;
+        let tz = jiff::tz::TimeZone::fixed(offset);
 
-        Ok(offset)
+        Ok(tz)
     }
 }
 
@@ -217,11 +195,13 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     //
     // Only process if the input cannot be parsed as a relative time.
     if peek(relative::parse).parse_next(input).is_err() {
+        let start = input.checkpoint();
         if let Ok(other_tz) = timezone_num.parse_next(input) {
             let newtz = tz.merge(other_tz);
 
             return Ok(newtz);
         };
+        input.reset(&start);
     }
 
     Ok(tz)

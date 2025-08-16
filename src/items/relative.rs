@@ -37,6 +37,8 @@ use winnow::{
     ModalResult, Parser,
 };
 
+use crate::ParseDateTimeError;
+
 use super::{epoch::sec_and_nsec, ordinal::ordinal, primitive::s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,18 +51,21 @@ pub(crate) enum Relative {
     Seconds(i64, u32),
 }
 
-impl From<Relative> for jiff::Span {
-    fn from(relative: Relative) -> Self {
+impl TryFrom<Relative> for jiff::Span {
+    type Error = ParseDateTimeError;
+
+    fn try_from(relative: Relative) -> Result<Self, Self::Error> {
         match relative {
-            Relative::Years(years) => jiff::Span::new().years(years),
-            Relative::Months(months) => jiff::Span::new().months(months),
-            Relative::Days(days) => jiff::Span::new().days(days),
-            Relative::Hours(hours) => jiff::Span::new().hours(hours),
-            Relative::Minutes(minutes) => jiff::Span::new().minutes(minutes),
-            Relative::Seconds(seconds, nanoseconds) => {
-                jiff::Span::new().seconds(seconds).nanoseconds(nanoseconds)
-            }
+            Relative::Years(years) => jiff::Span::new().try_years(years),
+            Relative::Months(months) => jiff::Span::new().try_months(months),
+            Relative::Days(days) => jiff::Span::new().try_days(days),
+            Relative::Hours(hours) => jiff::Span::new().try_hours(hours),
+            Relative::Minutes(minutes) => jiff::Span::new().try_minutes(minutes),
+            Relative::Seconds(seconds, nanoseconds) => jiff::Span::new()
+                .try_seconds(seconds)
+                .and_then(|span| span.try_nanoseconds(nanoseconds)),
         }
+        .map_err(|_| ParseDateTimeError::InvalidInput)
     }
 }
 
