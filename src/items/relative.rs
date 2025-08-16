@@ -37,38 +37,34 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use super::{
-    ordinal::ordinal,
-    primitive::{float, s},
-};
+use super::{epoch::sec_and_nsec, ordinal::ordinal, primitive::s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Relative {
+pub(crate) enum Relative {
     Years(i32),
     Months(i32),
     Days(i32),
     Hours(i32),
     Minutes(i32),
-    // Seconds are special because they can be given as a float
-    Seconds(f64),
+    Seconds(i64, u32),
 }
 
-impl Relative {
-    // TODO: determine how to handle multiplication overflows,
-    // using saturating_mul for now.
-    fn mul(self, n: i32) -> Self {
-        match self {
-            Self::Years(x) => Self::Years(n.saturating_mul(x)),
-            Self::Months(x) => Self::Months(n.saturating_mul(x)),
-            Self::Days(x) => Self::Days(n.saturating_mul(x)),
-            Self::Hours(x) => Self::Hours(n.saturating_mul(x)),
-            Self::Minutes(x) => Self::Minutes(n.saturating_mul(x)),
-            Self::Seconds(x) => Self::Seconds(f64::from(n) * x),
+impl From<Relative> for jiff::Span {
+    fn from(relative: Relative) -> Self {
+        match relative {
+            Relative::Years(years) => jiff::Span::new().years(years),
+            Relative::Months(months) => jiff::Span::new().months(months),
+            Relative::Days(days) => jiff::Span::new().days(days),
+            Relative::Hours(hours) => jiff::Span::new().hours(hours),
+            Relative::Minutes(minutes) => jiff::Span::new().minutes(minutes),
+            Relative::Seconds(seconds, nanoseconds) => {
+                jiff::Span::new().seconds(seconds).nanoseconds(nanoseconds)
+            }
         }
     }
 }
 
-pub fn parse(input: &mut &str) -> ModalResult<Relative> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Relative> {
     alt((
         s("tomorrow").value(Relative::Days(1)),
         s("yesterday").value(Relative::Days(-1)),
@@ -76,46 +72,53 @@ pub fn parse(input: &mut &str) -> ModalResult<Relative> {
         s("today").value(Relative::Days(0)),
         s("now").value(Relative::Days(0)),
         seconds,
-        other,
+        displacement,
     ))
     .parse_next(input)
 }
 
 fn seconds(input: &mut &str) -> ModalResult<Relative> {
     (
-        opt(alt((s(float), ordinal.map(|x| x as f64)))),
+        opt(alt((s('+').value(1), s('-').value(-1)))),
+        sec_and_nsec,
         s(alpha1).verify(|s: &str| matches!(s, "seconds" | "second" | "sec" | "secs")),
         ago,
     )
-        .map(|(n, _, ago)| Relative::Seconds(n.unwrap_or(1.0) * if ago { -1.0 } else { 1.0 }))
+        .verify_map(|(sign, (sec, nsec), _, ago)| {
+            let sec = i64::try_from(sec).ok()?;
+            let sign = sign.unwrap_or(1) * if ago { -1 } else { 1 };
+            let (second, nanosecond) = match (sign, nsec) {
+                (-1, 0) => (-sec, 0),
+                // Truncate towards minus infinity.
+                (-1, _) => ((-sec).checked_sub(1)?, 1_000_000_000 - nsec),
+                _ => (sec, nsec),
+            };
+            Some(Relative::Seconds(second, nanosecond))
+        })
         .parse_next(input)
 }
 
-fn other(input: &mut &str) -> ModalResult<Relative> {
-    (opt(ordinal), integer_unit, ago)
-        .map(|(n, unit, ago)| unit.mul(n.unwrap_or(1) * if ago { -1 } else { 1 }))
+fn displacement(input: &mut &str) -> ModalResult<Relative> {
+    (opt(ordinal), s(alpha1), ago)
+        .verify_map(|(n, unit, ago): (Option<i32>, &str, bool)| {
+            let multipler = n.unwrap_or(1) * if ago { -1 } else { 1 };
+            Some(match unit.strip_suffix('s').unwrap_or(unit) {
+                "year" => Relative::Years(multipler),
+                "month" => Relative::Months(multipler),
+                "fortnight" => Relative::Days(14 * multipler),
+                "week" => Relative::Days(7 * multipler),
+                "day" => Relative::Days(multipler),
+                "hour" => Relative::Hours(multipler),
+                "minute" | "min" => Relative::Minutes(multipler),
+                "second" | "sec" => Relative::Seconds(multipler as i64, 0),
+                _ => return None,
+            })
+        })
         .parse_next(input)
 }
 
 fn ago(input: &mut &str) -> ModalResult<bool> {
     opt(s("ago")).map(|o| o.is_some()).parse_next(input)
-}
-
-fn integer_unit(input: &mut &str) -> ModalResult<Relative> {
-    s(alpha1)
-        .verify_map(|s: &str| {
-            Some(match s.strip_suffix('s').unwrap_or(s) {
-                "year" => Relative::Years(1),
-                "month" => Relative::Months(1),
-                "fortnight" => Relative::Days(14),
-                "week" => Relative::Days(7),
-                "day" => Relative::Days(1),
-                "hour" => Relative::Hours(1),
-                "minute" | "min" => Relative::Minutes(1),
-                _ => return None,
-            })
-        })
-        .parse_next(input)
 }
 
 #[cfg(test)]
@@ -126,16 +129,17 @@ mod tests {
     fn all() {
         for (s, rel) in [
             // Seconds
-            ("second", Relative::Seconds(1.0)),
-            ("sec", Relative::Seconds(1.0)),
-            ("seconds", Relative::Seconds(1.0)),
-            ("secs", Relative::Seconds(1.0)),
-            ("second ago", Relative::Seconds(-1.0)),
-            ("3 seconds", Relative::Seconds(3.0)),
-            ("3.5 seconds", Relative::Seconds(3.5)),
-            // ("+3.5 seconds", Relative::Seconds(3.5)),
-            ("3.5 seconds ago", Relative::Seconds(-3.5)),
-            ("-3.5 seconds ago", Relative::Seconds(3.5)),
+            ("second", Relative::Seconds(1, 0)),
+            ("sec", Relative::Seconds(1, 0)),
+            ("seconds", Relative::Seconds(1, 0)),
+            ("secs", Relative::Seconds(1, 0)),
+            ("second ago", Relative::Seconds(-1, 0)),
+            ("3 seconds", Relative::Seconds(3, 0)),
+            ("3.5 seconds", Relative::Seconds(3, 500_000_000)),
+            ("-3.5 seconds", Relative::Seconds(-4, 500_000_000)),
+            ("+3.5 seconds", Relative::Seconds(3, 500_000_000)),
+            ("3.5 seconds ago", Relative::Seconds(-4, 500_000_000)),
+            ("-3.5 seconds ago", Relative::Seconds(3, 500_000_000)),
             // Minutes
             ("minute", Relative::Minutes(1)),
             ("minutes", Relative::Minutes(1)),
@@ -181,7 +185,7 @@ mod tests {
             ("now", Relative::Days(0)),
             // This something
             ("this day", Relative::Days(0)),
-            ("this second", Relative::Seconds(0.0)),
+            ("this second", Relative::Seconds(0, 0)),
             ("this year", Relative::Years(0)),
             // Weird stuff
             ("next week ago", Relative::Days(-7)),

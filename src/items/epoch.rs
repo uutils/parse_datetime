@@ -37,8 +37,8 @@ pub(crate) struct Timestamp {
     pub(crate) nanosecond: u32,
 }
 
-/// Parse a timestamp in the form of `1234567890` or `-1234567890.12345` or
-/// `1234567890,12345`.
+/// Parse a timestamp in the form of `@1234567890` or `@-1234567890.12345` or
+/// `@1234567890,12345`.
 pub(crate) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
     (s("@"), opt(s(one_of(['-', '+']))), sec_and_nsec)
         .verify_map(|(_, sign, (sec, nsec))| {

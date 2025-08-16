@@ -304,9 +304,9 @@ impl DateTimeBuilder {
                 relative::Relative::Minutes(x) => {
                     dt += chrono::Duration::try_minutes(x.into())?;
                 }
-                // Seconds are special because they can be given as a float.
-                relative::Relative::Seconds(x) => {
-                    dt += chrono::Duration::try_seconds(x as i64)?;
+                relative::Relative::Seconds(s, ns) => {
+                    dt += chrono::Duration::seconds(s);
+                    dt += chrono::Duration::nanoseconds(ns.into());
                 }
             }
         }
