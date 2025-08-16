@@ -15,10 +15,10 @@ use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
 use super::primitive::s;
 
 // TODO: Leverage `TryFrom` trait.
-pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
+pub(super) fn year_from_str(year_str: &str) -> Result<u16, &'static str> {
     let mut year = year_str
-        .parse::<u32>()
-        .map_err(|_| "year must be a valid number")?;
+        .parse::<u16>()
+        .map_err(|_| "year must be a valid u16 number")?;
 
     // If year is 68 or smaller, then 2000 is added to it; otherwise, if year
     // is less than 100, then 1900 is added to it.
@@ -57,16 +57,16 @@ mod tests {
     #[test]
     fn test_year() {
         // 2-characters are converted to 19XX/20XX
-        assert_eq!(year_from_str("10").unwrap(), 2010u32);
-        assert_eq!(year_from_str("68").unwrap(), 2068u32);
-        assert_eq!(year_from_str("69").unwrap(), 1969u32);
-        assert_eq!(year_from_str("99").unwrap(), 1999u32);
+        assert_eq!(year_from_str("10").unwrap(), 2010u16);
+        assert_eq!(year_from_str("68").unwrap(), 2068u16);
+        assert_eq!(year_from_str("69").unwrap(), 1969u16);
+        assert_eq!(year_from_str("99").unwrap(), 1999u16);
 
         // 3,4-characters are converted verbatim
-        assert_eq!(year_from_str("468").unwrap(), 468u32);
-        assert_eq!(year_from_str("469").unwrap(), 469u32);
-        assert_eq!(year_from_str("1568").unwrap(), 1568u32);
-        assert_eq!(year_from_str("1569").unwrap(), 1569u32);
+        assert_eq!(year_from_str("468").unwrap(), 468u16);
+        assert_eq!(year_from_str("469").unwrap(), 469u16);
+        assert_eq!(year_from_str("1568").unwrap(), 1568u16);
+        assert_eq!(year_from_str("1569").unwrap(), 1569u16);
 
         // years greater than 9999 are not accepted
         assert!(year_from_str("10000").is_err());

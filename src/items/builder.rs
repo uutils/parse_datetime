@@ -196,8 +196,8 @@ impl DateTimeBuilder {
         if let Some(date::Date { year, month, day }) = self.date {
             dt = new_date(
                 year.map(|x| x as i32).unwrap_or(dt.year()),
-                month,
-                day,
+                month as u32,
+                day as u32,
                 dt.hour(),
                 dt.minute(),
                 dt.second(),
