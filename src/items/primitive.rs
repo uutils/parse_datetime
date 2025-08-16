@@ -114,27 +114,6 @@ where
         .parse_next(input)
 }
 
-/// Parse a float number.
-///
-/// Rationale for not using `winnow::ascii::float`: the `float` parser provided
-/// by winnow accepts E-notation numbers (e.g., `1.23e4`), whereas GNU date
-/// rejects such numbers. To remain compatible with GNU date, we provide a
-/// custom implementation that only accepts inputs like [+-]?[0-9]+(\.[0-9]+)?.
-pub(super) fn float<'a, E>(input: &mut &'a str) -> winnow::Result<f64, E>
-where
-    E: ParserError<&'a str>,
-{
-    (
-        opt(one_of(['+', '-'])),
-        digit1,
-        opt(preceded(one_of(['.', ',']), digit1)),
-    )
-        .void()
-        .take()
-        .verify_map(|s: &str| s.replace(",", ".").parse().ok())
-        .parse_next(input)
-}
-
 /// Parse a colon preceded by whitespace
 pub(super) fn colon<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
