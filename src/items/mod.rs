@@ -57,7 +57,7 @@ use winnow::{
 use crate::ParseDateTimeError;
 
 #[derive(PartialEq, Debug)]
-pub(crate) enum Item {
+enum Item {
     Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
@@ -68,8 +68,29 @@ pub(crate) enum Item {
     Pure(String),
 }
 
+/// Parse a date and time string based on a specific date.
+pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
+    base: Zoned,
+    input: S,
+) -> Result<Zoned, ParseDateTimeError> {
+    let input = input.as_ref().to_ascii_lowercase();
+    match parse(&mut input.as_str()) {
+        Ok(builder) => at_date(builder, base),
+        Err(_) => Err(ParseDateTimeError::InvalidInput),
+    }
+}
+
+/// Parse a date and time string based on the current local time.
+pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDateTimeError> {
+    let input = input.as_ref().to_ascii_lowercase();
+    match parse(&mut input.as_str()) {
+        Ok(builder) => at_local(builder),
+        Err(_) => Err(ParseDateTimeError::InvalidInput),
+    }
+}
+
 /// Build a `Zoned` object from a `DateTimeBuilder` and a base `Zoned` object.
-pub(crate) fn at_date(builder: DateTimeBuilder, base: Zoned) -> Result<Zoned, ParseDateTimeError> {
+fn at_date(builder: DateTimeBuilder, base: Zoned) -> Result<Zoned, ParseDateTimeError> {
     builder
         .set_base(base)
         .build()
@@ -78,7 +99,7 @@ pub(crate) fn at_date(builder: DateTimeBuilder, base: Zoned) -> Result<Zoned, Pa
 
 /// Build a `Zoned` object from a `DateTimeBuilder` and a default `Zoned` object
 /// (the current time in the local timezone).
-pub(crate) fn at_local(builder: DateTimeBuilder) -> Result<Zoned, ParseDateTimeError> {
+fn at_local(builder: DateTimeBuilder) -> Result<Zoned, ParseDateTimeError> {
     builder.build().ok_or(ParseDateTimeError::InvalidInput)
 }
 
@@ -177,7 +198,7 @@ pub(crate) fn at_local(builder: DateTimeBuilder) -> Result<Zoned, ParseDateTimeE
 ///
 /// optional_whitespace = { whitespace } ;
 /// ```
-pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
 }
 
