@@ -46,20 +46,6 @@ pub(crate) struct Weekday {
     pub(crate) day: Day,
 }
 
-impl From<Day> for chrono::Weekday {
-    fn from(value: Day) -> Self {
-        match value {
-            Day::Monday => chrono::Weekday::Mon,
-            Day::Tuesday => chrono::Weekday::Tue,
-            Day::Wednesday => chrono::Weekday::Wed,
-            Day::Thursday => chrono::Weekday::Thu,
-            Day::Friday => chrono::Weekday::Fri,
-            Day::Saturday => chrono::Weekday::Sat,
-            Day::Sunday => chrono::Weekday::Sun,
-        }
-    }
-}
-
 impl From<Day> for jiff::civil::Weekday {
     fn from(value: Day) -> Self {
         match value {

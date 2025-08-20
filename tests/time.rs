@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use chrono::{DateTime, Local};
+use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use parse_datetime::parse_datetime_at_date;
 use rstest::rstest;
 
@@ -13,17 +13,17 @@ use rstest::rstest;
 // Documentation for the date format can be found at:
 // https://www.gnu.org/software/coreutils/manual/html_node/Time-of-day-items.html
 
-pub fn check_time(input: &str, expected: &str, format: &str, base: Option<DateTime<Local>>) {
+pub fn check_time(input: &str, expected: &str, format: &str, base: Option<Zoned>) {
     std::env::set_var("TZ", "UTC0");
-    let now = base.unwrap_or_else(|| std::time::SystemTime::now().into());
+    let now = base.unwrap_or(Zoned::now());
     let parsed = match parse_datetime_at_date(now, input) {
         Ok(v) => v,
         Err(e) => panic!("Failed to parse time from value '{input}': {e}"),
     }
-    .to_utc();
+    .with_time_zone(TimeZone::UTC);
 
     assert_eq!(
-        &format!("{}", parsed.format(format)),
+        format!("{}", parsed.strftime(format)),
         expected,
         "Input value: {input}"
     );
@@ -97,8 +97,12 @@ fn test_time_correction(#[case] input: &str, #[case] expected: &str) {
 #[case::minus_13("12:34:56-13:00", "2022-06-11 01:34:56")]
 */
 fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &str) {
-    let now = DateTime::parse_from_rfc3339("2022-06-10T00:00:00+00:00").unwrap();
-    check_time(input, expected, "%Y-%m-%d %H:%M:%S", Some(now.into()));
+    let now = "2022-06-10 00:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_time(input, expected, "%Y-%m-%d %H:%M:%S", Some(now));
 }
 
 #[rstest]

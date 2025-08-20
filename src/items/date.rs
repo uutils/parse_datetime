@@ -47,6 +47,16 @@ pub(crate) struct Date {
     pub(crate) year: Option<u16>,
 }
 
+impl Date {
+    pub(super) fn with_year(self, year: u16) -> Self {
+        Date {
+            day: self.day,
+            month: self.month,
+            year: Some(year),
+        }
+    }
+}
+
 impl TryFrom<(&str, u8, u8)> for Date {
     type Error = &'static str;
 

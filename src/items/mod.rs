@@ -45,7 +45,7 @@ mod ordinal;
 mod primitive;
 
 use builder::DateTimeBuilder;
-use chrono::{DateTime, FixedOffset};
+use jiff::Zoned;
 use primitive::space;
 use winnow::{
     combinator::{alt, eof, terminated, trace},
@@ -68,22 +68,17 @@ pub(crate) enum Item {
     Pure(String),
 }
 
-/// Build a `DateTime<FixedOffset>` from a `DateTimeBuilder` and a base date.
-pub(crate) fn at_date(
-    builder: DateTimeBuilder,
-    base: DateTime<FixedOffset>,
-) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+/// Build a `Zoned` object from a `DateTimeBuilder` and a base `Zoned` object.
+pub(crate) fn at_date(builder: DateTimeBuilder, base: Zoned) -> Result<Zoned, ParseDateTimeError> {
     builder
         .set_base(base)
         .build()
         .ok_or(ParseDateTimeError::InvalidInput)
 }
 
-/// Build a `DateTime<FixedOffset>` from a `DateTimeBuilder` and the current
-/// time.
-pub(crate) fn at_local(
-    builder: DateTimeBuilder,
-) -> Result<DateTime<FixedOffset>, ParseDateTimeError> {
+/// Build a `Zoned` object from a `DateTimeBuilder` and a default `Zoned` object
+/// (the current time in the local timezone).
+pub(crate) fn at_local(builder: DateTimeBuilder) -> Result<Zoned, ParseDateTimeError> {
     builder.build().ok_or(ParseDateTimeError::InvalidInput)
 }
 
@@ -292,14 +287,12 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 
 #[cfg(test)]
 mod tests {
-    use super::{at_date, parse, DateTimeBuilder};
-    use chrono::{
-        DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike,
-        Utc,
-    };
+    use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
 
-    fn at_utc(builder: DateTimeBuilder) -> DateTime<FixedOffset> {
-        at_date(builder, Utc::now().fixed_offset()).unwrap()
+    use super::{at_date, parse, DateTimeBuilder};
+
+    fn at_utc(builder: DateTimeBuilder) -> Zoned {
+        at_date(builder, Zoned::now().with_time_zone(TimeZone::UTC)).unwrap()
     }
 
     fn test_eq_fmt(fmt: &str, input: &str) -> String {
@@ -308,7 +301,7 @@ mod tests {
             .map(at_utc)
             .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
             .expect("parsing failed during tests")
-            .format(fmt)
+            .strftime(fmt)
             .to_string()
     }
 
@@ -458,75 +451,77 @@ mod tests {
     #[test]
     fn relative_weekday() {
         // Jan 1 2025 is a Wed
-        let now = Utc
-            .from_utc_datetime(&NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-            ))
-            .fixed_offset();
+        let now = "2025-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
 
         assert_eq!(
-            at_date(parse(&mut "last wed").unwrap(), now).unwrap(),
-            now - chrono::Duration::days(7)
-        );
-        assert_eq!(at_date(parse(&mut "this wed").unwrap(), now).unwrap(), now);
-        assert_eq!(
-            at_date(parse(&mut "next wed").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(7)
+            at_date(parse(&mut "last wed").unwrap(), now.clone()).unwrap(),
+            now.checked_sub(7.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "last thu").unwrap(), now).unwrap(),
-            now - chrono::Duration::days(6)
+            at_date(parse(&mut "this wed").unwrap(), now.clone()).unwrap(),
+            now
         );
         assert_eq!(
-            at_date(parse(&mut "this thu").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(1)
+            at_date(parse(&mut "next wed").unwrap(), now.clone()).unwrap(),
+            now.checked_add(7.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "next thu").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(1)
+            at_date(parse(&mut "last thu").unwrap(), now.clone()).unwrap(),
+            now.checked_sub(6.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "1 wed").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(7)
+            at_date(parse(&mut "this thu").unwrap(), now.clone()).unwrap(),
+            now.checked_add(1.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "1 thu").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(1)
+            at_date(parse(&mut "next thu").unwrap(), now.clone()).unwrap(),
+            now.checked_add(1.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "2 wed").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(14)
+            at_date(parse(&mut "1 wed").unwrap(), now.clone()).unwrap(),
+            now.checked_add(7.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "2 thu").unwrap(), now).unwrap(),
-            now + chrono::Duration::days(8)
+            at_date(parse(&mut "1 thu").unwrap(), now.clone()).unwrap(),
+            now.checked_add(1.days()).unwrap()
+        );
+        assert_eq!(
+            at_date(parse(&mut "2 wed").unwrap(), now.clone()).unwrap(),
+            now.checked_add(14.days()).unwrap()
+        );
+        assert_eq!(
+            at_date(parse(&mut "2 thu").unwrap(), now.clone()).unwrap(),
+            now.checked_add(8.days()).unwrap()
         );
     }
 
     #[test]
     fn relative_date_time() {
-        let now = Utc::now().fixed_offset();
+        let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
-        let result = at_date(parse(&mut "2 days ago").unwrap(), now).unwrap();
-        assert_eq!(result, now - chrono::Duration::days(2));
+        let result = at_date(parse(&mut "2 days ago").unwrap(), now.clone()).unwrap();
+        assert_eq!(result, now.checked_sub(2.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
-        let result = at_date(parse(&mut "2 days 3 days ago").unwrap(), now).unwrap();
-        assert_eq!(result, now - chrono::Duration::days(1));
+        let result = at_date(parse(&mut "2 days 3 days ago").unwrap(), now.clone()).unwrap();
+        assert_eq!(result, now.checked_sub(1.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
-        let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now.clone()).unwrap();
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
 
-        let result = at_date(parse(&mut "3 weeks").unwrap(), now).unwrap();
-        assert_eq!(result, now + chrono::Duration::days(21));
+        let result = at_date(parse(&mut "3 weeks").unwrap(), now.clone()).unwrap();
+        assert_eq!(result, now.checked_add(21.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
@@ -539,26 +534,26 @@ mod tests {
 
     #[test]
     fn pure() {
-        let now = Utc::now().fixed_offset();
+        let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
         // Pure number as year.
-        let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now.clone()).unwrap();
         assert_eq!(result.year(), 2025);
 
         // Pure number as time.
-        let result = at_date(parse(&mut "1230").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "1230").unwrap(), now.clone()).unwrap();
         assert_eq!(result.hour(), 12);
         assert_eq!(result.minute(), 30);
 
-        let result = at_date(parse(&mut "123").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "123").unwrap(), now.clone()).unwrap();
         assert_eq!(result.hour(), 1);
         assert_eq!(result.minute(), 23);
 
-        let result = at_date(parse(&mut "12").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "12").unwrap(), now.clone()).unwrap();
         assert_eq!(result.hour(), 12);
         assert_eq!(result.minute(), 0);
 
-        let result = at_date(parse(&mut "1").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "1").unwrap(), now.clone()).unwrap();
         assert_eq!(result.hour(), 1);
         assert_eq!(result.minute(), 0);
     }

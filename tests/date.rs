@@ -1,10 +1,11 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+use jiff::{civil::DateTime, tz::TimeZone};
 use rstest::rstest;
 
 mod common;
-use common::check_absolute;
+use common::{check_absolute, check_relative};
 
 // The expected values are produced by GNU date version 8.32
 // export LC_TIME=en_US.UTF-8
@@ -87,9 +88,10 @@ fn test_absolute_date_numeric(#[case] input: &str, #[case] expected: &str) {
 #[case::alphabetical_long_month_at_back_hyphen("14-november", 2022, "2022-11-14 00:00:00+00:00")]
 #[case::alphabetical_short_month_at_back_hyphen("14-nov", 2022, "2022-11-14 00:00:00+00:00")]
 fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expected: &str) {
-    use chrono::DateTime;
-    use common::check_relative;
-
-    let now = DateTime::parse_from_rfc3339(&format!("{year}-06-01T00:00:00+00:00")).unwrap();
+    let now = format!("{year}-06-01 00:00:00")
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
     check_relative(now, input, expected);
 }
