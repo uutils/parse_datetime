@@ -187,7 +187,7 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     /// than 6 charactres
     const MAX_TZ_SIZE: usize = 6;
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
-    let tz = tzname_to_offset(nextword)?;
+    let tz = timezone_name_to_offset(nextword)?;
 
     // Strings like "UTC +8 years" are ambiguous, they can either be parsed as
     // "UTC+8" and "years", or "UTC" and "+8 years". GNU date parses them the
@@ -197,9 +197,9 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     if peek(relative::parse).parse_next(input).is_err() {
         let start = input.checkpoint();
         if let Ok(other_tz) = timezone_num.parse_next(input) {
-            let newtz = tz.merge(other_tz);
+            let new_tz = tz.merge(other_tz);
 
-            return Ok(newtz);
+            return Ok(new_tz);
         };
         input.reset(&start);
     }
@@ -212,7 +212,7 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
 /// The full list of timezones can be extracted from
 /// https://www.timeanddate.com/time/zones/. GNU date only supports a subset of
 /// these. We support the same subset as GNU date.
-fn tzname_to_offset(input: &str) -> ModalResult<Offset> {
+fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
     let mut offset_str = match input {
         "z" => Ok("+0"),
         "y" => Ok("-12"),
