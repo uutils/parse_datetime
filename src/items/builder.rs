@@ -148,20 +148,16 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
-    fn build_from_timestamp(ts: epoch::Timestamp, tz: jiff::tz::TimeZone) -> Option<Zoned> {
-        Some(
-            jiff::Timestamp::new(ts.second, ts.nanosecond as i32)
-                .ok()?
-                .to_zoned(tz),
-        )
-    }
-
     pub(super) fn build(self) -> Option<Zoned> {
         let base = self.base.unwrap_or(Zoned::now());
 
         // If a timestamp is set, we use it to build the `Zoned` object.
         if let Some(ts) = self.timestamp {
-            return Self::build_from_timestamp(ts, base.offset().to_time_zone());
+            return Some(
+                jiff::Timestamp::try_from(ts)
+                    .ok()?
+                    .to_zoned(base.offset().to_time_zone()),
+            );
         }
 
         // If any of the following items are set, we truncate the time portion
