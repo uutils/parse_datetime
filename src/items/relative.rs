@@ -110,7 +110,7 @@ fn displacement(input: &mut &str) -> ModalResult<Relative> {
             Some(match unit.strip_suffix('s').unwrap_or(unit) {
                 "year" => Relative::Years(multipler),
                 "month" => Relative::Months(multipler),
-                "fortnight" => Relative::Days(14 * multipler),
+                "fortnight" => Relative::Days(multipler.checked_mul(14)?),
                 "week" => Relative::Days(7 * multipler),
                 "day" => Relative::Days(multipler),
                 "hour" => Relative::Hours(multipler),
