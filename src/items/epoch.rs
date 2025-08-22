@@ -32,14 +32,26 @@ use super::primitive::{dec_uint, s};
 /// - Negative timestamps are represented by a negative `second` value and a
 ///   positive `nanosecond` value.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Timestamp {
-    pub(crate) second: i64,
-    pub(crate) nanosecond: u32,
+pub(super) struct Timestamp {
+    second: i64,
+    nanosecond: u32,
+}
+
+impl TryFrom<Timestamp> for jiff::Timestamp {
+    type Error = &'static str;
+
+    fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
+        jiff::Timestamp::new(
+            ts.second,
+            i32::try_from(ts.nanosecond).map_err(|_| "nanosecond value exceeds i32::MAX")?,
+        )
+        .map_err(|_| "timestamp value is out of valid range")
+    }
 }
 
 /// Parse a timestamp in the form of `@1234567890` or `@-1234567890.12345` or
 /// `@1234567890,12345`.
-pub(crate) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
     (s("@"), opt(s(one_of(['-', '+']))), sec_and_nsec)
         .verify_map(|(_, sign, (sec, nsec))| {
             let sec = i64::try_from(sec).ok()?;
@@ -78,84 +90,46 @@ pub(super) fn sec_and_nsec(input: &mut &str) -> ModalResult<(u64, u32)> {
 mod tests {
     use super::*;
 
+    fn ts(second: i64, nanosecond: u32) -> Timestamp {
+        Timestamp { second, nanosecond }
+    }
+
     #[test]
-    fn sec_and_nsec_test() {
-        let mut input = "1234567890";
-        assert_eq!(sec_and_nsec(&mut input).unwrap(), (1234567890, 0));
+    fn parse_sec_and_nsec() {
+        for (input, expected) in [
+            ("1234567890", (1234567890, 0)),                       // only seconds
+            ("1234567890.12345", (1234567890, 123450000)), // seconds and nanoseconds, '.' as floating point
+            ("1234567890,12345", (1234567890, 123450000)), // seconds and nanoseconds, ',' as floating point
+            ("1234567890.1234567890123", (1234567890, 123456789)), // nanoseconds with more than 9 digits, truncated
+        ] {
+            let mut s = input;
+            assert_eq!(sec_and_nsec(&mut s).unwrap(), expected, "{input}");
+        }
 
-        let mut input = "1234567890.12345";
-        assert_eq!(sec_and_nsec(&mut input).unwrap(), (1234567890, 123450000));
-
-        let mut input = "1234567890,12345";
-        assert_eq!(sec_and_nsec(&mut input).unwrap(), (1234567890, 123450000));
-
-        let mut input = "1234567890.1234567890123";
-        assert_eq!(sec_and_nsec(&mut input).unwrap(), (1234567890, 123456789));
+        for input in [
+            ".1234567890", // invalid: no leading seconds
+            "-1234567890", // invalid: negative input not allowed
+        ] {
+            let mut s = input;
+            assert!(sec_and_nsec(&mut s).is_err(), "{input}");
+        }
     }
 
     #[test]
     fn timestamp() {
-        let mut input = "@1234567890";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: 1234567890,
-                nanosecond: 0,
-            }
-        );
-
-        let mut input = "@ 1234567890";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: 1234567890,
-                nanosecond: 0,
-            }
-        );
-
-        let mut input = "@ -1234567890";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: -1234567890,
-                nanosecond: 0,
-            }
-        );
-
-        let mut input = "@ - 1234567890";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: -1234567890,
-                nanosecond: 0,
-            }
-        );
-
-        let mut input = "@1234567890.12345";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: 1234567890,
-                nanosecond: 123450000,
-            }
-        );
-
-        let mut input = "@1234567890,12345";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: 1234567890,
-                nanosecond: 123450000,
-            }
-        );
-
-        let mut input = "@-1234567890.12345";
-        assert_eq!(
-            parse(&mut input).unwrap(),
-            Timestamp {
-                second: -1234567891,
-                nanosecond: 876550000,
-            }
-        );
+        for (input, expected) in [
+            ("@1234567890", ts(1234567890, 0)), // positive seconds, no nanoseconds
+            ("@ 1234567890", ts(1234567890, 0)), // space after '@', positive seconds, no nanoseconds
+            ("@-1234567890", ts(-1234567890, 0)), // negative seconds, no nanoseconds
+            ("@ -1234567890", ts(-1234567890, 0)), // space after '@', negative seconds, no nanoseconds
+            ("@ - 1234567890", ts(-1234567890, 0)), // space after '@' and after '-', negative seconds, no nanoseconds
+            ("@1234567890.12345", ts(1234567890, 123450000)), // positive seconds with nanoseconds, '.' as floating point
+            ("@1234567890,12345", ts(1234567890, 123450000)), // positive seconds with nanoseconds, ',' as floating point
+            ("@-1234567890.12345", ts(-1234567891, 876550000)), // negative seconds with nanoseconds, '.' as floating point
+            ("@1234567890.1234567890123", ts(1234567890, 123456789)), // nanoseconds with more than 9 digits, truncated
+        ] {
+            let mut s = input;
+            assert_eq!(parse(&mut s).unwrap(), expected, "{input}");
+        }
     }
 }
