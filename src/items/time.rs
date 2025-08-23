@@ -46,7 +46,7 @@ use winnow::{
 use super::{
     epoch::sec_and_nsec,
     primitive::{colon, ctx_err, dec_uint, s},
-    timezone::{timezone_num, Offset},
+    timezone::{timezone_offset, Offset},
 };
 
 #[derive(PartialEq, Clone, Debug, Default)]
@@ -55,7 +55,7 @@ pub(crate) struct Time {
     pub(crate) minute: u8,
     pub(crate) second: u8,
     pub(crate) nanosecond: u32,
-    pub(crate) offset: Option<Offset>,
+    pub(super) offset: Option<Offset>,
 }
 
 impl TryFrom<Time> for jiff::civil::Time {
@@ -87,7 +87,7 @@ pub(crate) fn parse(input: &mut &str) -> ModalResult<Time> {
 /// Also used by the [`combined`](super::combined) module
 pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
     alt((
-        (hour24, timezone_num).map(|(hour, offset)| Time {
+        (hour24, timezone_offset).map(|(hour, offset)| Time {
             hour,
             minute: 0,
             second: 0,
@@ -99,7 +99,7 @@ pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
             colon,
             minute,
             opt(preceded(colon, second)),
-            opt(timezone_num),
+            opt(timezone_offset),
         )
             .map(|(hour, _, minute, sec_nsec, offset)| Time {
                 hour,
@@ -337,11 +337,7 @@ mod tests {
             minute: 23,
             second: 0,
             nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 5,
-                minutes: 0,
-            }),
+            offset: Some((false, 5, 0).try_into().unwrap()),
         };
 
         for mut s in [
@@ -368,11 +364,7 @@ mod tests {
             minute: 45,
             second: 0,
             nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 5,
-                minutes: 35,
-            }),
+            offset: Some((false, 5, 35).try_into().unwrap()),
         };
 
         for mut s in [
@@ -401,11 +393,7 @@ mod tests {
             minute: 45,
             second: 0,
             nanosecond: 0,
-            offset: Some(Offset {
-                negative: false,
-                hours: 0,
-                minutes: 35,
-            }),
+            offset: Some((false, 0, 35).try_into().unwrap()),
         };
 
         for mut s in [
@@ -433,11 +421,7 @@ mod tests {
             minute: 45,
             second: 0,
             nanosecond: 0,
-            offset: Some(Offset {
-                negative: true,
-                hours: 5,
-                minutes: 35,
-            }),
+            offset: Some((true, 5, 35).try_into().unwrap()),
         };
 
         for mut s in [
