@@ -122,6 +122,14 @@ where
     s(':').void().parse_next(input)
 }
 
+/// Parse a plus or minus character optionally preceeded by whitespace.
+pub(super) fn plus_or_minus<'a, E>(input: &mut &'a str) -> winnow::Result<char, E>
+where
+    E: ParserError<&'a str>,
+{
+    s(alt(('+', '-'))).parse_next(input)
+}
+
 /// Create a context error with a reason.
 pub(super) fn ctx_err(reason: &'static str) -> ContextError {
     let mut err = ContextError::new();

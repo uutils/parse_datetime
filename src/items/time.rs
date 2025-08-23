@@ -166,7 +166,7 @@ pub(super) fn minute(input: &mut &str) -> ModalResult<u8> {
 /// Parse a number of seconds in `0..60` and an optional number of nanoseconds
 /// (default to 0 if not set).
 fn second(input: &mut &str) -> ModalResult<(u8, u32)> {
-    sec_and_nsec
+    s(sec_and_nsec)
         .verify_map(|(s, ns)| if s < 60 { Some((s as u8, ns)) } else { None })
         .parse_next(input)
 }
