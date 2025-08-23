@@ -1,6 +1,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+//! Parse a timestamp item.
+//!
 //! From the GNU docs:
 //!
 //! > If you precede a number with ‘@’, it represents an internal timestamp as
@@ -22,7 +24,7 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use super::primitive::{dec_uint, s};
+use super::primitive::{dec_uint, plus_or_minus, s};
 
 /// Represents a timestamp with nanosecond accuracy.
 ///
@@ -43,7 +45,7 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         jiff::Timestamp::new(
             ts.second,
-            i32::try_from(ts.nanosecond).map_err(|_| "nanosecond value exceeds i32::MAX")?,
+            i32::try_from(ts.nanosecond).map_err(|_| "nanosecond in timestamp exceeds i32::MAX")?,
         )
         .map_err(|_| "timestamp value is out of valid range")
     }
@@ -52,7 +54,7 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
 /// Parse a timestamp in the form of `@1234567890` or `@-1234567890.12345` or
 /// `@1234567890,12345`.
 pub(super) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
-    (s("@"), opt(s(one_of(['-', '+']))), sec_and_nsec)
+    (s("@"), opt(plus_or_minus), s(sec_and_nsec))
         .verify_map(|(_, sign, (sec, nsec))| {
             let sec = i64::try_from(sec).ok()?;
             let (second, nanosecond) = match (sign, nsec) {
@@ -74,7 +76,7 @@ pub(super) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
 /// (padded with zeros on the right if fewer digits are present). If the second
 /// part is omitted, it defaults to 0 nanoseconds.
 pub(super) fn sec_and_nsec(input: &mut &str) -> ModalResult<(u64, u32)> {
-    (s(dec_uint), opt(preceded(one_of(['.', ',']), digit1)))
+    (dec_uint, opt(preceded(one_of(['.', ',']), digit1)))
         .verify_map(|(sec, opt_nsec_str)| match opt_nsec_str {
             Some(nsec_str) if nsec_str.len() >= 9 => Some((sec, nsec_str[..9].parse().ok()?)),
             Some(nsec_str) => {
