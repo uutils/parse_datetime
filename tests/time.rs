@@ -90,12 +90,12 @@ fn test_time_correction(#[case] input: &str, #[case] expected: &str) {
 #[case::minus_12("12:34:56-12:00", "2022-06-11 00:34:56")]
 #[case::plus_1259("12:34:56+12:59", "2022-06-09 23:35:56")]
 #[case::minus_1259("12:34:56-12:59", "2022-06-11 01:33:56")]
-/* TODO: https://github.com/uutils/parse_datetime/issues/149
 #[case::plus_24("12:34:56+24:00", "2022-06-09 12:34:56")]
 #[case::minus_24("12:34:56-24:00", "2022-06-11 12:34:56")]
 #[case::plus_13("11:34:56+13:00", "2022-06-09 22:34:56")]
 #[case::minus_13("12:34:56-13:00", "2022-06-11 01:34:56")]
-*/
+#[case::plus_36("12:34:56 m+24", "2022-06-09 00:34:56")]
+#[case::minus_36("12:34:56 y-24:00", "2022-06-12 00:34:56")]
 fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &str) {
     let now = "2022-06-10 00:00:00"
         .parse::<DateTime>()

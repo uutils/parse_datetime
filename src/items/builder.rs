@@ -245,8 +245,10 @@ impl DateTimeBuilder {
                 .ok()?;
         }
 
-        if let Some(offset) = &self.timezone {
-            dt = dt.datetime().to_zoned(offset.try_into().ok()?).ok()?;
+        if let Some(offset) = self.timezone {
+            let (offset, hour_adjustment) = offset.normalize();
+            dt = dt.checked_add(Span::new().hours(hour_adjustment)).ok()?;
+            dt = dt.datetime().to_zoned((&offset).try_into().ok()?).ok()?;
         }
 
         Some(dt)
