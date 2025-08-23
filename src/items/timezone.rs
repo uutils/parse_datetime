@@ -3,7 +3,7 @@
 
 //! Parse a timezone item.
 //!
-//! The GNU docs state:
+//! From the GNU docs:
 //!
 //! > A “time zone item” specifies an international time zone, indicated by a
 //! > small set of letters, e.g., ‘UTC’ or ‘Z’ for Coordinated Universal Time.
@@ -23,33 +23,42 @@
 //! > corrections like ‘-0500’, as described in the previous section.
 //! >
 //! >    If neither a time zone item nor a time zone correction is supplied,
-//! > timestamps are interpreted using the rules of the default time zone
+//! > timestamps are interpreted using the rules of the default time zone.
 
 use std::fmt::Display;
 
 use winnow::{
-    combinator::{alt, peek, seq},
+    combinator::{alt, peek},
     error::{ContextError, ErrMode},
     stream::{AsChar, Stream},
     token::take_while,
     ModalResult, Parser,
 };
 
-use crate::{items::primitive::colon, ParseDateTimeError};
-
 use super::{
-    primitive::{ctx_err, s},
+    primitive::{colon, ctx_err, dec_uint, dec_uint_str, plus_or_minus, s},
     relative,
 };
 
+/// Represents a time zone offset from UTC.
+///
+/// This struct is used to represent a time zone offset in hours and minutes,
+/// with a boolean indicating whether the offset is negative (i.e., west of
+/// UTC).
 #[derive(PartialEq, Debug, Clone, Default)]
-pub(crate) struct Offset {
-    pub(crate) negative: bool,
-    pub(crate) hours: u8,
-    pub(crate) minutes: u8,
+pub(super) struct Offset {
+    negative: bool,
+    hours: u8,
+    minutes: u8,
 }
 
 impl Offset {
+    /// Merge two timezone offsets.
+    ///
+    /// Note: when parsing an offset from a string (e.g., "+08:00"), the hours
+    /// and minutes are validated to ensure they fall within valid bounds. In
+    /// contrast, merging two offsets does not perform such validation. This
+    /// behavior is intentional to match GNU date.
     fn merge(self, offset: Offset) -> Offset {
         fn combine(a: u16, neg_a: bool, b: u16, neg_b: bool) -> (u16, bool) {
             if neg_a == neg_b {
@@ -77,8 +86,27 @@ impl Offset {
     }
 }
 
+impl TryFrom<(bool, u8, u8)> for Offset {
+    type Error = &'static str;
+
+    fn try_from((negative, hours, minutes): (bool, u8, u8)) -> Result<Self, Self::Error> {
+        if hours > 24 {
+            return Err("timezone hour must be between 0 and 24");
+        }
+        if minutes > 60 || (hours == 24 && minutes != 0) {
+            return Err("timezone minute must be between 0 and 60");
+        }
+
+        Ok(Offset {
+            negative,
+            hours,
+            minutes,
+        })
+    }
+}
+
 impl TryFrom<&Offset> for jiff::tz::TimeZone {
-    type Error = ParseDateTimeError;
+    type Error = &'static str;
 
     fn try_from(
         Offset {
@@ -90,11 +118,8 @@ impl TryFrom<&Offset> for jiff::tz::TimeZone {
         let secs = (*hours as i32) * 3600 + (*minutes as i32) * 60;
         let secs = if *negative { -secs } else { secs };
 
-        let offset =
-            jiff::tz::Offset::from_seconds(secs).map_err(|_| ParseDateTimeError::InvalidInput)?;
-        let tz = jiff::tz::TimeZone::fixed(offset);
-
-        Ok(tz)
+        let offset = jiff::tz::Offset::from_seconds(secs).map_err(|_| "offset is invalid")?;
+        Ok(jiff::tz::TimeZone::fixed(offset))
     }
 }
 
@@ -110,16 +135,12 @@ impl Display for Offset {
     }
 }
 
-pub(crate) fn parse(input: &mut &str) -> ModalResult<Offset> {
-    timezone(input)
-}
-
-fn timezone(input: &mut &str) -> ModalResult<Offset> {
+pub(super) fn parse(input: &mut &str) -> ModalResult<Offset> {
     timezone_name_offset.parse_next(input)
 }
 
-/// Parse a timezone starting with `+` or `-`
-pub(super) fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
+/// Parse a timezone starting with `+` or `-`.
+pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
     // Strings like "+8 years" are ambiguous, they can either be parsed as a
     // timezone offset "+8" and a relative time "years", or just a relative time
     // "+8 years". GNU date parses them the second way, so we do the same here.
@@ -129,59 +150,10 @@ pub(super) fn timezone_num(input: &mut &str) -> ModalResult<Offset> {
         return Err(ErrMode::Backtrack(ContextError::new()));
     }
 
-    seq!(plus_or_minus, alt((timezone_colon, timezone_colonless)))
-        .parse_next(input)
-        .and_then(|(negative, (hours, minutes))| {
-            if !(0..=12).contains(&hours) {
-                return Err(ErrMode::Cut(ctx_err("timezone hour between 0 and 12")));
-            }
-
-            if !(0..=60).contains(&minutes) {
-                return Err(ErrMode::Cut(ctx_err("timezone minute between 0 and 60")));
-            }
-
-            Ok(Offset {
-                negative,
-                hours,
-                minutes,
-            })
-        })
+    alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input)
 }
 
-/// Parse a timezone offset with a colon separating hours and minutes
-fn timezone_colon(input: &mut &str) -> ModalResult<(u8, u8)> {
-    seq!(
-        s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| x.parse()),
-        _: colon,
-        s(take_while(1..=2, AsChar::is_dec_digit)).try_map(|x: &str| x.parse()),
-    )
-    .parse_next(input)
-}
-
-/// Parse a timezone offset without colon
-fn timezone_colonless(input: &mut &str) -> ModalResult<(u8, u8)> {
-    s(take_while(0.., AsChar::is_dec_digit))
-        .verify_map(|s: &str| {
-            // GNU date supports number strings with leading zeroes, e.g.,
-            // `UTC+000001100` is valid.
-            let s = if s.len() > 4 {
-                s.trim_start_matches('0')
-            } else {
-                s
-            };
-            Some(match s.len() {
-                0 => (0, 0),
-                1 | 2 => (s.parse().ok()?, 0),
-                // The minutes are the last two characters here, for some reason.
-                3 => (s[..1].parse().ok()?, s[1..].parse().ok()?),
-                4 => (s[..2].parse().ok()?, s[2..].parse().ok()?),
-                _ => return None,
-            })
-        })
-        .parse_next(input)
-}
-
-/// Parse a timezone by name
+/// Parse a timezone by name, with an optional numeric offset appended.
 fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     /// I'm assuming there are no timezone abbreviations with more
     /// than 6 charactres
@@ -196,7 +168,7 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     // Only process if the input cannot be parsed as a relative time.
     if peek(relative::parse).parse_next(input).is_err() {
         let start = input.checkpoint();
-        if let Ok(other_tz) = timezone_num.parse_next(input) {
+        if let Ok(other_tz) = timezone_offset.parse_next(input) {
             let new_tz = tz.merge(other_tz);
 
             return Ok(new_tz);
@@ -205,6 +177,59 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     }
 
     Ok(tz)
+}
+
+/// Parse a timezone offset with a colon separating hours and minutes, e.g.,
+/// `+08:00`, `+8:00`, `+8:0`.
+fn timezone_offset_colon(input: &mut &str) -> ModalResult<Offset> {
+    (plus_or_minus, s(dec_uint), s(colon), s(dec_uint))
+        .parse_next(input)
+        .and_then(|(sign, hours, _, minutes)| {
+            (sign == '-', hours, minutes)
+                .try_into()
+                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        })
+}
+
+/// Parse a timezone offset without colon, e.g., `+0800`, `+800`, `+08`, `+8`.
+fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
+    (plus_or_minus, s(dec_uint_str))
+        .verify_map(|(sign, s)| {
+            // GNU date accepts numeric offset strings with leading zeroes. For
+            // example, `+000000110` is valid. In such cases, the string is
+            // truncated to the last four characters. Thus, `+000000110` becomes
+            // `+0110` (note that one leading zero is kept).
+            let s = if s.len() > 4 && s.trim_start_matches('0').len() <= 4 {
+                &s[s.len() - 4..]
+            } else {
+                s
+            };
+
+            // Hour and minute values are dependent on the length of the string.
+            // For example:
+            //
+            // - "5"   -> 05:00
+            // - "05"  -> 05:00
+            // - "530" -> 05:30 (the minute is the last two characters here)
+            // - "0530"-> 05:30
+            // - "0000530" -> 05:30
+            let (h_str, m_str) = match s.len() {
+                1 | 2 => (s, "0"),
+                3 => s.split_at(1),
+                4 => s.split_at(2),
+                _ => return None,
+            };
+
+            let hours = h_str.parse::<u8>().ok()?;
+            let minutes = m_str.parse::<u8>().ok()?;
+            Some((sign, hours, minutes))
+        })
+        .parse_next(input)
+        .and_then(|(sign, hours, minutes)| {
+            (sign == '-', hours, minutes)
+                .try_into()
+                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        })
 }
 
 /// Named timezone list.
@@ -284,57 +309,136 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         _ => Err(ErrMode::Backtrack(ContextError::new())),
     }?;
 
-    timezone_num(&mut offset_str)
-}
-
-/// Parse the plus or minus character and return whether it was negative
-fn plus_or_minus(input: &mut &str) -> ModalResult<bool> {
-    s(alt(("+".value(false), "-".value(true)))).parse_next(input)
+    timezone_offset(&mut offset_str)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn off(negative: bool, hours: u8, minutes: u8) -> Offset {
+        Offset {
+            negative,
+            hours,
+            minutes,
+        }
+    }
+
     #[test]
-    fn test_timezone_colonless() {
-        fn aux(inp: &mut &str) -> String {
-            format!("{:?}", timezone_colonless(inp).expect("timezone_colonless"))
+    fn timezone_offset_with_colon() {
+        for (input, expected) in [
+            ("+00:00", off(false, 0, 0)),        // UTC
+            ("-00:00", off(true, 0, 0)),         // UTC
+            ("+01:00", off(false, 1, 0)),        // positive offset
+            ("-06:00", off(true, 6, 0)),         // negative offset
+            ("+05:30", off(false, 5, 30)),       // positive offset with non-zero minutes
+            ("-03:30", off(true, 3, 30)),        // negative offset with non-zero minutes
+            ("- 06:00", off(true, 6, 0)),        // space after sign
+            ("- 06 : 00", off(true, 6, 0)),      // space around colon
+            ("+5:3", off(false, 5, 3)),          // single-digit hours and single-digit minutes
+            ("+5:03", off(false, 5, 3)),         // single-digit hours
+            ("+05:3", off(false, 5, 3)),         // single-digit minutes
+            ("+00005:00030", off(false, 5, 30)), // leading zeroes in hours and minutes
+            ("+00:00abc", off(false, 0, 0)), // space separator can be ignored if immediately followed by alphas (GNU date behavior)
+        ] {
+            let mut s = input;
+            assert_eq!(timezone_offset(&mut s).unwrap(), expected, "{input}");
         }
 
-        assert_eq!("(0, 0)", aux(&mut "0000"));
-        assert_eq!("(12, 34)", aux(&mut "1234"));
-        assert_eq!("(12, 34)", aux(&mut "00001234"));
-        assert!(timezone_colonless(&mut "12345").is_err());
+        for input in [
+            "+25:00", // invalid: hours > 24
+            "-23:61", // invalid: minutes > 60
+            "+24:01", // invalid: minutes > 0 when hours == 24
+        ] {
+            let mut s = input;
+            assert!(timezone_offset(&mut s).is_err(), "{input}");
+        }
     }
 
     #[test]
-    fn test_timezone() {
-        let make_timezone = |input: &mut &str| {
-            timezone(input)
-                .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
-                .map(|offset| format!("{offset}"))
-                .expect("expect tests to succeed")
-        };
+    fn timezone_offset_without_colon() {
+        for (input, expected) in [
+            ("+0000", off(false, 0, 0)),      // UTC
+            ("-0000", off(true, 0, 0)),       // UTC
+            ("+0100", off(false, 1, 0)),      // positive offset
+            ("-0600", off(true, 6, 0)),       // negative offset
+            ("+0530", off(false, 5, 30)),     // positive offset with non-zero minutes
+            ("-0330", off(true, 3, 30)),      // negative offset with non-zero minutes
+            ("- 0330", off(true, 3, 30)),     // space after sign
+            ("+530", off(false, 5, 30)),      // single-digit hours
+            ("+05", off(false, 5, 0)),        // double-digit hours and no minutes
+            ("+5", off(false, 5, 0)),         // single-digit hours and no minutes
+            ("+00000530", off(false, 5, 30)), // leading zeroes
+            ("+0000abc", off(false, 0, 0)), // space separator can be ignored if immediately followed by alphas (GNU date behavior)
+        ] {
+            let mut s = input;
+            assert_eq!(timezone_offset(&mut s).unwrap(), expected, "{input}");
+        }
 
-        assert_eq!("+00:00", make_timezone(&mut "gmt"));
-        assert_eq!("+01:00", make_timezone(&mut "a"));
-        assert_eq!("+00:00", make_timezone(&mut "utc"));
-        assert_eq!("-02:00", make_timezone(&mut "brst"));
-        assert_eq!("-03:00", make_timezone(&mut "brt"));
+        for input in [
+            "+2500",    // invalid: hours > 24
+            "-2361",    // invalid: minutes > 60
+            "+2401",    // invalid: minutes > 0 when hours == 24
+            "+23 days", // invalid: ambiguous with relative time parsing
+        ] {
+            let mut s = input;
+            assert!(timezone_offset(&mut s).is_err(), "{input}");
+        }
     }
 
     #[test]
-    fn test_timezone_num() {
-        let make_timezone = |input: &mut &str| {
-            timezone_num(input)
-                .map_err(|e| eprintln!("TEST FAILED AT:\n{e}"))
-                .map(|offset| format!("{offset}"))
-                .expect("expect tests to succeed")
-        };
+    fn timezone_name_without_offset() {
+        for (input, expected) in [
+            ("utc", off(false, 0, 0)),  // UTC
+            ("gmt", off(false, 0, 0)),  // UTC
+            ("z", off(false, 0, 0)),    // UTC
+            ("west", off(false, 1, 0)), // positive offset
+            ("cst", off(true, 6, 0)),   // negative offset
+            ("ist", off(false, 5, 30)), // positive offset with non-zero minutes
+            ("nst", off(true, 3, 30)),  // negative offset with non-zero minutes
+            ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
+        ] {
+            let mut s = input;
+            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+        }
 
-        assert_eq!("+00:00", make_timezone(&mut "+00:00"));
-        assert_eq!("+00:00", make_timezone(&mut "+0000"));
-        assert_eq!("-00:00", make_timezone(&mut "-0000"));
+        for input in [
+            "abc",    // invalid: non-existent timezone
+            "utcabc", // invalid: non-existent timezone
+        ] {
+            let mut s = input;
+            assert!(timezone_name_offset(&mut s).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn timezone_name_with_offset() {
+        for (input, expected) in [
+            ("utc+5:30", off(false, 5, 30)),     // UTC with possitive offset
+            ("utc-5:30", off(true, 5, 30)),      // UTC with negative offset
+            ("utc +5:30", off(false, 5, 30)),    // space after timezone name
+            ("utc + 5 : 30", off(false, 5, 30)), // spaces
+            ("a+5:30", off(false, 6, 30)),       // merge two positive offsets (a=+1)
+            ("a-5:30", off(true, 4, 30)),        // merge positive and negative offsets (a=+1)
+            ("n-5:30", off(true, 6, 30)),        // merge two negative offsets (n=-1)
+            ("n+5:30", off(false, 4, 30)),       // merge negative and positive offsets (n=-1)
+            ("m+24", off(false, 36, 0)),         // maximum possible positive offset (m=+12)
+            ("y-24", off(true, 36, 0)),          // maximum possible negative offset (y=-12)
+        ] {
+            let mut s = input;
+            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+        }
+
+        for input in [
+            "abc+08:00",   // invalid: non-existent timezone
+            "utc+25",      // invalid: invalid offset
+            "utc+23 days", // invalid: ambiguous with relative time parsing
+        ] {
+            let mut s = input;
+            assert!(
+                timezone_name_offset(&mut s).is_err() || !s.is_empty(),
+                "{input}"
+            );
+        }
     }
 }

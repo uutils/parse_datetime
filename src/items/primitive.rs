@@ -107,14 +107,20 @@ where
     O: Uint + FromStr,
     E: ParserError<&'a str>,
 {
-    digit1
-        .void()
-        .take()
+    dec_uint_str
         .verify_map(|s: &str| s.parse().ok())
         .parse_next(input)
 }
 
-/// Parse a colon preceded by whitespace
+/// Parse an unsigned decimal integer as a string slice.
+pub(super) fn dec_uint_str<'a, E>(input: &mut &'a str) -> winnow::Result<&'a str, E>
+where
+    E: ParserError<&'a str>,
+{
+    digit1.void().take().parse_next(input)
+}
+
+/// Parse a colon preceded by whitespace.
 pub(super) fn colon<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
