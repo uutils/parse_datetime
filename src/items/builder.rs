@@ -3,7 +3,7 @@
 
 use jiff::{civil, Span, Zoned};
 
-use super::{date, epoch, relative, time, timezone, weekday, year};
+use super::{date, epoch, error, relative, time, timezone, weekday, year};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -148,16 +148,12 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
-    pub(super) fn build(self) -> Option<Zoned> {
+    pub(super) fn build(self) -> Result<Zoned, error::Error> {
         let base = self.base.unwrap_or(Zoned::now());
 
         // If a timestamp is set, we use it to build the `Zoned` object.
         if let Some(ts) = self.timestamp {
-            return Some(
-                jiff::Timestamp::try_from(ts)
-                    .ok()?
-                    .to_zoned(base.offset().to_time_zone()),
-            );
+            return Ok(jiff::Timestamp::try_from(ts)?.to_zoned(base.offset().to_time_zone()));
         }
 
         // If any of the following items are set, we truncate the time portion
@@ -170,30 +166,30 @@ impl DateTimeBuilder {
         {
             base
         } else {
-            base.with().time(civil::time(0, 0, 0, 0)).build().ok()?
+            base.with().time(civil::time(0, 0, 0, 0)).build()?
         };
 
         if let Some(date) = self.date {
             let d: civil::Date = if date.year.is_some() {
-                date.try_into().ok()?
+                date.try_into()?
             } else {
-                date.with_year(dt.date().year() as u16).try_into().ok()?
+                date.with_year(dt.date().year() as u16).try_into()?
             };
-            dt = dt.with().date(d).build().ok()?;
+            dt = dt.with().date(d).build()?;
         }
 
         if let Some(time) = self.time.clone() {
             if let Some(offset) = &time.offset {
-                dt = dt.datetime().to_zoned(offset.try_into().ok()?).ok()?;
+                dt = dt.datetime().to_zoned(offset.try_into()?)?;
             }
 
-            let t: civil::Time = time.try_into().ok()?;
-            dt = dt.with().time(t).build().ok()?;
+            let t: civil::Time = time.try_into()?;
+            dt = dt.with().time(t).build()?;
         }
 
         if let Some(weekday::Weekday { offset, day }) = self.weekday {
             if self.time.is_none() {
-                dt = dt.with().time(civil::time(0, 0, 0, 0)).build().ok()?;
+                dt = dt.with().time(civil::time(0, 0, 0, 0)).build()?;
             }
 
             let mut offset = offset;
@@ -228,29 +224,27 @@ impl DateTimeBuilder {
             let delta = (day.since(civil::Weekday::Monday) as i32
                 - dt.date().weekday().since(civil::Weekday::Monday) as i32)
                 .rem_euclid(7)
-                + offset.checked_mul(7)?;
+                + offset.checked_mul(7).ok_or("multiplication overflow")?;
 
-            dt = dt.checked_add(Span::new().try_days(delta).ok()?).ok()?;
+            dt = dt.checked_add(Span::new().try_days(delta)?)?;
         }
 
         for rel in self.relative {
-            dt = dt
-                .checked_add::<Span>(if let relative::Relative::Months(x) = rel {
-                    // *NOTE* This is done in this way to conform to GNU behavior.
-                    let days = dt.date().last_of_month().day() as i32;
-                    Span::new().try_days(days.checked_mul(x)?).ok()?
-                } else {
-                    rel.try_into().ok()?
-                })
-                .ok()?;
+            dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
+                // *NOTE* This is done in this way to conform to GNU behavior.
+                let days = dt.date().last_of_month().day() as i32;
+                Span::new().try_days(days.checked_mul(x).ok_or("multiplication overflow")?)?
+            } else {
+                rel.try_into()?
+            })?;
         }
 
         if let Some(offset) = self.timezone {
             let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add(Span::new().hours(hour_adjustment)).ok()?;
-            dt = dt.datetime().to_zoned((&offset).try_into().ok()?).ok()?;
+            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
+            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
         }
 
-        Some(dt)
+        Ok(dt)
     }
 }

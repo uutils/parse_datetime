@@ -37,8 +37,6 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use crate::ParseDateTimeError;
-
 use super::{epoch::sec_and_nsec, ordinal::ordinal, primitive::s};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,7 +50,7 @@ pub(crate) enum Relative {
 }
 
 impl TryFrom<Relative> for jiff::Span {
-    type Error = ParseDateTimeError;
+    type Error = &'static str;
 
     fn try_from(relative: Relative) -> Result<Self, Self::Error> {
         match relative {
@@ -65,7 +63,7 @@ impl TryFrom<Relative> for jiff::Span {
                 .try_seconds(seconds)
                 .and_then(|span| span.try_nanoseconds(nanoseconds)),
         }
-        .map_err(|_| ParseDateTimeError::InvalidInput)
+        .map_err(|_| "relative value is invalid")
     }
 }
 
