@@ -278,7 +278,7 @@ mod tests {
 
         #[test]
         fn offset_overflow() {
-            assert!(parse_datetime("m+14").is_err());
+            assert!(parse_datetime("m+25").is_err());
             assert!(parse_datetime("24:00").is_err());
         }
     }

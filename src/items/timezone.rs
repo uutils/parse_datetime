@@ -84,6 +84,30 @@ impl Offset {
             minutes,
         }
     }
+
+    /// Normalize the offset so that the hour field is within the accepted range.
+    ///
+    /// - If the hour field is less than 24, or exactly 24 with a zero minute,
+    ///   the offset is already normalized, and the function returns the offset
+    ///   itself along with a zero hour adjustment.
+    /// - Otherwise, the hour field is reduced to 23 while preserving the minute
+    ///   field, and the function returns the normalized offset along with the
+    ///   hour adjustment needed to reach the original offset.
+    pub(super) fn normalize(self) -> (Offset, i8) {
+        if self.hours < 24 || (self.hours == 24 && self.minutes == 0) {
+            return (self, 0);
+        }
+
+        let hour_adjustment = (self.hours as i8 - 23) * if self.negative { 1 } else { -1 };
+        (
+            Offset {
+                negative: self.negative,
+                hours: 23,
+                minutes: self.minutes,
+            },
+            hour_adjustment,
+        )
+    }
 }
 
 impl TryFrom<(bool, u8, u8)> for Offset {
