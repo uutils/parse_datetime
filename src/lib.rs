@@ -35,6 +35,12 @@ impl Display for ParseDateTimeError {
 
 impl Error for ParseDateTimeError {}
 
+impl From<items::error::Error> for ParseDateTimeError {
+    fn from(_: items::error::Error) -> Self {
+        ParseDateTimeError::InvalidInput
+    }
+}
+
 /// Parses a time string and returns a `Zoned` object representing the absolute
 /// time of the string.
 ///
@@ -64,7 +70,7 @@ impl Error for ParseDateTimeError {}
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
 /// input string cannot be parsed as a relative time.
 pub fn parse_datetime<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDateTimeError> {
-    items::parse_at_local(input)
+    items::parse_at_local(input).map_err(|e| e.into())
 }
 
 /// Parses a time string at a specific date and returns a `Zoned` object
@@ -104,7 +110,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     date: Zoned,
     input: S,
 ) -> Result<Zoned, ParseDateTimeError> {
-    items::parse_at_date(date, input)
+    items::parse_at_date(date, input).map_err(|e| e.into())
 }
 
 #[cfg(test)]

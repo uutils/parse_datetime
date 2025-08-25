@@ -44,7 +44,8 @@ mod builder;
 mod ordinal;
 mod primitive;
 
-use builder::DateTimeBuilder;
+pub(crate) mod error;
+
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
@@ -54,7 +55,8 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use crate::ParseDateTimeError;
+use builder::DateTimeBuilder;
+use error::Error;
 
 #[derive(PartialEq, Debug)]
 enum Item {
@@ -69,38 +71,21 @@ enum Item {
 }
 
 /// Parse a date and time string based on a specific date.
-pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
-    base: Zoned,
-    input: S,
-) -> Result<Zoned, ParseDateTimeError> {
+pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Result<Zoned, Error> {
     let input = input.as_ref().to_ascii_lowercase();
     match parse(&mut input.as_str()) {
-        Ok(builder) => at_date(builder, base),
-        Err(_) => Err(ParseDateTimeError::InvalidInput),
+        Ok(builder) => builder.set_base(base).build(),
+        Err(e) => Err(e.into()),
     }
 }
 
 /// Parse a date and time string based on the current local time.
-pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDateTimeError> {
+pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, Error> {
     let input = input.as_ref().to_ascii_lowercase();
     match parse(&mut input.as_str()) {
-        Ok(builder) => at_local(builder),
-        Err(_) => Err(ParseDateTimeError::InvalidInput),
+        Ok(builder) => builder.build(),
+        Err(e) => Err(e.into()),
     }
-}
-
-/// Build a `Zoned` object from a `DateTimeBuilder` and a base `Zoned` object.
-fn at_date(builder: DateTimeBuilder, base: Zoned) -> Result<Zoned, ParseDateTimeError> {
-    builder
-        .set_base(base)
-        .build()
-        .ok_or(ParseDateTimeError::InvalidInput)
-}
-
-/// Build a `Zoned` object from a `DateTimeBuilder` and a default `Zoned` object
-/// (the current time in the local timezone).
-fn at_local(builder: DateTimeBuilder) -> Result<Zoned, ParseDateTimeError> {
-    builder.build().ok_or(ParseDateTimeError::InvalidInput)
 }
 
 /// Parse a date and time string.
@@ -310,10 +295,14 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 mod tests {
     use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
 
-    use super::{at_date, parse, DateTimeBuilder};
+    use super::{parse, DateTimeBuilder};
+
+    fn at_date(builder: DateTimeBuilder, base: Zoned) -> Zoned {
+        builder.set_base(base).build().unwrap()
+    }
 
     fn at_utc(builder: DateTimeBuilder) -> Zoned {
-        at_date(builder, Zoned::now().with_time_zone(TimeZone::UTC)).unwrap()
+        at_date(builder, Zoned::now().with_time_zone(TimeZone::UTC))
     }
 
     fn test_eq_fmt(fmt: &str, input: &str) -> String {
@@ -479,43 +468,40 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            at_date(parse(&mut "last wed").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "last wed").unwrap(), now.clone()),
             now.checked_sub(7.days()).unwrap()
         );
+        assert_eq!(at_date(parse(&mut "this wed").unwrap(), now.clone()), now);
         assert_eq!(
-            at_date(parse(&mut "this wed").unwrap(), now.clone()).unwrap(),
-            now
-        );
-        assert_eq!(
-            at_date(parse(&mut "next wed").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "next wed").unwrap(), now.clone()),
             now.checked_add(7.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "last thu").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "last thu").unwrap(), now.clone()),
             now.checked_sub(6.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "this thu").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "this thu").unwrap(), now.clone()),
             now.checked_add(1.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "next thu").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "next thu").unwrap(), now.clone()),
             now.checked_add(1.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "1 wed").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "1 wed").unwrap(), now.clone()),
             now.checked_add(7.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "1 thu").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "1 thu").unwrap(), now.clone()),
             now.checked_add(1.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "2 wed").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "2 wed").unwrap(), now.clone()),
             now.checked_add(14.days()).unwrap()
         );
         assert_eq!(
-            at_date(parse(&mut "2 thu").unwrap(), now.clone()).unwrap(),
+            at_date(parse(&mut "2 thu").unwrap(), now.clone()),
             now.checked_add(8.days()).unwrap()
         );
     }
@@ -524,30 +510,30 @@ mod tests {
     fn relative_date_time() {
         let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
-        let result = at_date(parse(&mut "2 days ago").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "2 days ago").unwrap(), now.clone());
         assert_eq!(result, now.checked_sub(2.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
-        let result = at_date(parse(&mut "2 days 3 days ago").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "2 days 3 days ago").unwrap(), now.clone());
         assert_eq!(result, now.checked_sub(1.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
-        let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "2025-01-01 2 days ago").unwrap(), now.clone());
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
 
-        let result = at_date(parse(&mut "3 weeks").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "3 weeks").unwrap(), now.clone());
         assert_eq!(result, now.checked_add(21.days()).unwrap());
         assert_eq!(result.hour(), now.hour());
         assert_eq!(result.minute(), now.minute());
         assert_eq!(result.second(), now.second());
 
-        let result = at_date(parse(&mut "2025-01-01 3 weeks").unwrap(), now).unwrap();
+        let result = at_date(parse(&mut "2025-01-01 3 weeks").unwrap(), now);
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
@@ -558,23 +544,23 @@ mod tests {
         let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
         // Pure number as year.
-        let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now.clone());
         assert_eq!(result.year(), 2025);
 
         // Pure number as time.
-        let result = at_date(parse(&mut "1230").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "1230").unwrap(), now.clone());
         assert_eq!(result.hour(), 12);
         assert_eq!(result.minute(), 30);
 
-        let result = at_date(parse(&mut "123").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "123").unwrap(), now.clone());
         assert_eq!(result.hour(), 1);
         assert_eq!(result.minute(), 23);
 
-        let result = at_date(parse(&mut "12").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "12").unwrap(), now.clone());
         assert_eq!(result.hour(), 12);
         assert_eq!(result.minute(), 0);
 
-        let result = at_date(parse(&mut "1").unwrap(), now.clone()).unwrap();
+        let result = at_date(parse(&mut "1").unwrap(), now.clone());
         assert_eq!(result.hour(), 1);
         assert_eq!(result.minute(), 0);
     }
