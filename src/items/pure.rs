@@ -3,7 +3,7 @@
 
 //! Parse a pure number string.
 //!
-//! The GNU docs say:
+//! From the GNU docs:
 //!
 //! > The precise interpretation of a pure decimal number depends on the
 //! > context in the date string.
@@ -22,12 +22,16 @@
 //! > number in the date string, but no relative item, then the number
 //! > overrides the year.
 
-use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
+use winnow::{ModalResult, Parser};
 
-use super::primitive::s;
+use super::primitive::{dec_uint_str, s};
 
+/// Parse a pure number string and return it as an owned `String`. We return a
+/// `String` here because the interpretation of the number depends on the
+/// parsing context in which it appears. The interpretation is deferred to the
+/// result building phase.
 pub(super) fn parse(input: &mut &str) -> ModalResult<String> {
-    s(take_while(1.., AsChar::is_dec_digit))
+    s(dec_uint_str)
         .map(|s: &str| s.to_owned())
         .parse_next(input)
 }
