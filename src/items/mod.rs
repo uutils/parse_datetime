@@ -49,7 +49,7 @@ pub(crate) mod error;
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
-    combinator::{alt, eof, terminated, trace},
+    combinator::{alt, eof, preceded, repeat_till, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
     stream::Stream,
     ModalResult, Parser,
@@ -70,7 +70,8 @@ enum Item {
     Pure(String),
 }
 
-/// Parse a date and time string based on a specific date.
+/// Parse a date and time string and build a `Zoned` object. The parsed result
+/// is resolved against the given base date and time.
 pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Result<Zoned, Error> {
     let input = input.as_ref().to_ascii_lowercase();
     match parse(&mut input.as_str()) {
@@ -79,11 +80,12 @@ pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Res
     }
 }
 
-/// Parse a date and time string based on the current local time.
+/// Parse a date and time string and build a `Zoned` object. The parsed result
+/// is resolved against the current local date and time.
 pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, Error> {
     let input = input.as_ref().to_ascii_lowercase();
     match parse(&mut input.as_str()) {
-        Ok(builder) => builder.build(),
+        Ok(builder) => builder.build(), // the builder uses current local date and time if no base is given.
         Err(e) => Err(e.into()),
     }
 }
@@ -196,7 +198,7 @@ fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
 fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace(
         "parse_timestamp",
-        terminated(epoch::parse.map(Item::Timestamp), eof),
+        terminated(epoch::parse.map(Item::Timestamp), preceded(space, eof)),
     )
     .verify_map(|ts: Item| {
         if let Item::Timestamp(ts) = ts {
@@ -210,59 +212,13 @@ fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
 
 /// Parse a sequence of items.
 fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    let mut builder = DateTimeBuilder::new();
+    let (items, _): (Vec<Item>, _) = trace(
+        "parse_items",
+        repeat_till(0.., parse_item, preceded(space, eof)),
+    )
+    .parse_next(input)?;
 
-    loop {
-        match parse_item.parse_next(input) {
-            Ok(item) => match item {
-                Item::Timestamp(ts) => {
-                    builder = builder
-                        .set_timestamp(ts)
-                        .map_err(|e| expect_error(input, e))?;
-                }
-                Item::DateTime(dt) => {
-                    builder = builder
-                        .set_date(dt.date)
-                        .map_err(|e| expect_error(input, e))?
-                        .set_time(dt.time)
-                        .map_err(|e| expect_error(input, e))?;
-                }
-                Item::Date(d) => {
-                    builder = builder.set_date(d).map_err(|e| expect_error(input, e))?;
-                }
-                Item::Time(t) => {
-                    builder = builder.set_time(t).map_err(|e| expect_error(input, e))?;
-                }
-                Item::Weekday(weekday) => {
-                    builder = builder
-                        .set_weekday(weekday)
-                        .map_err(|e| expect_error(input, e))?;
-                }
-                Item::TimeZone(tz) => {
-                    builder = builder
-                        .set_timezone(tz)
-                        .map_err(|e| expect_error(input, e))?;
-                }
-                Item::Relative(rel) => {
-                    builder = builder
-                        .push_relative(rel)
-                        .map_err(|e| expect_error(input, e))?;
-                }
-                Item::Pure(pure) => {
-                    builder = builder.set_pure(pure).map_err(|e| expect_error(input, e))?;
-                }
-            },
-            Err(ErrMode::Backtrack(_)) => break,
-            Err(e) => return Err(e),
-        }
-    }
-
-    space.parse_next(input)?;
-    if !input.is_empty() {
-        return Err(expect_error(input, "unexpected input"));
-    }
-
-    Ok(builder)
+    items.try_into().map_err(|e| expect_error(input, e))
 }
 
 /// Parse an item.
@@ -346,6 +302,11 @@ mod tests {
             test_eq_fmt("%Y-%m-%dT%H:%M:%S%:z", "@1690466034")
         );
 
+        assert_eq!(
+            "2023-07-27T13:53:54+00:00",
+            test_eq_fmt("%Y-%m-%dT%H:%M:%S%:z", " @1690466034 ")
+        );
+
         // https://github.com/uutils/coreutils/issues/6398
         // TODO: make this work
         // assert_eq!("1111 1111 00", test_eq_fmt("%m%d %H%M %S", "11111111"));
@@ -369,6 +330,12 @@ mod tests {
             "2024-07-17 06:14:49 -03:00",
             test_eq_fmt("%Y-%m-%d %H:%M:%S %:z", "Jul 17 06:14:49 2024 BRT"),
         );
+    }
+
+    #[test]
+    fn empty() {
+        let result = parse(&mut "");
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -396,7 +363,6 @@ mod tests {
 
         let result = parse(&mut "2025-05-19 +00:00 +01:00");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unexpected input"));
 
         let result = parse(&mut "m1y");
         assert!(result.is_err());
@@ -407,15 +373,12 @@ mod tests {
 
         let result = parse(&mut "2025-05-19 abcdef");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unexpected input"));
 
         let result = parse(&mut "@1690466034 2025-05-19");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unexpected input"));
 
         let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unexpected input"));
 
         // Pure number as year (too large).
         let result = parse(&mut "jul 18 12:30 10000");
