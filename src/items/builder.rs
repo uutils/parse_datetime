@@ -3,7 +3,7 @@
 
 use jiff::{civil, Span, Zoned};
 
-use super::{date, epoch, error, relative, time, timezone, weekday, year};
+use super::{date, epoch, error, relative, time, timezone, weekday, year, Item};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -246,5 +246,28 @@ impl DateTimeBuilder {
         }
 
         Ok(dt)
+    }
+}
+
+impl TryFrom<Vec<Item>> for DateTimeBuilder {
+    type Error = &'static str;
+
+    fn try_from(items: Vec<Item>) -> Result<Self, Self::Error> {
+        let mut builder = DateTimeBuilder::new();
+
+        for item in items {
+            builder = match item {
+                Item::Timestamp(ts) => builder.set_timestamp(ts)?,
+                Item::DateTime(dt) => builder.set_date(dt.date)?.set_time(dt.time)?,
+                Item::Date(d) => builder.set_date(d)?,
+                Item::Time(t) => builder.set_time(t)?,
+                Item::Weekday(weekday) => builder.set_weekday(weekday)?,
+                Item::TimeZone(tz) => builder.set_timezone(tz)?,
+                Item::Relative(rel) => builder.push_relative(rel)?,
+                Item::Pure(pure) => builder.set_pure(pure)?,
+            }
+        }
+
+        Ok(builder)
     }
 }
