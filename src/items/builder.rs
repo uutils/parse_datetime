@@ -3,7 +3,7 @@
 
 use jiff::{civil, Span, Zoned};
 
-use super::{date, epoch, error, relative, time, timezone, weekday, year, Item};
+use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -17,7 +17,7 @@ pub(crate) struct DateTimeBuilder {
     date: Option<date::Date>,
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
-    timezone: Option<timezone::Offset>,
+    offset: Option<offset::Offset>,
     relative: Vec<relative::Relative>,
 }
 
@@ -41,7 +41,7 @@ impl DateTimeBuilder {
         } else if self.date.is_some()
             || self.time.is_some()
             || self.weekday.is_some()
-            || self.timezone.is_some()
+            || self.offset.is_some()
             || !self.relative.is_empty()
         {
             return Err("timestamp cannot be combined with other date/time items");
@@ -67,7 +67,7 @@ impl DateTimeBuilder {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.time.is_some() {
             return Err("time cannot appear more than once");
-        } else if self.timezone.is_some() && time.offset.is_some() {
+        } else if self.offset.is_some() && time.offset.is_some() {
             return Err("time offset and timezone are mutually exclusive");
         }
 
@@ -86,16 +86,16 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_timezone(mut self, timezone: timezone::Offset) -> Result<Self, &'static str> {
+    pub(super) fn set_offset(mut self, timezone: offset::Offset) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
-        } else if self.timezone.is_some() {
-            return Err("timezone cannot appear more than once");
-        } else if self.time.as_ref().and_then(|t| t.offset.as_ref()).is_some() {
-            return Err("time offset and timezone are mutually exclusive");
+        } else if self.offset.is_some()
+            || self.time.as_ref().and_then(|t| t.offset.as_ref()).is_some()
+        {
+            return Err("time offset cannot appear more than once");
         }
 
-        self.timezone = Some(timezone);
+        self.offset = Some(timezone);
         Ok(self)
     }
 
@@ -162,7 +162,7 @@ impl DateTimeBuilder {
             && self.date.is_none()
             && self.time.is_none()
             && self.weekday.is_none()
-            && self.timezone.is_none()
+            && self.offset.is_none()
         {
             base
         } else {
@@ -239,7 +239,7 @@ impl DateTimeBuilder {
             })?;
         }
 
-        if let Some(offset) = self.timezone {
+        if let Some(offset) = self.offset {
             let (offset, hour_adjustment) = offset.normalize();
             dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
             dt = dt.datetime().to_zoned((&offset).try_into()?)?;
@@ -262,7 +262,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
                 Item::Date(d) => builder.set_date(d)?,
                 Item::Time(t) => builder.set_time(t)?,
                 Item::Weekday(weekday) => builder.set_weekday(weekday)?,
-                Item::TimeZone(tz) => builder.set_timezone(tz)?,
+                Item::Offset(offset) => builder.set_offset(offset)?,
                 Item::Relative(rel) => builder.push_relative(rel)?,
                 Item::Pure(pure) => builder.set_pure(pure)?,
             }

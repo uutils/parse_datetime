@@ -21,10 +21,10 @@
 //!  - [`combined`]
 //!  - [`date`]
 //!  - [`epoch`]
+//!  - [`offset`]
 //!  - [`pure`]
 //!  - [`relative`]
 //!  - [`time`]
-//!  - [`timezone`]
 //!  - [`weekday`]
 //!  - [`year`]
 
@@ -32,10 +32,10 @@
 mod combined;
 mod date;
 mod epoch;
+mod offset;
 mod pure;
 mod relative;
 mod time;
-mod timezone;
 mod weekday;
 mod year;
 
@@ -66,7 +66,7 @@ enum Item {
     Time(time::Time),
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
-    TimeZone(timezone::Offset),
+    Offset(offset::Offset),
     Pure(String),
 }
 
@@ -231,7 +231,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             time::parse.map(Item::Time),
             relative::parse.map(Item::Relative),
             weekday::parse.map(Item::Weekday),
-            timezone::parse.map(Item::TimeZone),
+            offset::parse.map(Item::Offset),
             pure::parse.map(Item::Pure),
         )),
     )
@@ -369,7 +369,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("timezone cannot appear more than once"));
+            .contains("time offset cannot appear more than once"));
 
         let result = parse(&mut "2025-05-19 abcdef");
         assert!(result.is_err());

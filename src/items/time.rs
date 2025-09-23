@@ -45,8 +45,8 @@ use winnow::{
 
 use super::{
     epoch::sec_and_nsec,
+    offset::{timezone_offset, Offset},
     primitive::{colon, ctx_err, dec_uint, s},
-    timezone::{timezone_offset, Offset},
 };
 
 #[derive(PartialEq, Clone, Debug, Default)]
