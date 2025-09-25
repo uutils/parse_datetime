@@ -25,6 +25,7 @@
 //!  - [`pure`]
 //!  - [`relative`]
 //!  - [`time`]
+//!  - [`timezone`]
 //!  - [`weekday`]
 //!  - [`year`]
 
@@ -36,6 +37,7 @@ mod offset;
 mod pure;
 mod relative;
 mod time;
+mod timezone;
 mod weekday;
 mod year;
 
@@ -67,14 +69,14 @@ enum Item {
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
     Offset(offset::Offset),
+    TimeZone(jiff::tz::TimeZone),
     Pure(String),
 }
 
 /// Parse a date and time string and build a `Zoned` object. The parsed result
 /// is resolved against the given base date and time.
 pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Result<Zoned, Error> {
-    let input = input.as_ref().to_ascii_lowercase();
-    match parse(&mut input.as_str()) {
+    match parse(&mut input.as_ref()) {
         Ok(builder) => builder.set_base(base).build(),
         Err(e) => Err(e.into()),
     }
@@ -83,8 +85,7 @@ pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Res
 /// Parse a date and time string and build a `Zoned` object. The parsed result
 /// is resolved against the current local date and time.
 pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, Error> {
-    let input = input.as_ref().to_ascii_lowercase();
-    match parse(&mut input.as_str()) {
+    match parse(&mut input.as_ref()) {
         Ok(builder) => builder.build(), // the builder uses current local date and time if no base is given.
         Err(e) => Err(e.into()),
     }
@@ -95,12 +96,14 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, E
 /// Grammar:
 ///
 /// ```ebnf
-/// spec                = timestamp | items ;
+/// spec                = [ tz_rule ] ( timestamp | items ) ;
+///
+/// tz_rule            = "TZ=" , "\"" , ( posix_tz | iana_tz ) , "\"" ;
 ///
 /// timestamp           = "@" , float ;
 ///
 /// items               = item , { item } ;
-/// item                = datetime | date | time | relative | weekday | timezone | pure ;
+/// item                = datetime | date | time | relative | weekday | offset | pure ;
 ///
 /// datetime            = date , [ "t" | whitespace ] , iso_time ;
 ///
@@ -179,7 +182,7 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, E
 ///                     | "saturday" | "sat" | "sat."
 ///                     | "sunday" | "sun" | "sun." ;
 ///
-/// timezone            = named_zone , [ time_offset ] ;
+/// offset             = named_zone , [ time_offset ] ;
 ///
 /// pure               = { digit }
 ///
@@ -189,34 +192,59 @@ fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
 }
 
-/// Parse a timestamp.
+/// Parse a standalone epoch timestamp (e.g., `@1758724019`).
 ///
-/// From the GNU docs:
+/// GNU `date` specifies that a timestamp item is *complete* and *must not* be
+/// combined with any other date/time item.
 ///
-/// > (Timestamp) Such a number cannot be combined with any other date item, as
-/// > it specifies a complete timestamp.
+/// Notes:
+///
+/// - If a timezone rule (`TZ="..."`) appears at the beginning of the input, it
+///   has no effect on the epoch value. We intentionally parse and ignore it.
+/// - Trailing input (aside from optional whitespaces) is rejected.
 fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    // Parse and ignore an optional leading timezone rule.
+    let _ = timezone::parse(input);
+
     trace(
         "parse_timestamp",
+        // Expect exactly one timestamp and then EOF (allowing trailing spaces).
         terminated(epoch::parse.map(Item::Timestamp), preceded(space, eof)),
     )
-    .verify_map(|ts: Item| {
-        if let Item::Timestamp(ts) = ts {
-            DateTimeBuilder::new().set_timestamp(ts).ok()
-        } else {
-            None
-        }
+    .verify_map(|item: Item| match item {
+        Item::Timestamp(ts) => DateTimeBuilder::new().set_timestamp(ts).ok(),
+        _ => None,
     })
     .parse_next(input)
 }
 
-/// Parse a sequence of items.
+/// Parse a sequence of date/time items, honoring an optional leading TZ rule.
+///
+/// Notes:
+///
+/// - If a timezone rule (`TZ="..."`) appears at the beginning of the input,
+///   parse it first. The timezone rule is case-sensitive.
+/// - After the optional timezone rule is parsed, we convert the input to
+///   lowercase to allow case-insensitive parsing of the remaining items.
+/// - Trailing input (aside from optional whitespaces) is rejected.
 fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    let (items, _): (Vec<Item>, _) = trace(
+    // Parse and consume an optional leading timezone rule.
+    let tz = timezone::parse(input).map(Item::TimeZone);
+
+    // Convert input to lowercase for case-insensitive parsing.
+    let lower = input.to_ascii_lowercase();
+    let input = &mut lower.as_str();
+
+    let (mut items, _): (Vec<Item>, _) = trace(
         "parse_items",
+        // Parse zero or more items until EOF (allowing trailing spaces).
         repeat_till(0.., parse_item, preceded(space, eof)),
     )
     .parse_next(input)?;
+
+    if let Ok(tz) = tz {
+        items.push(tz);
+    }
 
     items.try_into().map_err(|e| expect_error(input, e))
 }
@@ -251,7 +279,7 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 mod tests {
     use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
 
-    use super::{parse, DateTimeBuilder};
+    use super::*;
 
     fn at_date(builder: DateTimeBuilder, base: Zoned) -> Zoned {
         builder.set_base(base).build().unwrap()
@@ -526,5 +554,23 @@ mod tests {
         let result = at_date(parse(&mut "1").unwrap(), now.clone());
         assert_eq!(result.hour(), 1);
         assert_eq!(result.minute(), 0);
+    }
+
+    #[test]
+    fn timezone_rule() {
+        let parse_build = |mut s| parse(&mut s).unwrap().build().unwrap();
+
+        for (input, expected) in [
+            (
+                r#"TZ="Europe/Paris" 2025-01-02"#,
+                "2025-01-02 00:00:00[Europe/Paris]".parse().unwrap(),
+            ),
+            (
+                r#"TZ="Europe/Paris" 2025-01-02 03:04:05"#,
+                "2025-01-02 03:04:05[Europe/Paris]".parse().unwrap(),
+            ),
+        ] {
+            assert_eq!(parse_build(input), expected, "{input}");
+        }
     }
 }

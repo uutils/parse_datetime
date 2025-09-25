@@ -18,6 +18,7 @@ pub(crate) struct DateTimeBuilder {
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
     offset: Option<offset::Offset>,
+    timezone: Option<jiff::tz::TimeZone>,
     relative: Vec<relative::Relative>,
 }
 
@@ -31,6 +32,20 @@ impl DateTimeBuilder {
     pub(super) fn set_base(mut self, base: Zoned) -> Self {
         self.base = Some(base);
         self
+    }
+
+    /// Sets the timezone rule for the builder.
+    ///
+    /// By default, the builder uses the time zone rules indicated by the `TZ`
+    /// environment variable, or the system default rules if `TZ` is not set.
+    /// This method allows overriding the time zone rules.
+    fn set_timezone(mut self, tz: jiff::tz::TimeZone) -> Result<Self, &'static str> {
+        if self.timezone.is_some() {
+            return Err("timezone rule cannot appear more than once");
+        }
+
+        self.timezone = Some(tz);
+        Ok(self)
     }
 
     /// Sets a timestamp value. Timestamp values are exclusive to other date/time
@@ -51,7 +66,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_date(mut self, date: date::Date) -> Result<Self, &'static str> {
+    fn set_date(mut self, date: date::Date) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.date.is_some() {
@@ -62,7 +77,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_time(mut self, time: time::Time) -> Result<Self, &'static str> {
+    fn set_time(mut self, time: time::Time) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.time.is_some() {
@@ -75,7 +90,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_weekday(mut self, weekday: weekday::Weekday) -> Result<Self, &'static str> {
+    fn set_weekday(mut self, weekday: weekday::Weekday) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.weekday.is_some() {
@@ -86,7 +101,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn set_offset(mut self, timezone: offset::Offset) -> Result<Self, &'static str> {
+    fn set_offset(mut self, timezone: offset::Offset) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.offset.is_some()
@@ -99,10 +114,7 @@ impl DateTimeBuilder {
         Ok(self)
     }
 
-    pub(super) fn push_relative(
-        mut self,
-        relative: relative::Relative,
-    ) -> Result<Self, &'static str> {
+    fn push_relative(mut self, relative: relative::Relative) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         }
@@ -117,7 +129,7 @@ impl DateTimeBuilder {
     /// If a date is already set but lacks a year, the number is interpreted as
     /// a year. Otherwise, it's interpreted as a time in HHMM, HMM, HH, or H
     /// format.
-    pub(super) fn set_pure(mut self, pure: String) -> Result<Self, &'static str> {
+    fn set_pure(mut self, pure: String) -> Result<Self, &'static str> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         }
@@ -149,7 +161,11 @@ impl DateTimeBuilder {
     }
 
     pub(super) fn build(self) -> Result<Zoned, error::Error> {
-        let base = self.base.unwrap_or(Zoned::now());
+        let base = self.base.unwrap_or(if let Some(tz) = &self.timezone {
+            jiff::Timestamp::now().to_zoned(tz.clone())
+        } else {
+            Zoned::now()
+        });
 
         // If a timestamp is set, we use it to build the `Zoned` object.
         if let Some(ts) = self.timestamp {
@@ -158,11 +174,11 @@ impl DateTimeBuilder {
 
         // If any of the following items are set, we truncate the time portion
         // of the base date to zero; otherwise, we use the base date as is.
-        let mut dt = if self.timestamp.is_none()
-            && self.date.is_none()
+        let mut dt = if self.date.is_none()
             && self.time.is_none()
             && self.weekday.is_none()
             && self.offset.is_none()
+            && self.timezone.is_none()
         {
             base
         } else {
@@ -264,6 +280,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
                 Item::Weekday(weekday) => builder.set_weekday(weekday)?,
                 Item::Offset(offset) => builder.set_offset(offset)?,
                 Item::Relative(rel) => builder.push_relative(rel)?,
+                Item::TimeZone(tz) => builder.set_timezone(tz)?,
                 Item::Pure(pure) => builder.set_pure(pure)?,
             }
         }
