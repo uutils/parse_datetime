@@ -160,31 +160,59 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
+    /// Build a `Zoned` object from the pieces accumulated in this builder.
+    ///
+    /// Resolution order (mirrors GNU `date` semantics):
+    ///
+    /// 1. Base instant.
+    ///   - a. If `self.base` is provided, start with it.
+    ///   - b. Else if a `timezone` rule is present, start with "now" in that
+    ///     timezone.
+    ///   - c. Else start with current system local time.
+    ///
+    /// 2. Absolute timestamp override.
+    ///   - a. If `self.timestamp` is set, it fully determines the result.
+    ///
+    /// 3. Time of day truncation.
+    ///   - a. If any of date, time, weekday, offset, timezone is set, zero the
+    ///     time of day to 00:00:00 before applying fields.
+    ///
+    /// 4. Fieldwise resolution (applied to the base instant).
+    ///   - a. Apply date. If year is absent in the parsed date, inherit the year
+    ///     from the base instant.
+    ///   - b. Apply time. If time carries an explicit numeric offset, apply the
+    ///     offset before setting time.
+    ///   - c. Apply weekday (e.g., "next Friday" or "last Monday").
+    ///   - d. Apply relative adjustments (e.g., "+3 days", "-2 months").
+    ///   - e. Apply final fixed offset if present.
     pub(super) fn build(self) -> Result<Zoned, error::Error> {
-        let base = self.base.unwrap_or(if let Some(tz) = &self.timezone {
-            jiff::Timestamp::now().to_zoned(tz.clone())
-        } else {
-            Zoned::now()
-        });
-
-        // If a timestamp is set, we use it to build the `Zoned` object.
-        if let Some(ts) = self.timestamp {
-            return Ok(jiff::Timestamp::try_from(ts)?.to_zoned(base.offset().to_time_zone()));
-        }
-
-        // If any of the following items are set, we truncate the time portion
-        // of the base date to zero; otherwise, we use the base date as is.
-        let mut dt = if self.date.is_none()
-            && self.time.is_none()
-            && self.weekday.is_none()
-            && self.offset.is_none()
-            && self.timezone.is_none()
-        {
-            base
-        } else {
-            base.with().time(civil::time(0, 0, 0, 0)).build()?
+        // 1. Choose the base instant.
+        let base = match (self.base, &self.timezone) {
+            (Some(b), _) => b,
+            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz.clone()),
+            (None, None) => Zoned::now(),
         };
 
+        // 2. Absolute timestamp override everything else.
+        if let Some(ts) = self.timestamp {
+            let ts = jiff::Timestamp::try_from(ts)?;
+            return Ok(ts.to_zoned(base.offset().to_time_zone()));
+        }
+
+        // 3. Determine whether to truncate the time of day.
+        let need_midnight = self.date.is_some()
+            || self.time.is_some()
+            || self.weekday.is_some()
+            || self.offset.is_some()
+            || self.timezone.is_some();
+
+        let mut dt = if need_midnight {
+            base.with().time(civil::time(0, 0, 0, 0)).build()?
+        } else {
+            base
+        };
+
+        // 4a. Apply date.
         if let Some(date) = self.date {
             let d: civil::Date = if date.year.is_some() {
                 date.try_into()?
@@ -194,6 +222,7 @@ impl DateTimeBuilder {
             dt = dt.with().date(d).build()?;
         }
 
+        // 4b. Apply time.
         if let Some(time) = self.time.clone() {
             if let Some(offset) = &time.offset {
                 dt = dt.datetime().to_zoned(offset.try_into()?)?;
@@ -203,13 +232,13 @@ impl DateTimeBuilder {
             dt = dt.with().time(t).build()?;
         }
 
-        if let Some(weekday::Weekday { offset, day }) = self.weekday {
+        // 4c. Apply weekday.
+        if let Some(weekday::Weekday { mut offset, day }) = self.weekday {
             if self.time.is_none() {
                 dt = dt.with().time(civil::time(0, 0, 0, 0)).build()?;
             }
 
-            let mut offset = offset;
-            let day = day.into();
+            let target = day.into();
 
             // If the current day is not the target day, we need to adjust
             // the x value to ensure we find the correct day.
@@ -217,7 +246,7 @@ impl DateTimeBuilder {
             // Consider this:
             // Assuming today is Monday, next Friday is actually THIS Friday;
             // but next Monday is indeed NEXT Monday.
-            if dt.date().weekday() != day && offset > 0 {
+            if dt.date().weekday() != target && offset > 0 {
                 offset -= 1;
             }
 
@@ -237,7 +266,7 @@ impl DateTimeBuilder {
             //
             // Example 4: next Thursday (x = 1, day = Thursday)
             //            delta = (3 - 3) % 7 + (1) * 7 = 7
-            let delta = (day.since(civil::Weekday::Monday) as i32
+            let delta = (target.since(civil::Weekday::Monday) as i32
                 - dt.date().weekday().since(civil::Weekday::Monday) as i32)
                 .rem_euclid(7)
                 + offset.checked_mul(7).ok_or("multiplication overflow")?;
@@ -245,6 +274,7 @@ impl DateTimeBuilder {
             dt = dt.checked_add(Span::new().try_days(delta)?)?;
         }
 
+        // 4d. Apply relative adjustments.
         for rel in self.relative {
             dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
                 // *NOTE* This is done in this way to conform to GNU behavior.
@@ -255,6 +285,7 @@ impl DateTimeBuilder {
             })?;
         }
 
+        // 4e. Apply final fixed offset.
         if let Some(offset) = self.offset {
             let (offset, hour_adjustment) = offset.normalize();
             dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
