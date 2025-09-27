@@ -9,7 +9,6 @@ readme = "README.md"
 rust-version = "1.71.1"
 
 [dependencies]
-regex = "1.10.4"
 winnow = "0.7.10"
 num-traits = "0.2.19"
 jiff = { version = "0.2.15", default-features = false, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
