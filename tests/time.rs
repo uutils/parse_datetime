@@ -128,3 +128,37 @@ fn test_time_invalid(#[case] input: &str) {
         "Input string '{input}' did not produce an error when parsing"
     );
 }
+
+#[rstest]
+#[case::decimal_1_whole("1.123456789 seconds ago")]
+#[case::decimal_2_whole("12.123456789 seconds ago")]
+#[case::decimal_3_whole("123.123456789 seconds ago")]
+#[case::decimal_4_whole("1234.123456789 seconds ago")]
+#[case::decimal_5_whole("12345.123456789 seconds ago")]
+#[case::decimal_6_whole("123456.123456789 seconds ago")]
+#[case::decimal_7_whole("1234567.123456789 seconds ago")]
+#[case::decimal_8_whole("12345678.123456789 seconds ago")]
+#[case::decimal_9_whole("123456789.123456789 seconds ago")]
+#[case::decimal_10_whole("1234567891.123456789 seconds ago")]
+#[case::decimal_11_whole("12345678912.123456789 seconds ago")]
+#[case::decimal_12_whole("123456789123.123456789 seconds ago")]
+fn test_time_seconds_ago(#[case] input: &str) {
+    let result = parse_datetime::parse_datetime(input);
+    assert!(
+        result.is_ok(),
+        "Input string '{input}', produced {result:?}, instead of Ok(Zoned)"
+    );
+}
+
+#[rstest]
+#[case::decimal_13_whole("1234567891234.123456789 seconds ago")]
+#[case::decimal_14_whole("12345678912345.123456789 seconds ago")]
+#[case::decimal_15_whole("123456789123456.123456789 seconds ago")]
+fn test_time_seconds_ago_invalid(#[case] input: &str) {
+    let result = parse_datetime::parse_datetime(input);
+    assert_eq!(
+        result,
+        Err(parse_datetime::ParseDateTimeError::InvalidInput),
+        "Input string '{input}' did not produce an error when parsing"
+    );
+}
