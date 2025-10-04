@@ -138,9 +138,10 @@ pub(super) fn iso1(input: &mut &str) -> ModalResult<Date> {
     let (year, _, month, _, day) =
         (year_str, s('-'), s(dec_uint), s('-'), s(dec_uint)).parse_next(input)?;
 
+    // Map err to Backtrack instead of Cut to avoid early termination of parsing
     (year, month, day)
         .try_into()
-        .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
 }
 
 /// Parse `[year][month][day]`
@@ -156,7 +157,7 @@ pub(super) fn iso2(input: &mut &str) -> ModalResult<Date> {
 
     (year, month, day)
         .try_into()
-        .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
 }
 
 /// Parse `[year]/[month]/[day]` or `[month]/[day]/[year]` or `[month]/[day]`.
@@ -178,19 +179,21 @@ fn us(input: &mut &str) -> ModalResult<Date> {
             let day = day_from_str(s2)?;
             (s1, n, day)
                 .try_into()
-                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+                .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
         }
         Some(s2) => {
             // [month]/[day]/[year]
             let month = month_from_str(s1)?;
             (s2, month, n)
                 .try_into()
-                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+                .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
         }
         None => {
             // [month]/[day]
             let month = month_from_str(s1)?;
-            (month, n).try_into().map_err(|e| ErrMode::Cut(ctx_err(e)))
+            (month, n)
+                .try_into()
+                .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
         }
     }
 }
@@ -213,10 +216,10 @@ fn literal1(input: &mut &str) -> ModalResult<Date> {
     match year {
         Some(year) => (year, month, day)
             .try_into()
-            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+            .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
         None => (month, day)
             .try_into()
-            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+            .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
     }
 }
 
@@ -242,10 +245,10 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
     match year {
         Some(year) => (year, month, day)
             .try_into()
-            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+            .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
         None => (month, day)
             .try_into()
-            .map_err(|e| ErrMode::Cut(ctx_err(e))),
+            .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
     }
 }
 
@@ -274,12 +277,12 @@ fn literal_month(input: &mut &str) -> ModalResult<u8> {
 
 fn month_from_str(s: &str) -> ModalResult<u8> {
     s.parse::<u8>()
-        .map_err(|_| ErrMode::Cut(ctx_err("month must be a valid u8 number")))
+        .map_err(|_| ErrMode::Backtrack(ctx_err("month must be a valid u8 number")))
 }
 
 fn day_from_str(s: &str) -> ModalResult<u8> {
     s.parse::<u8>()
-        .map_err(|_| ErrMode::Cut(ctx_err("day must be a valid u8 number")))
+        .map_err(|_| ErrMode::Backtrack(ctx_err("day must be a valid u8 number")))
 }
 
 #[cfg(test)]
