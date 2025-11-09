@@ -128,7 +128,7 @@ impl TryFrom<Date> for jiff::civil::Date {
 }
 
 pub(super) fn parse(input: &mut &str) -> ModalResult<Date> {
-    alt((iso1, iso2, us, literal1, literal2)).parse_next(input)
+    alt((iso1, iso2, us, literal1, literal2, literal3)).parse_next(input)
 }
 
 /// Parse `[year]-[month]-[day]`
@@ -250,6 +250,18 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
             .try_into()
             .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
     }
+}
+
+/// Parse `November-14-2022` and `Nov-14-2022`. Unlike `literal2`, the year is mandatory
+/// to match the behavior of GNU `date`.
+fn literal3(input: &mut &str) -> ModalResult<Date> {
+    let (month, _, day, _, year) =
+        (s(literal_month), s('-'), s(dec_uint), s('-'), year_str).parse_next(input)?;
+
+    // Map err to Backtrack instead of Cut to avoid early termination of parsing
+    (year, month, day)
+        .try_into()
+        .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
 }
 
 /// Parse the name of a month (case-insensitive)
@@ -547,6 +559,27 @@ mod tests {
         let old_s = s.to_owned();
         assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         assert_eq!(s, ", 2022a");
+    }
+
+    #[test]
+    fn literal3() {
+        let reference = Date {
+            year: Some(2022),
+            month: 11,
+            day: 14,
+        };
+
+        for mut s in [
+            "november-14-2022",
+            "november----14----2022",
+            "november  -  14   -  2022",
+            "nov-14-2022",
+            "nov---14---2022",
+            "nov  -   14    -   2022",
+        ] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
     }
 
     #[test]
