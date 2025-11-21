@@ -307,6 +307,42 @@ mod tests {
                 assert!(parse_datetime(relative_time).is_ok());
             }
         }
+
+        #[test]
+        fn integer_seconds_offset() {
+            let dt = "0 + 0 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
+
+        #[test]
+        fn integer_seconds_offset_spaceless() {
+            let dt = "0+0 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
+
+        #[test]
+        fn floating_seconds_offset() {
+            let dt = "0 + 0.0 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
+
+        #[test]
+        fn floating_seconds_offset_spaceless() {
+            let dt = "0+0.0 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
+
+        #[test]
+        fn floating_seconds_offset_from_now() {
+            let dt = "now  +  1.5 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
+
+        #[test]
+        fn floating_seconds_offset_from_tomorrow_spaceless() {
+            let dt = "tomorrow+1.5 seconds";
+            assert!(parse_datetime(dt).is_ok());
+        }
     }
 
     #[cfg(test)]
