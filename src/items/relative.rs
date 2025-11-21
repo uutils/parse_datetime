@@ -83,7 +83,7 @@ pub(super) fn parse(input: &mut &str) -> ModalResult<Relative> {
 fn seconds(input: &mut &str) -> ModalResult<Relative> {
     (
         opt(alt((s('+').value(1), s('-').value(-1)))),
-        sec_and_nsec,
+        s(sec_and_nsec),
         s(alpha1).verify(|s: &str| matches!(s, "seconds" | "second" | "sec" | "secs")),
         ago,
     )
@@ -138,11 +138,13 @@ mod tests {
             ("secs", Relative::Seconds(1, 0)),
             ("second ago", Relative::Seconds(-1, 0)),
             ("3 seconds", Relative::Seconds(3, 0)),
+            ("+ 3 seconds", Relative::Seconds(3, 0)),
             ("3.5 seconds", Relative::Seconds(3, 500_000_000)),
             ("-3.5 seconds", Relative::Seconds(-4, 500_000_000)),
             ("+3.5 seconds", Relative::Seconds(3, 500_000_000)),
+            ("+ 3.5 seconds", Relative::Seconds(3, 500_000_000)),
             ("3.5 seconds ago", Relative::Seconds(-4, 500_000_000)),
-            ("-3.5 seconds ago", Relative::Seconds(3, 500_000_000)),
+            ("-  3.5 seconds ago", Relative::Seconds(3, 500_000_000)),
             // Minutes
             ("minute", Relative::Minutes(1)),
             ("minutes", Relative::Minutes(1)),
