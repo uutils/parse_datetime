@@ -130,6 +130,50 @@ fn test_time_invalid(#[case] input: &str) {
 }
 
 #[rstest]
+#[case::months_ago_1("2026-01-12 1 Months ago", "2025-12-12")]
+#[case::months_ago_2("2026-01-12 2 Months ago", "2025-11-12")]
+#[case::months_ago_3("2026-01-12 3 Months ago", "2025-10-12")]
+#[case::months_ago_4("2026-01-12 4 Months ago", "2025-09-12")]
+#[case::months_ago_5("2026-01-12 5 Months ago", "2025-08-12")]
+#[case::months_ago_6("2026-01-12 6 Months ago", "2025-07-12")]
+#[case::months_ago_7("2026-01-12 7 Months ago", "2025-06-12")]
+#[case::months_ago_8("2026-01-12 8 Months ago", "2025-05-12")]
+#[case::months_ago_9("2026-01-12 9 Months ago", "2025-04-12")]
+#[case::months_ago_10("2026-01-12 10 Months ago", "2025-03-12")]
+#[case::months_ago_11("2026-01-12 11 Months ago", "2025-02-12")]
+#[case::months_ago_12("2026-01-12 12 Months ago", "2025-01-12")]
+fn test_time_months_ago(#[case] input: &str, #[case] expected: &str) {
+    let now = "2026-01-12"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_time(input, expected, "%Y-%m-%d", Some(now));
+}
+
+#[rstest]
+#[case::months_in_1_months("2026-01-12 1 Months", "2026-02-12")]
+#[case::months_in_2_months("2026-01-12 2 Months", "2026-03-12")]
+#[case::months_in_3_months("2026-01-12 3 Months", "2026-04-12")]
+#[case::months_in_4_months("2026-01-12 4 Months", "2026-05-12")]
+#[case::months_in_5_months("2026-01-12 5 Months", "2026-06-12")]
+#[case::months_in_6_months("2026-01-12 6 Months", "2026-07-12")]
+#[case::months_in_7_months("2026-01-12 7 Months", "2026-08-12")]
+#[case::months_in_8_months("2026-01-12 8 Months", "2026-09-12")]
+#[case::months_in_9_months("2026-01-12 9 Months", "2026-10-12")]
+#[case::months_in_10_months("2026-01-12 10 Months", "2026-11-12")]
+#[case::months_in_11_months("2026-01-12 11 Months", "2026-12-12")]
+#[case::months_in_12_months("2026-01-12 12 Months", "2027-01-12")]
+fn test_time_in_months(#[case] input: &str, #[case] expected: &str) {
+    let now = "2026-01-12"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_time(input, expected, "%Y-%m-%d", Some(now));
+}
+
+#[rstest]
 #[case::decimal_1_whole("1.123456789 seconds ago")]
 #[case::decimal_2_whole("12.123456789 seconds ago")]
 #[case::decimal_3_whole("123.123456789 seconds ago")]
