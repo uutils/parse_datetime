@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil, Span, Zoned};
+use jiff::{civil, Span, ToSpan, Zoned};
 
 use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
 
@@ -281,9 +281,26 @@ impl DateTimeBuilder {
         // 4d. Apply relative adjustments.
         for rel in self.relative {
             dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
-                // *NOTE* This is done in this way to conform to GNU behavior.
-                let days = dt.date().last_of_month().day() as i32;
-                Span::new().try_days(days.checked_mul(x).ok_or("multiplication overflow")?)?
+                let mut temp = dt.clone();
+                let mut days = 0;
+                if x < 0 {
+                    for _ in 0..x.unsigned_abs() as usize {
+                        // going backwards we first change the month to last month as last months
+                        // days are important to calculate the day delta from now to now -1 month
+                        temp = temp.checked_sub(1.month())?;
+                        days += temp.date().last_of_month().day();
+                    }
+                    days *= -1;
+                } else {
+                    for _ in 0..x {
+                        // going forward we take the days of this month and then change the month to
+                        // the next month as going forward the current month is important for the
+                        // day delta from now to +1 month
+                        days += temp.date().last_of_month().day();
+                        temp = temp.checked_add(1.month())?;
+                    }
+                }
+                Span::new().try_days(days)?
             } else {
                 rel.try_into()?
             })?;
