@@ -282,13 +282,13 @@ impl DateTimeBuilder {
         for rel in self.relative {
             dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
                 let mut temp = dt.clone();
-                let mut days = 0;
+                let mut days: i32 = 0;
                 if x < 0 {
                     for _ in 0..x.unsigned_abs() as usize {
                         // going backwards we first change the month to last month as last months
                         // days are important to calculate the day delta from now to now -1 month
                         temp = temp.checked_sub(1.month())?;
-                        days += temp.date().last_of_month().day();
+                        days += temp.date().last_of_month().day() as i32;
                     }
                     days *= -1;
                 } else {
@@ -296,7 +296,7 @@ impl DateTimeBuilder {
                         // going forward we take the days of this month and then change the month to
                         // the next month as going forward the current month is important for the
                         // day delta from now to +1 month
-                        days += temp.date().last_of_month().day();
+                        days += temp.date().last_of_month().day() as i32;
                         temp = temp.checked_add(1.month())?;
                     }
                 }
