@@ -276,13 +276,15 @@ impl DateTimeBuilder {
 
         // 4d. Apply relative adjustments.
         for rel in self.relative {
-            dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
-                // *NOTE* This is done in this way to conform to GNU behavior.
-                let days = dt.date().last_of_month().day() as i32;
-                Span::new().try_days(days.checked_mul(x).ok_or("multiplication overflow")?)?
-            } else {
-                rel.try_into()?
-            })?;
+            dt = match rel {
+                // GNU-compatible: overflow into next month instead of clamping
+                relative::Relative::Months(_) | relative::Relative::Years(_) => {
+                    let day = dt.day();
+                    let tmp = dt.checked_add::<Span>(rel.try_into()?)?;
+                    tmp.checked_add(Span::new().days(day.saturating_sub(tmp.day())))?
+                }
+                _ => dt.checked_add::<Span>(rel.try_into()?)?,
+            };
         }
 
         // 4e. Apply final fixed offset.

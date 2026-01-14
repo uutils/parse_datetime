@@ -95,3 +95,12 @@ fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expec
         .unwrap();
     check_relative(now, input, expected);
 }
+
+// GNU date month/year overflow tests (overflow into next month instead of clamping)
+#[rstest]
+#[case::gnu_rel_2b("1997-01-19 08:17:48", "7 months ago", "1996-06-19 08:17:48+00:00")]
+#[case::gnu_leap_1("1996-02-29 00:00:00", "1 year", "1997-03-01 00:00:00+00:00")]
+fn test_gnu_month_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base.parse::<DateTime>().unwrap().to_zoned(TimeZone::UTC).unwrap();
+    check_relative(now, input, expected);
+}
