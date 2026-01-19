@@ -280,30 +280,20 @@ impl DateTimeBuilder {
 
         // 4d. Apply relative adjustments.
         for rel in self.relative {
-            dt = dt.checked_add::<Span>(if let relative::Relative::Months(x) = rel {
-                let mut temp = dt.clone();
-                let mut days: i32 = 0;
-                if x < 0 {
-                    for _ in 0..x.unsigned_abs() as usize {
-                        // going backwards we first change the month to last month as last months
-                        // days are important to calculate the day delta from now to now -1 month
-                        temp = temp.checked_sub(1.month())?;
-                        days += temp.date().last_of_month().day() as i32;
-                    }
-                    days *= -1;
-                } else {
-                    for _ in 0..x {
-                        // going forward we take the days of this month and then change the month to
-                        // the next month as going forward the current month is important for the
-                        // day delta from now to +1 month
-                        days += temp.date().last_of_month().day() as i32;
-                        temp = temp.checked_add(1.month())?;
-                    }
+            let desired_day = dt.day();
+            dt = if let relative::Relative::Months(x) = rel {
+                // GNU way of calculating relative Months
+                // GNU changes the Month and then checks if the target Month has
+                // this day. If this day does not exist in the target month it overflows
+                // the difference
+                dt = dt.checked_add::<Span>(Span::new().try_months(x)?)?;
+                if desired_day != dt.day() {
+                    dt = dt.checked_add((desired_day - dt.day()).days())?;
                 }
-                Span::new().try_days(days)?
+                dt
             } else {
-                rel.try_into()?
-            })?;
+                dt.checked_add::<Span>(rel.try_into()?)?
+            };
         }
 
         // 4e. Apply final fixed offset.
