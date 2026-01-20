@@ -280,20 +280,21 @@ impl DateTimeBuilder {
 
         // 4d. Apply relative adjustments.
         for rel in self.relative {
-            let desired_day = dt.day();
-            dt = if let relative::Relative::Months(x) = rel {
-                // GNU way of calculating relative Months
-                // GNU changes the Month and then checks if the target Month has
-                // this day. If this day does not exist in the target month it overflows
-                // the difference
-                dt = dt.checked_add::<Span>(Span::new().try_months(x)?)?;
-                if desired_day != dt.day() {
-                    dt = dt.checked_add((desired_day - dt.day()).days())?;
+            dt = match rel {
+                relative::Relative::Years(_) | relative::Relative::Months(_) => {
+                    // GNU way of calculating relative months and years
+                    // GNU changes the month and then checks if the target month has
+                    // this day. If this day does not exist in the target month it overflows
+                    // the difference
+                    let desired_day = dt.day();
+                    dt = dt.checked_add::<Span>(rel.try_into()?)?;
+                    if desired_day != dt.day() {
+                        dt = dt.checked_add((desired_day - dt.day()).days())?;
+                    }
+                    dt
                 }
-                dt
-            } else {
-                dt.checked_add::<Span>(rel.try_into()?)?
-            };
+                _ => dt.checked_add::<Span>(rel.try_into()?)?,
+            }
         }
 
         // 4e. Apply final fixed offset.

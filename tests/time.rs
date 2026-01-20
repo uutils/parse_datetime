@@ -158,8 +158,8 @@ fn test_time_months_ago(#[case] input: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-#[case::from_29_feb_in_1_month("2026-02-28 1 months", "2026-03-28")]
-#[case::from_29_feb_1_month_ago("2026-02-28 1 months ago", "2026-01-28")]
+#[case::from_28_feb_in_1_month("2026-02-28 1 months", "2026-03-28")]
+#[case::from_28_feb_1_month_ago("2026-02-28 1 months ago", "2026-01-28")]
 #[case::from_31_jan_in_1_month("2026-01-31 1 months", "2026-03-03")]
 #[case::from_31_march_1_month_ago("2026-03-31 1 months ago", "2026-03-03")]
 #[case::from_15_march_1_month_ago("2026-03-15 1 months ago", "2026-02-15")]
@@ -182,6 +182,18 @@ fn test_relative_month_time_dest_month_does_not_have_the_day(
     #[case] input: &str,
     #[case] expected: &str,
 ) {
+    let now = "2026-01-12"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_time(input, expected, "%Y-%m-%d", Some(now));
+}
+
+#[rstest]
+#[case::from_29_feb_in_1_year("2024-02-29 1 year", "2025-03-01")]
+#[case::from_29_feb_1_year_ago("2024-02-29 1 year ago", "2023-03-01")]
+fn test_relative_year_time_leap_year(#[case] input: &str, #[case] expected: &str) {
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
