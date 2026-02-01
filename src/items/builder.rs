@@ -286,10 +286,12 @@ impl DateTimeBuilder {
                     // GNU changes the month and then checks if the target month has
                     // this day. If this day does not exist in the target month it overflows
                     // the difference
-                    let desired_day = dt.day();
+                    let original_day_of_month = dt.day();
                     dt = dt.checked_add::<Span>(rel.try_into()?)?;
-                    if desired_day != dt.day() {
-                        dt = dt.checked_add((desired_day - dt.day()).days())?;
+                    if original_day_of_month != dt.day() {
+                        dt = dt.checked_add(
+                            (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
+                        )?;
                     }
                     dt
                 }
