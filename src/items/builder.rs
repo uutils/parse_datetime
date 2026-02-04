@@ -187,8 +187,11 @@ impl DateTimeBuilder {
     ///   - e. Apply final fixed offset if present.
     pub(super) fn build(self) -> Result<Zoned, error::Error> {
         // 1. Choose the base instant.
+        // If a TZ="..." prefix was parsed, it should override the base's timezone
+        // while keeping the base's timestamp for relative date calculations.
         let base = match (self.base, &self.timezone) {
-            (Some(b), _) => b,
+            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz.clone()),
+            (Some(b), None) => b,
             (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz.clone()),
             (None, None) => Zoned::now(),
         };
