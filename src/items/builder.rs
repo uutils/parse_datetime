@@ -189,10 +189,11 @@ impl DateTimeBuilder {
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
-        let base = match (self.base, &self.timezone) {
-            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz.clone()),
+        let has_timezone = self.timezone.is_some();
+        let base = match (self.base, self.timezone) {
+            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz),
             (Some(b), None) => b,
-            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz.clone()),
+            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz),
             (None, None) => Zoned::now(),
         };
 
@@ -207,7 +208,7 @@ impl DateTimeBuilder {
             || self.time.is_some()
             || self.weekday.is_some()
             || self.offset.is_some()
-            || self.timezone.is_some();
+            || has_timezone;
 
         let mut dt = if need_midnight {
             base.with().time(civil::time(0, 0, 0, 0)).build()?
