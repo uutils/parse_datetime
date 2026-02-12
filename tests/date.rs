@@ -95,3 +95,20 @@ fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expec
         .unwrap();
     check_relative(now, input, expected);
 }
+
+#[rstest]
+#[case::tz_prefix_est5("TZ=\"EST5\" 1970-01-01 00:00", "1970-01-01 00:00:00-05:00")]
+#[case::tz_prefix_pst8("TZ=\"PST8\" 1970-01-01 00:00", "1970-01-01 00:00:00-08:00")]
+#[case::tz_prefix_utc("TZ=\"UTC\" 1970-01-01 12:00", "1970-01-01 12:00:00+00:00")]
+#[case::tz_prefix_europe_paris(
+    r#"TZ="Europe/Paris" 2025-01-02 03:04:05"#,
+    "2025-01-02 03:04:05+01:00"
+)]
+fn test_tz_prefix_with_base_date(#[case] input: &str, #[case] expected: &str) {
+    let base = "2020-06-15 12:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(base, input, expected);
+}
