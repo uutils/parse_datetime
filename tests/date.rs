@@ -119,6 +119,9 @@ fn test_tz_prefix_with_base_date(#[case] input: &str, #[case] expected: &str) {
 #[case::feb29_1996_plus_1year("1996-02-29 00:00:00", "1 year", "1997-03-01 00:00:00+00:00")]
 #[case::feb29_2020_plus_1year("2020-02-29 00:00:00", "1 year", "2021-03-01 00:00:00+00:00")]
 #[case::feb29_2000_plus_1year("2000-02-29 00:00:00", "1 year", "2001-03-01 00:00:00+00:00")]
+// Edge case: 0 years should return the same date
+#[case::zero_years("2024-01-15 12:30:45", "0 years", "2024-01-15 12:30:45+00:00")]
+#[case::zero_years_feb29("2020-02-29 00:00:00", "0 years", "2020-02-29 00:00:00+00:00")]
 fn test_leap_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
     let now = base
         .parse::<DateTime>()
@@ -137,6 +140,9 @@ fn test_leap_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expe
 #[case::mar31_plus_1month("2024-03-31 00:00:00", "1 month", "2024-05-01 00:00:00+00:00")]
 #[case::may31_plus_1month("2024-05-31 00:00:00", "1 month", "2024-07-01 00:00:00+00:00")]
 #[case::rel_2b("1997-01-19 08:17:48", "7 months ago", "1996-06-19 08:17:48+00:00")]
+// Edge case: 0 months should return the same date
+#[case::zero_months("2024-01-31 12:30:45", "0 months", "2024-01-31 12:30:45+00:00")]
+#[case::zero_months_feb29("2020-02-29 00:00:00", "0 months", "2020-02-29 00:00:00+00:00")]
 fn test_month_overflow(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
     let now = base
         .parse::<DateTime>()
