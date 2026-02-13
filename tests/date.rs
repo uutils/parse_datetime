@@ -127,3 +127,155 @@ fn test_leap_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expe
         .unwrap();
     check_relative(now, input, expected);
 }
+
+// Test month arithmetic with day overflow
+// Matches GNU date behavior: when adding months causes day clamping,
+// overflow to next month (e.g., Jan 31 + 1 month = March 2/3, not Feb 28/29)
+#[rstest]
+#[case::jan31_plus_1month_leap("2024-01-31 00:00:00", "1 month", "2024-03-02 00:00:00+00:00")]
+#[case::jan31_plus_1month_nonleap("2023-01-31 00:00:00", "1 month", "2023-03-03 00:00:00+00:00")]
+#[case::mar31_plus_1month("2024-03-31 00:00:00", "1 month", "2024-05-01 00:00:00+00:00")]
+#[case::may31_plus_1month("2024-05-31 00:00:00", "1 month", "2024-07-01 00:00:00+00:00")]
+#[case::rel_2b("1997-01-19 08:17:48", "7 months ago", "1996-06-19 08:17:48+00:00")]
+fn test_month_overflow(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
+
+// Test negative year operations with leap year edge cases
+#[rstest]
+#[case::feb29_minus_1year("2020-02-29 00:00:00", "1 year ago", "2019-03-01 00:00:00+00:00")]
+#[case::feb29_minus_4years("2020-02-29 00:00:00", "4 years ago", "2016-02-29 00:00:00+00:00")]
+#[case::march1_minus_1year("2021-03-01 00:00:00", "1 year ago", "2020-03-01 00:00:00+00:00")]
+fn test_negative_year_operations(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
+
+// Test negative month operations with day overflow
+#[rstest]
+#[case::march31_minus_1month("2024-03-31 00:00:00", "1 month ago", "2024-03-02 00:00:00+00:00")]
+#[case::march31_minus_1month_nonleap(
+    "2023-03-31 00:00:00",
+    "1 month ago",
+    "2023-03-03 00:00:00+00:00"
+)]
+#[case::may31_minus_1month("2024-05-31 00:00:00", "1 month ago", "2024-05-01 00:00:00+00:00")]
+#[case::jan31_minus_1month("2024-01-31 00:00:00", "1 month ago", "2023-12-31 00:00:00+00:00")]
+fn test_negative_month_operations(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
+
+// Test chained operations (multiple relative adjustments in one parse)
+// These ensure that year and month overflow logic works correctly when combined
+#[rstest]
+// Feb 29, 2020 + 1 year = March 1, 2021; + 1 month = April 1, 2021
+#[case::feb29_plus_year_plus_month(
+    "2020-02-29 00:00:00",
+    "1 year 1 month",
+    "2021-04-01 00:00:00+00:00"
+)]
+// Jan 31, 2024 + 1 month = March 2, 2024; + 1 year = March 2, 2025
+#[case::jan31_plus_month_plus_year(
+    "2024-01-31 00:00:00",
+    "1 month 1 year",
+    "2025-03-02 00:00:00+00:00"
+)]
+// Jan 31 + 2 months + 1 day
+#[case::jan31_plus_2months_1day(
+    "2024-01-31 00:00:00",
+    "2 months 1 day",
+    "2024-04-01 00:00:00+00:00"
+)]
+// Feb 29 - 1 year + 1 month (March 1, 2019 + 1 month = April 1, 2019)
+#[case::feb29_minus_year_plus_month(
+    "2020-02-29 00:00:00",
+    "1 year ago 1 month",
+    "2019-04-01 00:00:00+00:00"
+)]
+// Multiple operations with days
+#[case::complex_chain(
+    "2024-01-31 12:30:45",
+    "1 year 2 months 3 days 4 hours",
+    "2025-04-03 16:30:45+00:00"
+)]
+fn test_chained_operations(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
+
+// Test multiple month additions
+// Verifies correct handling when adding multiple months at once
+#[rstest]
+// Jan 31 + 2 months: Jan 31 -> March 31 (no clamping, month has 31 days)
+#[case::jan31_plus_2months("2024-01-31 00:00:00", "2 months", "2024-03-31 00:00:00+00:00")]
+// Jan 31 + 3 months: Jan 31 -> April 30 (clamps), overflow to May 1
+#[case::jan31_plus_3months("2024-01-31 00:00:00", "3 months", "2024-05-01 00:00:00+00:00")]
+// Jan 31 + 6 months: Jan 31 -> July 31 (no overflow)
+#[case::jan31_plus_6months("2024-01-31 00:00:00", "6 months", "2024-07-31 00:00:00+00:00")]
+// Jan 31 + 7 months: Jan 31 -> Aug 31 (no overflow)
+#[case::jan31_plus_7months("2024-01-31 00:00:00", "7 months", "2024-08-31 00:00:00+00:00")]
+// Aug 31 + 6 months: Aug 31 -> Feb 28 (2025 non-leap), overflow to March 3
+#[case::aug31_plus_6months("2024-08-31 00:00:00", "6 months", "2025-03-03 00:00:00+00:00")]
+// May 31 - 3 months: May 31 -> Feb 29 (2024 leap), overflow to March 2
+#[case::may31_minus_3months_leap(
+    "2024-05-31 00:00:00",
+    "3 months ago",
+    "2024-03-02 00:00:00+00:00"
+)]
+// Oct 31 - 8 months: Oct 31 -> Feb 29 (2024 leap), overflow to March 2
+#[case::oct31_minus_8months_leap(
+    "2024-10-31 00:00:00",
+    "8 months ago",
+    "2024-03-02 00:00:00+00:00"
+)]
+fn test_multiple_month_skip(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
+
+// Test embedded timezone handling (cross-TZ-mishandled)
+// When TZ="..." is specified in input with a base date, apply the timezone to the base
+// https://bugs.debian.org/851934#10
+//
+// NOTE: These tests were added without implementation changes.
+// The timezone handling was already working correctly from previous commits.
+// These tests document and verify the expected behavior for this edge case.
+#[rstest]
+#[case::utc_explicit(r#"TZ="UTC0" 1970-01-01 00:00"#, "1970-01-01 00:00:00+00:00")]
+#[case::with_time(r#"TZ="EST5" 1970-01-01 12:30:45"#, "1970-01-01 12:30:45-05:00")]
+#[case::iana_timezone(
+    r#"TZ="America/New_York" 1970-01-01 00:00"#,
+    "1970-01-01 00:00:00-05:00"
+)]
+// Bug #851934: timezone conversion case
+// Parse date in Australia/Perth (AWST, UTC+8) and output should reflect that timezone
+// Input: 2016-08-15 07:00 in Australia/Perth -> expected: 2016-08-15 07:00:00+08:00
+#[case::perth_to_london(
+    r#"TZ="Australia/Perth" 2016-08-15 07:00"#,
+    "2016-08-15 07:00:00+08:00"
+)]
+fn test_embedded_timezone(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
