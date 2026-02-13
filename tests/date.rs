@@ -112,3 +112,18 @@ fn test_tz_prefix_with_base_date(#[case] input: &str, #[case] expected: &str) {
         .unwrap();
     check_relative(base, input, expected);
 }
+
+// Test leap year overflow: Feb 29 + years → non-leap year should overflow to March 1
+// This matches GNU date behavior
+#[rstest]
+#[case::feb29_1996_plus_1year("1996-02-29 00:00:00", "1 year", "1997-03-01 00:00:00+00:00")]
+#[case::feb29_2020_plus_1year("2020-02-29 00:00:00", "1 year", "2021-03-01 00:00:00+00:00")]
+#[case::feb29_2000_plus_1year("2000-02-29 00:00:00", "1 year", "2001-03-01 00:00:00+00:00")]
+fn test_leap_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expected: &str) {
+    let now = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(now, input, expected);
+}
