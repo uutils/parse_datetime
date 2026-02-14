@@ -29,13 +29,11 @@ use common::{check_absolute, check_relative};
 #[case::year_100("100-11-14", "0100-11-14 00:00:00+00:00")]
 #[case::year_999("999-11-14", "0999-11-14 00:00:00+00:00")]
 #[case::year_9999("9999-11-14", "9999-11-14 00:00:00+00:00")]
-/** TODO: https://github.com/uutils/parse_datetime/issues/160
 #[case::year_10000("10000-12-31", "10000-12-31 00:00:00+00:00")]
 #[case::year_100000("100000-12-31", "100000-12-31 00:00:00+00:00")]
 #[case::year_1000000("1000000-12-31", "1000000-12-31 00:00:00+00:00")]
 #[case::year_10000000("10000000-12-31", "10000000-12-31 00:00:00+00:00")]
 #[case::max_date("2147485547-12-31", "2147485547-12-31 00:00:00+00:00")]
-**/
 #[case::long_month_in_the_middle("14 November 2022", "2022-11-14 00:00:00+00:00")]
 #[case::long_month_in_the_middle_lowercase("14 november 2022", "2022-11-14 00:00:00+00:00")]
 #[case::long_month_in_the_middle_uppercase("14 NOVEMBER 2022", "2022-11-14 00:00:00+00:00")]
@@ -73,6 +71,29 @@ use common::{check_absolute, check_relative};
 #[case::short_month_in_the_middle_dec("14 dec 2022", "2022-12-14 00:00:00+00:00")]
 fn test_absolute_date_numeric(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
+}
+
+#[test]
+fn test_out_of_range_large_year_is_rejected() {
+    assert!(parse_datetime::parse_datetime("2147485548-01-01").is_err());
+}
+
+#[test]
+fn test_large_year_relative_adjustments() {
+    check_absolute("10000-01-31 +1 month", "10000-03-02 00:00:00+00:00");
+    check_absolute("10000-01-01 +3 days", "10000-01-04 00:00:00+00:00");
+}
+
+#[test]
+fn test_large_year_tz_rule() {
+    check_absolute(
+        r#"TZ="UTC+5" 10000-01-01 00:00"#,
+        "10000-01-01 00:00:00-05:00",
+    );
+    check_absolute(
+        r#"TZ="America/New_York" 10000-07-01 00:00"#,
+        "10000-07-01 00:00:00-04:00",
+    );
 }
 
 #[rstest]
