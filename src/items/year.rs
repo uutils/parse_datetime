@@ -12,15 +12,13 @@
 
 use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
 
-use crate::GNU_MAX_YEAR;
-
 use super::primitive::s;
 
 // TODO: Leverage `TryFrom` trait.
-pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
+pub(super) fn year_from_str(year_str: &str) -> Result<u16, &'static str> {
     let mut year = year_str
-        .parse::<u32>()
-        .map_err(|_| "year must be a valid u32 number")?;
+        .parse::<u16>()
+        .map_err(|_| "year must be a valid u16 number")?;
 
     // If year is 68 or smaller, then 2000 is added to it; otherwise, if year
     // is less than 100, then 1900 is added to it.
@@ -36,8 +34,13 @@ pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
         }
     }
 
-    if year > GNU_MAX_YEAR {
-        return Err("year must be no greater than 2147485547");
+    // 2147485547 is the maximum value accepted by GNU, but chrono only
+    // behaves like GNU for years in the range: [0, 9999], so we keep in the
+    // range [0, 9999].
+    //
+    // See discussion in https://github.com/uutils/parse_datetime/issues/160.
+    if year > 9999 {
+        return Err("year must be no greater than 9999");
     }
 
     Ok(year)
@@ -54,20 +57,18 @@ mod tests {
     #[test]
     fn test_year() {
         // 2-characters are converted to 19XX/20XX
-        assert_eq!(year_from_str("10").unwrap(), 2010u32);
-        assert_eq!(year_from_str("68").unwrap(), 2068u32);
-        assert_eq!(year_from_str("69").unwrap(), 1969u32);
-        assert_eq!(year_from_str("99").unwrap(), 1999u32);
+        assert_eq!(year_from_str("10").unwrap(), 2010u16);
+        assert_eq!(year_from_str("68").unwrap(), 2068u16);
+        assert_eq!(year_from_str("69").unwrap(), 1969u16);
+        assert_eq!(year_from_str("99").unwrap(), 1999u16);
 
         // 3,4-characters are converted verbatim
-        assert_eq!(year_from_str("468").unwrap(), 468u32);
-        assert_eq!(year_from_str("469").unwrap(), 469u32);
-        assert_eq!(year_from_str("1568").unwrap(), 1568u32);
-        assert_eq!(year_from_str("1569").unwrap(), 1569u32);
+        assert_eq!(year_from_str("468").unwrap(), 468u16);
+        assert_eq!(year_from_str("469").unwrap(), 469u16);
+        assert_eq!(year_from_str("1568").unwrap(), 1568u16);
+        assert_eq!(year_from_str("1569").unwrap(), 1569u16);
 
-        // very large years are accepted up to GNU's upper bound
-        assert_eq!(year_from_str("10000").unwrap(), 10000u32);
-        assert_eq!(year_from_str("2147485547").unwrap(), 2_147_485_547u32);
-        assert!(year_from_str("2147485548").is_err());
+        // years greater than 9999 are not accepted
+        assert!(year_from_str("10000").is_err());
     }
 }

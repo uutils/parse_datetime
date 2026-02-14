@@ -4,7 +4,6 @@
 use jiff::{civil, Span, Zoned};
 
 use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
-use crate::{ExtendedDateTime, ParsedDateTime};
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -186,13 +185,7 @@ impl DateTimeBuilder {
     ///   - c. Apply weekday (e.g., "next Friday" or "last Monday").
     ///   - d. Apply relative adjustments (e.g., "+3 days", "-2 months").
     ///   - e. Apply final fixed offset if present.
-    pub(super) fn build(self) -> Result<ParsedDateTime, error::Error> {
-        if let Some(date) = self.date.as_ref() {
-            if date.year.unwrap_or(0) > 9999 {
-                return self.build_extended();
-            }
-        }
-
+    pub(super) fn build(self) -> Result<Zoned, error::Error> {
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
@@ -207,9 +200,7 @@ impl DateTimeBuilder {
         // 2. Absolute timestamp override everything else.
         if let Some(ts) = self.timestamp {
             let ts = jiff::Timestamp::try_from(ts)?;
-            return Ok(ParsedDateTime::InRange(
-                ts.to_zoned(base.offset().to_time_zone()),
-            ));
+            return Ok(ts.to_zoned(base.offset().to_time_zone()));
         }
 
         // 3. Determine whether to truncate the time of day.
@@ -230,7 +221,7 @@ impl DateTimeBuilder {
             let d: civil::Date = if date.year.is_some() {
                 date.try_into()?
             } else {
-                date.with_year(dt.date().year() as u32).try_into()?
+                date.with_year(dt.date().year() as u16).try_into()?
             };
             dt = dt.with().date(d).build()?;
         }
@@ -305,173 +296,7 @@ impl DateTimeBuilder {
             dt = dt.datetime().to_zoned((&offset).try_into()?)?;
         }
 
-        Ok(ParsedDateTime::InRange(dt))
-    }
-
-    fn build_extended(self) -> Result<ParsedDateTime, error::Error> {
-        if self.timestamp.is_some() {
-            return Err("timestamp cannot be combined with large years".into());
-        }
-        let DateTimeBuilder {
-            base,
-            timestamp: _,
-            date,
-            time,
-            weekday,
-            offset,
-            timezone,
-            relative,
-        } = self;
-
-        let has_timezone = timezone.is_some();
-        let base = match (base, timezone) {
-            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz),
-            (Some(b), None) => b,
-            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz),
-            (None, None) => Zoned::now(),
-        };
-        let rule_tz = base.time_zone().clone();
-
-        let need_midnight = date.is_some()
-            || time.is_some()
-            || weekday.is_some()
-            || offset.is_some()
-            || has_timezone;
-        let mut dt = ExtendedDateTime::new(
-            u32::try_from(base.year()).map_err(|_| "year must be non-negative")?,
-            base.month() as u8,
-            base.day() as u8,
-            if need_midnight { 0 } else { base.hour() as u8 },
-            if need_midnight {
-                0
-            } else {
-                base.minute() as u8
-            },
-            if need_midnight {
-                0
-            } else {
-                base.second() as u8
-            },
-            if need_midnight {
-                0
-            } else {
-                base.subsec_nanosecond() as u32
-            },
-            base.offset().seconds(),
-        )?;
-
-        if let Some(date) = date {
-            let year = date.year.unwrap_or(dt.year);
-            dt = dt.with_date(year, date.month, date.day)?;
-        }
-
-        let had_time_item = time.is_some();
-        let has_time_offset = time.as_ref().and_then(|t| t.offset.as_ref()).is_some();
-        if let Some(time) = time {
-            if let Some(offset) = time.offset {
-                dt = dt.with_offset(offset.total_seconds())?;
-            }
-            dt = dt.with_time(time.hour, time.minute, time.second, time.nanosecond)?;
-        }
-
-        if let Some(weekday::Weekday {
-            mut offset,
-            day: target_day,
-        }) = weekday
-        {
-            if !had_time_item {
-                dt = dt.with_time(0, 0, 0, 0)?;
-            }
-
-            let target = weekday_monday0(target_day);
-            if dt.weekday_monday0() != target && offset > 0 {
-                offset -= 1;
-            }
-
-            let delta = (target as i32 - dt.weekday_monday0() as i32).rem_euclid(7)
-                + offset.checked_mul(7).ok_or("multiplication overflow")?;
-            dt = dt.checked_add_days(delta as i64)?;
-        }
-
-        for rel in relative {
-            dt = match rel {
-                relative::Relative::Years(years) => dt.checked_add_years(years)?,
-                relative::Relative::Months(months) => {
-                    // Mirror the in-range path: treat one "month" as the
-                    // current month's day count.
-                    let month_len = i64::from(crate::extended::days_in_month(dt.year, dt.month));
-                    dt.checked_add_days(
-                        month_len
-                            .checked_mul(i64::from(months))
-                            .ok_or("multiplication overflow")?,
-                    )?
-                }
-                relative::Relative::Days(days) => dt.checked_add_days(days as i64)?,
-                relative::Relative::Hours(hours) => dt.checked_add_hours(hours as i64)?,
-                relative::Relative::Minutes(minutes) => dt.checked_add_minutes(minutes as i64)?,
-                relative::Relative::Seconds(seconds, nanos) => {
-                    dt.checked_add_seconds(seconds, nanos)?
-                }
-            };
-        }
-
-        if !has_time_offset && offset.is_none() {
-            let offset_seconds = resolve_rule_offset_for_extended(&rule_tz, &dt)?;
-            dt = dt.with_offset(offset_seconds)?;
-        }
-
-        if let Some(offset) = offset {
-            let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add_hours(hour_adjustment as i64)?;
-            dt = dt.with_offset(offset.total_seconds())?;
-        }
-
-        if dt.year <= 9999 {
-            let ts = jiff::Timestamp::new(dt.unix_seconds(), dt.nanosecond as i32)?;
-            let tz = jiff::tz::Offset::from_seconds(dt.offset_seconds)?.to_time_zone();
-            return Ok(ParsedDateTime::InRange(ts.to_zoned(tz)));
-        }
-
-        Ok(ParsedDateTime::Extended(dt))
-    }
-}
-
-fn surrogate_year_for_rules(year: u32) -> i16 {
-    if year <= 9_999 {
-        year as i16
-    } else {
-        const BASE: u32 = 9_600;
-        (BASE + ((year - BASE) % 400)) as i16
-    }
-}
-
-fn resolve_rule_offset_for_extended(
-    tz: &jiff::tz::TimeZone,
-    dt: &ExtendedDateTime,
-) -> Result<i32, error::Error> {
-    let surrogate_year = surrogate_year_for_rules(dt.year);
-    let surrogate_dt = civil::DateTime::new(
-        surrogate_year,
-        dt.month as i8,
-        dt.day as i8,
-        dt.hour as i8,
-        dt.minute as i8,
-        dt.second as i8,
-        dt.nanosecond as i32,
-    )?;
-    let zoned = tz.to_ambiguous_zoned(surrogate_dt).compatible()?;
-    Ok(zoned.offset().seconds())
-}
-
-fn weekday_monday0(day: weekday::Day) -> u8 {
-    match day {
-        weekday::Day::Monday => 0,
-        weekday::Day::Tuesday => 1,
-        weekday::Day::Wednesday => 2,
-        weekday::Day::Thursday => 3,
-        weekday::Day::Friday => 4,
-        weekday::Day::Saturday => 5,
-        weekday::Day::Sunday => 6,
+        Ok(dt)
     }
 }
 

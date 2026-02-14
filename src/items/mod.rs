@@ -48,7 +48,6 @@ mod primitive;
 
 pub(crate) mod error;
 
-use crate::ParsedDateTime;
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
@@ -76,10 +75,7 @@ enum Item {
 
 /// Parse a date and time string and build a `Zoned` object. The parsed result
 /// is resolved against the given base date and time.
-pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
-    base: Zoned,
-    input: S,
-) -> Result<ParsedDateTime, Error> {
+pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(base: Zoned, input: S) -> Result<Zoned, Error> {
     match parse(&mut input.as_ref()) {
         Ok(builder) => builder.set_base(base).build(),
         Err(e) => Err(e.into()),
@@ -88,7 +84,7 @@ pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
 
 /// Parse a date and time string and build a `Zoned` object. The parsed result
 /// is resolved against the current local date and time.
-pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDateTime, Error> {
+pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, Error> {
     match parse(&mut input.as_ref()) {
         Ok(builder) => builder.build(), // the builder uses current local date and time if no base is given.
         Err(e) => Err(e.into()),
@@ -281,13 +277,12 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 
 #[cfg(test)]
 mod tests {
-    use crate::ParsedDateTime;
     use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
 
     use super::*;
 
     fn at_date(builder: DateTimeBuilder, base: Zoned) -> Zoned {
-        builder.set_base(base).build().unwrap().expect_in_range()
+        builder.set_base(base).build().unwrap()
     }
 
     fn at_utc(builder: DateTimeBuilder) -> Zoned {
@@ -413,14 +408,13 @@ mod tests {
         let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
 
-        // Pure number as year (large years are accepted).
+        // Pure number as year (too large).
         let result = parse(&mut "jul 18 12:30 10000");
-        assert!(result.is_ok());
-        let built = result.unwrap().build().unwrap();
-        match built {
-            ParsedDateTime::Extended(dt) => assert_eq!(dt.year, 10000),
-            ParsedDateTime::InRange(_) => panic!("expected an extended datetime"),
-        }
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("year must be no greater than 9999"));
 
         // Pure number as time (too long).
         let result = parse(&mut "01:02 12345");
@@ -569,15 +563,11 @@ mod tests {
         for (input, expected) in [
             (
                 r#"TZ="Europe/Paris" 2025-01-02"#,
-                "2025-01-02 00:00:00[Europe/Paris]"
-                    .parse::<Zoned>()
-                    .unwrap(),
+                "2025-01-02 00:00:00[Europe/Paris]".parse().unwrap(),
             ),
             (
                 r#"TZ="Europe/Paris" 2025-01-02 03:04:05"#,
-                "2025-01-02 03:04:05[Europe/Paris]"
-                    .parse::<Zoned>()
-                    .unwrap(),
+                "2025-01-02 03:04:05[Europe/Paris]".parse().unwrap(),
             ),
         ] {
             assert_eq!(parse_build(input), expected, "{input}");

@@ -4,31 +4,7 @@
 use std::env;
 
 use jiff::Zoned;
-use parse_datetime::{parse_datetime, parse_datetime_at_date, ParsedDateTime};
-
-fn format_offset_colon(seconds: i32) -> String {
-    let sign = if seconds < 0 { '-' } else { '+' };
-    let abs = seconds.unsigned_abs();
-    let h = abs / 3600;
-    let m = (abs % 3600) / 60;
-    format!("{sign}{h:02}:{m:02}")
-}
-
-fn format_for_assert(parsed: ParsedDateTime) -> String {
-    match parsed {
-        ParsedDateTime::InRange(z) => z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
-        ParsedDateTime::Extended(dt) => format!(
-            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}",
-            dt.year,
-            dt.month,
-            dt.day,
-            dt.hour,
-            dt.minute,
-            dt.second,
-            format_offset_colon(dt.offset_seconds)
-        ),
-    }
-}
+use parse_datetime::{parse_datetime, parse_datetime_at_date};
 
 pub fn check_absolute(input: &str, expected: &str) {
     env::set_var("TZ", "UTC0");
@@ -38,7 +14,11 @@ pub fn check_absolute(input: &str, expected: &str) {
         Err(e) => panic!("Failed to parse date from value '{input}': {e}"),
     };
 
-    assert_eq!(format_for_assert(parsed), expected, "Input value: {input}");
+    assert_eq!(
+        parsed.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+        expected,
+        "Input value: {input}"
+    );
 }
 
 pub fn check_relative(now: Zoned, input: &str, expected: &str) {
@@ -49,5 +29,9 @@ pub fn check_relative(now: Zoned, input: &str, expected: &str) {
         Err(e) => panic!("Failed to parse date from value '{input}': {e}"),
     };
 
-    assert_eq!(format_for_assert(parsed), expected, "Input value: {input}");
+    assert_eq!(
+        parsed.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+        expected,
+        "Input value: {input}"
+    );
 }

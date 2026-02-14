@@ -1,7 +1,6 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
-//! A Rust crate for parsing human-readable relative time strings and
-//! human-readable datetime strings.
+//! A Rust crate for parsing human-readable relative time strings and human-readable datetime strings and converting them to a `DateTime`.
 //! The function supports the following formats for time:
 //!
 //! * ISO formats
@@ -11,68 +10,10 @@
 //!
 use std::error::Error;
 use std::fmt::{self, Display};
-use std::ops::Deref;
 
 use jiff::Zoned;
 
-mod extended;
 mod items;
-
-pub use extended::ExtendedDateTime;
-
-/// Maximum year accepted by GNU `date`.
-pub const GNU_MAX_YEAR: u32 = 2_147_485_547;
-
-/// Parsed datetime output.
-///
-/// - [`ParsedDateTime::InRange`] contains a standard [`jiff::Zoned`] value.
-/// - [`ParsedDateTime::Extended`] contains an out-of-range year representation
-///   (for example, years greater than `9999`) that cannot be represented by
-///   `jiff::Zoned`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParsedDateTime {
-    InRange(Zoned),
-    Extended(ExtendedDateTime),
-}
-
-impl ParsedDateTime {
-    pub fn as_zoned(&self) -> Option<&Zoned> {
-        match self {
-            ParsedDateTime::InRange(z) => Some(z),
-            ParsedDateTime::Extended(_) => None,
-        }
-    }
-
-    pub fn into_zoned(self) -> Option<Zoned> {
-        match self {
-            ParsedDateTime::InRange(z) => Some(z),
-            ParsedDateTime::Extended(_) => None,
-        }
-    }
-
-    pub fn expect_in_range(self) -> Zoned {
-        self.into_zoned()
-            .expect("ParsedDateTime is not representable as jiff::Zoned")
-    }
-}
-
-impl Deref for ParsedDateTime {
-    type Target = Zoned;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_zoned()
-            .expect("ParsedDateTime is not representable as jiff::Zoned")
-    }
-}
-
-impl PartialEq<Zoned> for ParsedDateTime {
-    fn eq(&self, other: &Zoned) -> bool {
-        match self {
-            ParsedDateTime::InRange(z) => z == other,
-            ParsedDateTime::Extended(_) => false,
-        }
-    }
-}
 
 #[derive(Debug, PartialEq)]
 pub enum ParseDateTimeError {
@@ -100,8 +41,8 @@ impl From<items::error::Error> for ParseDateTimeError {
     }
 }
 
-/// Parses a time string and returns a [`ParsedDateTime`] representing the
-/// absolute time of the string.
+/// Parses a time string and returns a `Zoned` object representing the absolute
+/// time of the string.
 ///
 /// # Arguments
 ///
@@ -110,21 +51,17 @@ impl From<items::error::Error> for ParseDateTimeError {
 /// # Examples
 ///
 /// ```
-/// use parse_datetime::{parse_datetime, ParsedDateTime};
+/// use jiff::Zoned;
+/// use parse_datetime::parse_datetime;
 ///
 /// let time = parse_datetime("2023-06-03 12:00:01Z").unwrap();
-/// match time {
-///     ParsedDateTime::InRange(z) => {
-///         assert_eq!(z.strftime("%F %T").to_string(), "2023-06-03 12:00:01");
-///     }
-///     ParsedDateTime::Extended(_) => unreachable!("unexpected for this input"),
-/// }
+/// assert_eq!(time.strftime("%F %T").to_string(), "2023-06-03 12:00:01");
 /// ```
 ///
 ///
 /// # Returns
 ///
-/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Ok(Zoned)` - If the input string can be parsed as a time
 /// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a
 ///   relative time
 ///
@@ -132,13 +69,11 @@ impl From<items::error::Error> for ParseDateTimeError {
 ///
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
 /// input string cannot be parsed as a relative time.
-pub fn parse_datetime<S: AsRef<str> + Clone>(
-    input: S,
-) -> Result<ParsedDateTime, ParseDateTimeError> {
+pub fn parse_datetime<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDateTimeError> {
     items::parse_at_local(input).map_err(|e| e.into())
 }
 
-/// Parses a time string at a specific date and returns a [`ParsedDateTime`]
+/// Parses a time string at a specific date and returns a `Zoned` object
 /// representing the absolute time of the string.
 ///
 /// # Arguments
@@ -150,20 +85,20 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 ///
 /// ```
 /// use jiff::Zoned;
-/// use parse_datetime::{parse_datetime_at_date, ParsedDateTime};
+/// use parse_datetime::parse_datetime_at_date;
 ///
 ///  let now = Zoned::now();
 ///  let after = parse_datetime_at_date(now, "2024-09-13UTC +3 days").unwrap();
 ///
-///  match after {
-///      ParsedDateTime::InRange(z) => assert_eq!("2024-09-16", z.strftime("%F").to_string()),
-///      ParsedDateTime::Extended(_) => unreachable!("unexpected for this input"),
-///  }
+///  assert_eq!(
+///    "2024-09-16",
+///    after.strftime("%F").to_string()
+///  );
 /// ```
 ///
 /// # Returns
 ///
-/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Ok(Zoned)` - If the input string can be parsed as a time
 /// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a
 ///   relative time
 ///
@@ -174,7 +109,7 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     date: Zoned,
     input: S,
-) -> Result<ParsedDateTime, ParseDateTimeError> {
+) -> Result<Zoned, ParseDateTimeError> {
     items::parse_at_date(date, input).map_err(|e| e.into())
 }
 
@@ -280,14 +215,14 @@ mod tests {
                 .build()
                 .unwrap();
 
-            assert_eq!(parse_datetime("1987-05-07").unwrap(), expected);
-            assert_eq!(parse_datetime("1987-5-07").unwrap(), expected);
-            assert_eq!(parse_datetime("1987-05-7").unwrap(), expected);
-            assert_eq!(parse_datetime("1987-5-7").unwrap(), expected);
-            assert_eq!(parse_datetime("5/7/1987").unwrap(), expected);
-            assert_eq!(parse_datetime("5/07/1987").unwrap(), expected);
-            assert_eq!(parse_datetime("05/7/1987").unwrap(), expected);
-            assert_eq!(parse_datetime("05/07/1987").unwrap(), expected);
+            assert_eq!(expected, parse_datetime("1987-05-07").unwrap());
+            assert_eq!(expected, parse_datetime("1987-5-07").unwrap());
+            assert_eq!(expected, parse_datetime("1987-05-7").unwrap());
+            assert_eq!(expected, parse_datetime("1987-5-7").unwrap());
+            assert_eq!(expected, parse_datetime("5/7/1987").unwrap());
+            assert_eq!(expected, parse_datetime("5/07/1987").unwrap());
+            assert_eq!(expected, parse_datetime("05/7/1987").unwrap());
+            assert_eq!(expected, parse_datetime("05/07/1987").unwrap());
         }
     }
 
