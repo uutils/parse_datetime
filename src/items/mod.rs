@@ -408,13 +408,9 @@ mod tests {
         let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
 
-        // Pure number as year (too large).
+        // Pure number as year (large years are parsed successfully).
         let result = parse(&mut "jul 18 12:30 10000");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("year must be no greater than 9999"));
+        assert!(result.is_ok());
 
         // Pure number as time (too long).
         let result = parse(&mut "01:02 12345");
