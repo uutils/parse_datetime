@@ -333,3 +333,146 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
         Ok(builder)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper functions to create test items by parsing
+    fn timestamp() -> epoch::Timestamp {
+        let mut input = "@1234567890";
+        epoch::parse(&mut input).unwrap()
+    }
+
+    fn date() -> date::Date {
+        let mut input = "2023-06-15";
+        date::parse(&mut input).unwrap()
+    }
+
+    fn time() -> time::Time {
+        let mut input = "12:30:00";
+        time::parse(&mut input).unwrap()
+    }
+
+    fn time_with_offset() -> time::Time {
+        let mut input = "12:30:00+05:00";
+        time::parse(&mut input).unwrap()
+    }
+
+    fn weekday() -> weekday::Weekday {
+        let mut input = "monday";
+        weekday::parse(&mut input).unwrap()
+    }
+
+    fn offset() -> offset::Offset {
+        let mut input = "+05:00";
+        offset::timezone_offset(&mut input).unwrap()
+    }
+
+    fn relative() -> relative::Relative {
+        let mut input = "1 day";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn timezone() -> jiff::tz::TimeZone {
+        jiff::tz::TimeZone::UTC
+    }
+
+    #[test]
+    fn test_duplicate_items_errors() {
+        let test_cases = vec![
+            (
+                vec![Item::TimeZone(timezone()), Item::TimeZone(timezone())],
+                "timezone rule cannot appear more than once",
+            ),
+            (
+                vec![Item::Timestamp(timestamp()), Item::Timestamp(timestamp())],
+                "timestamp cannot appear more than once",
+            ),
+            (
+                vec![Item::Date(date()), Item::Date(date())],
+                "date cannot appear more than once",
+            ),
+            (
+                vec![Item::Time(time()), Item::Time(time())],
+                "time cannot appear more than once",
+            ),
+            (
+                vec![Item::Weekday(weekday()), Item::Weekday(weekday())],
+                "weekday cannot appear more than once",
+            ),
+            (
+                vec![Item::Offset(offset()), Item::Offset(offset())],
+                "time offset cannot appear more than once",
+            ),
+        ];
+
+        for (items, expected_err) in test_cases {
+            let result = DateTimeBuilder::try_from(items);
+            assert_eq!(result.unwrap_err(), expected_err);
+        }
+    }
+
+    #[test]
+    fn test_timestamp_cannot_be_combined_with_other_items() {
+        let test_cases = vec![
+            vec![Item::Date(date()), Item::Timestamp(timestamp())],
+            vec![Item::Time(time()), Item::Timestamp(timestamp())],
+            vec![Item::Weekday(weekday()), Item::Timestamp(timestamp())],
+            vec![Item::Offset(offset()), Item::Timestamp(timestamp())],
+            vec![Item::Relative(relative()), Item::Timestamp(timestamp())],
+            vec![Item::Timestamp(timestamp()), Item::Date(date())],
+            vec![Item::Timestamp(timestamp()), Item::Time(time())],
+            vec![Item::Timestamp(timestamp()), Item::Weekday(weekday())],
+            vec![Item::Timestamp(timestamp()), Item::Relative(relative())],
+            vec![Item::Timestamp(timestamp()), Item::Offset(offset())],
+            vec![Item::Timestamp(timestamp()), Item::Pure("2023".to_string())],
+        ];
+
+        for items in test_cases {
+            let result = DateTimeBuilder::try_from(items);
+            assert_eq!(
+                result.unwrap_err(),
+                "timestamp cannot be combined with other date/time items"
+            );
+        }
+    }
+
+    #[test]
+    fn test_time_offset_conflicts() {
+        // Time with offset followed by separate Offset item
+        let items1 = vec![Item::Time(time_with_offset()), Item::Offset(offset())];
+        assert_eq!(
+            DateTimeBuilder::try_from(items1).unwrap_err(),
+            "time offset cannot appear more than once"
+        );
+
+        // Offset item followed by Time with offset
+        let items2 = vec![Item::Offset(offset()), Item::Time(time_with_offset())];
+        assert_eq!(
+            DateTimeBuilder::try_from(items2).unwrap_err(),
+            "time offset and timezone are mutually exclusive"
+        );
+    }
+
+    #[test]
+    fn test_valid_combination_date_time() {
+        let items = vec![Item::Date(date()), Item::Time(time())];
+        let result = DateTimeBuilder::try_from(items);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_combination_date_weekday() {
+        let items = vec![Item::Date(date()), Item::Weekday(weekday())];
+        let result = DateTimeBuilder::try_from(items);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_timestamp_alone() {
+        let items = vec![Item::Timestamp(timestamp())];
+        let result = DateTimeBuilder::try_from(items);
+        assert!(result.is_ok());
+    }
+}

@@ -142,3 +142,64 @@ pub(super) fn ctx_err(reason: &'static str) -> ContextError {
     err.push(StrContext::Expected(StrContextValue::Description(reason)));
     err
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_dec_int() {
+        for (input, expected) in [
+            ("123", 123),                 // positive without sign
+            ("+123", 123),                // positive with '+' sign
+            ("-123", -123),               // negative with '-' sign
+            ("0", 0),                     // zero
+            ("+0", 0),                    // zero with '+' sign
+            ("-0", 0),                    // zero with '-' sign (parses as 0)
+            ("012", 12),                  // zero-prefixed (the main reason for this function)
+            ("+012", 12),                 // zero-prefixed with '+' sign
+            ("-012", -12),                // zero-prefixed with '-' sign
+            ("00123", 123),               // multiple leading zeros
+            ("2147483647", 2147483647),   // i32::MAX
+            ("-2147483648", -2147483648), // i32::MIN
+        ] {
+            let mut s = input;
+            assert_eq!(
+                dec_int::<ContextError>(&mut s).unwrap(),
+                expected,
+                "{input}"
+            );
+        }
+
+        for input in [
+            "",    // empty string
+            "+",   // sign without digits
+            "-",   // sign without digits
+            "abc", // non-numeric
+            "12a", // starts with digits but has non-digit after (but should parse "12" successfully)
+        ] {
+            let mut s = input;
+            let result = dec_int::<ContextError>(&mut s);
+            // Note: "12a" will actually succeed and parse "12", leaving "a" unparsed
+            if input == "12a" {
+                assert_eq!(result.unwrap(), 12, "{input}");
+                assert_eq!(s, "a", "Should leave 'a' unparsed");
+            } else {
+                assert!(result.is_err(), "{input} should fail");
+            }
+        }
+
+        // Test overflow cases
+        for input in [
+            "2147483648",  // i32::MAX + 1
+            "-2147483649", // i32::MIN - 1
+            "99999999999", // way too large
+        ] {
+            let mut s = input;
+            assert!(
+                dec_int::<ContextError>(&mut s).is_err(),
+                "{input} should overflow"
+            );
+        }
+    }
+}
