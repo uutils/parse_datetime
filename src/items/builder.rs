@@ -221,7 +221,7 @@ impl DateTimeBuilder {
             let d: civil::Date = if date.year.is_some() {
                 date.try_into()?
             } else {
-                date.with_year(dt.date().year() as u16).try_into()?
+                date.with_year(dt.date().year() as u32).try_into()?
             };
             dt = dt.with().date(d).build()?;
         }

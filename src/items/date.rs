@@ -44,11 +44,11 @@ use super::{
 pub(crate) struct Date {
     pub(crate) day: u8,
     pub(crate) month: u8,
-    pub(crate) year: Option<u16>,
+    pub(crate) year: Option<u32>,
 }
 
 impl Date {
-    pub(super) fn with_year(self, year: u16) -> Self {
+    pub(super) fn with_year(self, year: u32) -> Self {
         Date {
             day: self.day,
             month: self.month,
@@ -118,12 +118,12 @@ impl TryFrom<Date> for jiff::civil::Date {
     type Error = &'static str;
 
     fn try_from(date: Date) -> Result<Self, Self::Error> {
-        jiff::civil::Date::new(
-            date.year.unwrap_or(0) as i16,
-            date.month as i8,
-            date.day as i8,
-        )
-        .map_err(|_| "date is not valid")
+        let year = date.year.unwrap_or(0);
+        let year: i16 = year
+            .try_into()
+            .map_err(|_| "date year is outside the supported range")?;
+        jiff::civil::Date::new(year, date.month as i8, date.day as i8)
+            .map_err(|_| "date is not valid")
     }
 }
 
