@@ -446,6 +446,20 @@ mod tests {
     }
 
     #[test]
+    fn negative_base_year_with_yearless_date_errors() {
+        let base = DateTime::new(-1, 1, 1, 0, 0, 0, 0)
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "11/14");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("base year must be non-negative"));
+    }
+
+    #[test]
     fn relative_weekday() {
         // Jan 1 2025 is a Wed
         let now = "2025-01-01 00:00:00"

@@ -15,12 +15,13 @@ use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
 use super::primitive::s;
 
 const GNU_MAX_YEAR: u32 = 2_147_485_547;
+const GNU_MAX_YEAR_ERROR: &str = "year exceeds GNU maximum";
 
 // TODO: Leverage `TryFrom` trait.
 pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
     let mut year = year_str
         .parse::<u32>()
-        .map_err(|_| "year must be a valid u32 number")?;
+        .map_err(|_| "year must be a non-negative integer")?;
 
     // If year is 68 or smaller, then 2000 is added to it; otherwise, if year
     // is less than 100, then 1900 is added to it.
@@ -37,7 +38,7 @@ pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
     }
 
     if year > GNU_MAX_YEAR {
-        return Err("year must be no greater than 2147485547");
+        return Err(GNU_MAX_YEAR_ERROR);
     }
 
     Ok(year)
@@ -68,6 +69,17 @@ mod tests {
         // very large years are accepted up to GNU's upper bound
         assert_eq!(year_from_str("10000").unwrap(), 10000u32);
         assert_eq!(year_from_str("2147485547").unwrap(), 2_147_485_547u32);
-        assert!(year_from_str("2147485548").is_err());
+        assert_eq!(
+            year_from_str("2147485548").unwrap_err(),
+            "year exceeds GNU maximum"
+        );
+    }
+
+    #[test]
+    fn test_year_errors() {
+        assert_eq!(
+            year_from_str("not-a-year").unwrap_err(),
+            "year must be a non-negative integer"
+        );
     }
 }
