@@ -610,6 +610,21 @@ mod tests {
     }
 
     #[test]
+    fn large_year_can_return_in_range_after_relative_with_named_timezone_rule() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "TZ=\"Europe/Paris\" 10000-01-01 -1000 years").unwrap();
+        let z = expect_in_range_datetime(result);
+        assert_eq!(
+            z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+            "9000-01-01 00:00:00+01:00"
+        );
+    }
+
+    #[test]
     fn large_year_time_with_explicit_offset_is_extended() {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
