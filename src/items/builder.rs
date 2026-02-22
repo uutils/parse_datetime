@@ -459,9 +459,12 @@ impl DateTimeBuilder {
         }
 
         if dt.year <= 9999 {
-            let ts = jiff::Timestamp::new(dt.unix_seconds(), dt.nanosecond as i32)?;
-            let tz = jiff::tz::Offset::from_seconds(dt.offset_seconds)?.to_time_zone();
-            return Ok(ParsedDateTime::InRange(ts.to_zoned(tz)));
+            if let (Ok(ts), Ok(offset)) = (
+                jiff::Timestamp::new(dt.unix_seconds(), dt.nanosecond as i32),
+                jiff::tz::Offset::from_seconds(dt.offset_seconds),
+            ) {
+                return Ok(ParsedDateTime::InRange(ts.to_zoned(offset.to_time_zone())));
+            }
         }
 
         Ok(ParsedDateTime::Extended(dt))

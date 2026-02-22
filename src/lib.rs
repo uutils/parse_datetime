@@ -528,6 +528,17 @@ mod tests {
     }
 
     #[test]
+    fn parsed_datetime_accessors_cover_both_variants() {
+        let in_range = parse_datetime("2023-06-03 12:00:01Z").unwrap();
+        assert!(in_range.as_zoned().is_some());
+        assert!(in_range.into_zoned().is_some());
+
+        let extended = parse_datetime("10000-01-01").unwrap();
+        assert!(extended.as_zoned().is_none());
+        assert!(extended.into_zoned().is_none());
+    }
+
+    #[test]
     fn test_parse_invalid_datetime() {
         assert!(crate::parse_datetime("bogus +1 day").is_err());
     }

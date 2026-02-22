@@ -545,6 +545,43 @@ mod tests {
     }
 
     #[test]
+    fn large_year_can_return_in_range_after_relative() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "10000-01-01 -1000 years").unwrap();
+        match result {
+            ParsedDateTime::InRange(z) => {
+                assert_eq!(
+                    z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+                    "9000-01-01 00:00:00+00:00"
+                );
+            }
+            ParsedDateTime::Extended(_) => panic!("expected in-range result"),
+        }
+    }
+
+    #[test]
+    fn large_year_time_with_explicit_offset_is_extended() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "10000-01-01 12:34:56+02:00").unwrap();
+        match result {
+            ParsedDateTime::Extended(dt) => {
+                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
+                assert_eq!((dt.hour, dt.minute, dt.second), (12, 34, 56));
+                assert_eq!(dt.offset_seconds, 2 * 3600);
+            }
+            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        }
+    }
+
+    #[test]
     fn relative_weekday() {
         // Jan 1 2025 is a Wed
         let now = "2025-01-01 00:00:00"

@@ -339,6 +339,8 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
+    use crate::GNU_MAX_YEAR;
+
     use super::{is_leap_year, DateParts, ExtendedDateTime, TimeParts};
 
     #[test]
@@ -435,5 +437,195 @@ mod tests {
 
         let plus_3 = dt.checked_add_months(3).unwrap();
         assert_eq!((plus_3.year, plus_3.month, plus_3.day), (10000, 5, 1));
+    }
+
+    #[test]
+    fn constructor_validation_errors() {
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: GNU_MAX_YEAR + 1,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 13,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 2,
+                day: 30
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 24,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 1_000_000_000
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            },
+            86_401
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn from_unix_seconds_validation() {
+        assert!(ExtendedDateTime::from_unix_seconds(0, 1_000_000_000, 0).is_err());
+        assert!(ExtendedDateTime::from_unix_seconds(0, 0, 86_401).is_err());
+    }
+
+    #[test]
+    fn checked_add_seconds_carries_nanoseconds() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 900_000_000,
+            },
+            0,
+        )
+        .unwrap();
+        let actual = dt.checked_add_seconds(0, 200_000_000).unwrap();
+        assert_eq!(
+            (
+                actual.year,
+                actual.month,
+                actual.day,
+                actual.hour,
+                actual.minute,
+                actual.second,
+                actual.nanosecond
+            ),
+            (10000, 1, 1, 0, 0, 1, 100_000_000)
+        );
+    }
+
+    #[test]
+    fn checked_add_months_validation() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 0,
+                month: 1,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(dt.checked_add_months(-1).is_err());
+
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: GNU_MAX_YEAR,
+                month: 12,
+                day: 31,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(dt.checked_add_months(1).is_err());
+    }
+
+    #[test]
+    fn day_of_year_and_weekday_helpers() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 12,
+                day: 31,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(dt.day_of_year(), 366);
+        assert_eq!(dt.weekday_monday0(), (dt.weekday_sunday0() + 6) % 7);
     }
 }
