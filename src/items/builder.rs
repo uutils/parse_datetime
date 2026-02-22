@@ -472,12 +472,11 @@ impl DateTimeBuilder {
 }
 
 fn surrogate_year_for_rules(year: u32) -> i16 {
-    if year <= 9_999 {
-        year as i16
-    } else {
-        const BASE: u32 = 9_600;
-        (BASE + ((year - BASE) % 400)) as i16
-    }
+    // Keep weekday/leap-year parity by preserving `year mod 400`, but avoid
+    // upper-bound years that can overflow when resolving a zoned instant.
+    const BASE: i64 = 9_599;
+    let mapped = BASE + (i64::from(year) - BASE).rem_euclid(400);
+    mapped as i16
 }
 
 fn resolve_rule_offset_for_extended(
@@ -531,5 +530,215 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
         }
 
         Ok(builder)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jiff::{civil::DateTime, tz::TimeZone};
+
+    fn timestamp() -> epoch::Timestamp {
+        let mut input = "@1234567890";
+        epoch::parse(&mut input).unwrap()
+    }
+
+    fn date() -> date::Date {
+        let mut input = "2023-06-15";
+        date::parse(&mut input).unwrap()
+    }
+
+    fn date_large(input: &str) -> date::Date {
+        let mut input = input;
+        date::parse(&mut input).unwrap()
+    }
+
+    fn time() -> time::Time {
+        let mut input = "12:30:00";
+        time::parse(&mut input).unwrap()
+    }
+
+    fn time_with_offset() -> time::Time {
+        let mut input = "12:30:00+05:00";
+        time::parse(&mut input).unwrap()
+    }
+
+    fn weekday() -> weekday::Weekday {
+        let mut input = "monday";
+        weekday::parse(&mut input).unwrap()
+    }
+
+    fn offset() -> offset::Offset {
+        let mut input = "+05:00";
+        offset::timezone_offset(&mut input).unwrap()
+    }
+
+    fn relative_day() -> relative::Relative {
+        let mut input = "1 day";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn relative_day_ago() -> relative::Relative {
+        let mut input = "1 day ago";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn timezone() -> jiff::tz::TimeZone {
+        jiff::tz::TimeZone::UTC
+    }
+
+    #[test]
+    fn duplicate_items_error() {
+        let test_cases = vec![
+            (
+                vec![Item::TimeZone(timezone()), Item::TimeZone(timezone())],
+                "timezone rule cannot appear more than once",
+            ),
+            (
+                vec![Item::Timestamp(timestamp()), Item::Timestamp(timestamp())],
+                "timestamp cannot appear more than once",
+            ),
+            (
+                vec![Item::Date(date()), Item::Date(date())],
+                "date cannot appear more than once",
+            ),
+            (
+                vec![Item::Time(time()), Item::Time(time())],
+                "time cannot appear more than once",
+            ),
+            (
+                vec![Item::Weekday(weekday()), Item::Weekday(weekday())],
+                "weekday cannot appear more than once",
+            ),
+            (
+                vec![Item::Offset(offset()), Item::Offset(offset())],
+                "time offset cannot appear more than once",
+            ),
+        ];
+
+        for (items, expected_err) in test_cases {
+            let result = DateTimeBuilder::try_from(items);
+            assert_eq!(result.unwrap_err(), expected_err);
+        }
+    }
+
+    #[test]
+    fn timestamp_cannot_be_combined_with_other_items() {
+        let test_cases = vec![
+            vec![Item::Date(date()), Item::Timestamp(timestamp())],
+            vec![Item::Time(time()), Item::Timestamp(timestamp())],
+            vec![Item::Weekday(weekday()), Item::Timestamp(timestamp())],
+            vec![Item::Offset(offset()), Item::Timestamp(timestamp())],
+            vec![Item::Relative(relative_day()), Item::Timestamp(timestamp())],
+            vec![Item::Timestamp(timestamp()), Item::Date(date())],
+            vec![Item::Timestamp(timestamp()), Item::Time(time())],
+            vec![Item::Timestamp(timestamp()), Item::Weekday(weekday())],
+            vec![Item::Timestamp(timestamp()), Item::Relative(relative_day())],
+            vec![Item::Timestamp(timestamp()), Item::Offset(offset())],
+            vec![Item::Timestamp(timestamp()), Item::Pure("2023".to_string())],
+        ];
+
+        for items in test_cases {
+            let result = DateTimeBuilder::try_from(items);
+            assert_eq!(
+                result.unwrap_err(),
+                "timestamp cannot be combined with other date/time items"
+            );
+        }
+    }
+
+    #[test]
+    fn time_offset_conflicts() {
+        let items1 = vec![Item::Time(time_with_offset()), Item::Offset(offset())];
+        assert_eq!(
+            DateTimeBuilder::try_from(items1).unwrap_err(),
+            "time offset cannot appear more than once"
+        );
+
+        let items2 = vec![Item::Offset(offset()), Item::Time(time_with_offset())];
+        assert_eq!(
+            DateTimeBuilder::try_from(items2).unwrap_err(),
+            "time offset and timezone are mutually exclusive"
+        );
+    }
+
+    #[test]
+    fn helper_mappings() {
+        let mapped = surrogate_year_for_rules(2024);
+        assert!((9599..=9998).contains(&mapped));
+        assert_eq!((mapped as i32).rem_euclid(400), (2024_i32).rem_euclid(400));
+        assert_eq!(surrogate_year_for_rules(10000), 9600);
+        assert_eq!(weekday_monday0(weekday::Day::Monday), 0);
+        assert_eq!(weekday_monday0(weekday::Day::Sunday), 6);
+    }
+
+    #[test]
+    fn build_rejects_timestamp_in_extended_path() {
+        let mut builder = DateTimeBuilder::new();
+        builder.timestamp = Some(timestamp());
+        assert!(builder.build_extended().is_err());
+    }
+
+    #[test]
+    fn build_falls_back_to_extended_for_9999_rollover() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("9999-12-31")),
+            Item::Relative(relative_day()),
+        ])
+        .unwrap();
+        let result = builder.set_base(base).build().unwrap();
+        match result {
+            ParsedDateTime::Extended(dt) => {
+                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
+            }
+            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        }
+    }
+
+    #[test]
+    fn build_extended_keeps_9999_values_when_timestamp_overflows() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-01-01")),
+            Item::Relative(relative_day_ago()),
+        ])
+        .unwrap();
+        let result = builder.set_base(base).build().unwrap();
+        match result {
+            ParsedDateTime::Extended(dt) => {
+                assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
+            }
+            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        }
+    }
+
+    #[test]
+    fn resolve_rule_offset_for_extended_uses_surrogate_year() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 7,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        let offset = resolve_rule_offset_for_extended(&jiff::tz::TimeZone::UTC, &dt).unwrap();
+        assert_eq!(offset, 0);
     }
 }
