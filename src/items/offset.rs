@@ -108,6 +108,15 @@ impl Offset {
             hour_adjustment,
         )
     }
+
+    pub(super) fn total_seconds(&self) -> i32 {
+        let secs = (self.hours as i32) * 3600 + (self.minutes as i32) * 60;
+        if self.negative {
+            -secs
+        } else {
+            secs
+        }
+    }
 }
 
 impl TryFrom<(bool, u8, u8)> for Offset {
