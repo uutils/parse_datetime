@@ -38,7 +38,7 @@ pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
     }
 
     if year > GNU_MAX_YEAR {
-        return Err(GNU_MAX_YEAR_ERROR);
+        return Err("year exceeds GNU maximum");
     }
 
     Ok(year)
