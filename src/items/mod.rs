@@ -446,9 +446,9 @@ mod tests {
         let result = parse(&mut "jul 18 12:30 10000");
         assert!(result.is_ok());
         let built = result.unwrap().build().unwrap();
-        match built {
-            ParsedDateTime::Extended(dt) => assert_eq!(dt.year, 10000),
-            ParsedDateTime::InRange(_) => panic!("expected an extended datetime"),
+        assert!(matches!(built, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = built {
+            assert_eq!(dt.year, 10000);
         }
 
         // Pure number as time (too long).
@@ -552,14 +552,12 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "10000-01-01 -1000 years").unwrap();
-        match result {
-            ParsedDateTime::InRange(z) => {
-                assert_eq!(
-                    z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
-                    "9000-01-01 00:00:00+00:00"
-                );
-            }
-            ParsedDateTime::Extended(_) => panic!("expected in-range result"),
+        assert!(matches!(result, ParsedDateTime::InRange(_)));
+        if let ParsedDateTime::InRange(z) = result {
+            assert_eq!(
+                z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+                "9000-01-01 00:00:00+00:00"
+            );
         }
     }
 
@@ -571,13 +569,11 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "10000-01-01 12:34:56+02:00").unwrap();
-        match result {
-            ParsedDateTime::Extended(dt) => {
-                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
-                assert_eq!((dt.hour, dt.minute, dt.second), (12, 34, 56));
-                assert_eq!(dt.offset_seconds, 2 * 3600);
-            }
-            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        assert!(matches!(result, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = result {
+            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
+            assert_eq!((dt.hour, dt.minute, dt.second), (12, 34, 56));
+            assert_eq!(dt.offset_seconds, 2 * 3600);
         }
     }
 

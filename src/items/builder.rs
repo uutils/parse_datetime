@@ -717,11 +717,9 @@ mod tests {
         ])
         .unwrap();
         let result = builder.set_base(base).build().unwrap();
-        match result {
-            ParsedDateTime::Extended(dt) => {
-                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
-            }
-            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        assert!(matches!(result, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = result {
+            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
         }
     }
 
@@ -738,11 +736,9 @@ mod tests {
         ])
         .unwrap();
         let result = builder.set_base(base).build().unwrap();
-        match result {
-            ParsedDateTime::Extended(dt) => {
-                assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
-            }
-            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        assert!(matches!(result, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = result {
+            assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
         }
     }
 
@@ -817,12 +813,10 @@ mod tests {
         ])
         .unwrap();
         let result = builder.set_base(base).build().unwrap();
-        match result {
-            ParsedDateTime::Extended(dt) => {
-                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
-                assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
-            }
-            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        assert!(matches!(result, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = result {
+            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
+            assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
         }
     }
 
@@ -840,11 +834,9 @@ mod tests {
         ])
         .unwrap();
         let result = builder.set_base(base).build().unwrap();
-        match result {
-            ParsedDateTime::Extended(dt) => {
-                assert_eq!(dt.offset_seconds, 23 * 3600);
-            }
-            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        assert!(matches!(result, ParsedDateTime::Extended(_)));
+        if let ParsedDateTime::Extended(dt) = result {
+            assert_eq!(dt.offset_seconds, 23 * 3600);
         }
     }
 }

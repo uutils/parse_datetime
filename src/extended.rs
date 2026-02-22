@@ -509,6 +509,36 @@ mod tests {
             },
             TimeParts {
                 hour: 0,
+                minute: 60,
+                second: 0,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 60,
+                nanosecond: 0
+            },
+            0
+        )
+        .is_err());
+        assert!(ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1
+            },
+            TimeParts {
+                hour: 0,
                 minute: 0,
                 second: 0,
                 nanosecond: 1_000_000_000
