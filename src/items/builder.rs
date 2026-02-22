@@ -573,14 +573,39 @@ mod tests {
         offset::timezone_offset(&mut input).unwrap()
     }
 
+    fn offset_large() -> offset::Offset {
+        let mut input = "m+24";
+        offset::parse(&mut input).unwrap()
+    }
+
     fn relative_day() -> relative::Relative {
         let mut input = "1 day";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn relative_hours() -> relative::Relative {
+        let mut input = "2 hours";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn relative_minutes() -> relative::Relative {
+        let mut input = "3 minutes";
+        relative::parse(&mut input).unwrap()
+    }
+
+    fn relative_seconds() -> relative::Relative {
+        let mut input = "4 seconds";
         relative::parse(&mut input).unwrap()
     }
 
     fn relative_day_ago() -> relative::Relative {
         let mut input = "1 day ago";
         relative::parse(&mut input).unwrap()
+    }
+
+    fn weekday_next_monday() -> weekday::Weekday {
+        let mut input = "next monday";
+        weekday::parse(&mut input).unwrap()
     }
 
     fn timezone() -> jiff::tz::TimeZone {
@@ -740,5 +765,86 @@ mod tests {
         .unwrap();
         let offset = resolve_rule_offset_for_extended(&jiff::tz::TimeZone::UTC, &dt).unwrap();
         assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn resolve_rule_offset_for_extended_handles_upper_bound_dates() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 9999,
+                month: 12,
+                day: 31,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(resolve_rule_offset_for_extended(&jiff::tz::TimeZone::UTC, &dt).is_ok());
+    }
+
+    #[test]
+    fn should_try_extended_fallback_conditions() {
+        let mut builder = DateTimeBuilder::new();
+        assert!(!builder.should_try_extended_fallback());
+
+        builder.relative.push(relative_day());
+        builder.date = Some(date_large("9999-12-31"));
+        assert!(builder.should_try_extended_fallback());
+
+        builder.timestamp = Some(timestamp());
+        assert!(!builder.should_try_extended_fallback());
+    }
+
+    #[test]
+    fn build_extended_applies_relative_units_and_weekday() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-01-01")),
+            Item::Weekday(weekday_next_monday()),
+            Item::Relative(relative_day()),
+            Item::Relative(relative_hours()),
+            Item::Relative(relative_minutes()),
+            Item::Relative(relative_seconds()),
+        ])
+        .unwrap();
+        let result = builder.set_base(base).build().unwrap();
+        match result {
+            ParsedDateTime::Extended(dt) => {
+                assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
+                assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
+            }
+            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        }
+    }
+
+    #[test]
+    fn build_extended_applies_normalized_final_offset() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-06-01")),
+            Item::Time(time()),
+            Item::Offset(offset_large()),
+        ])
+        .unwrap();
+        let result = builder.set_base(base).build().unwrap();
+        match result {
+            ParsedDateTime::Extended(dt) => {
+                assert_eq!(dt.offset_seconds, 23 * 3600);
+            }
+            ParsedDateTime::InRange(_) => panic!("expected extended datetime"),
+        }
     }
 }

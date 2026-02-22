@@ -609,6 +609,63 @@ mod tests {
     }
 
     #[test]
+    fn checked_add_years_validation() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 0,
+                month: 1,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(dt.checked_add_years(-1).is_err());
+
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: GNU_MAX_YEAR,
+                month: 1,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(dt.checked_add_years(1).is_err());
+    }
+
+    #[test]
+    fn checked_add_seconds_validation() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 1,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(dt.checked_add_seconds(i64::MAX, 0).is_err());
+    }
+
+    #[test]
     fn day_of_year_and_weekday_helpers() {
         let dt = ExtendedDateTime::new(
             DateParts {

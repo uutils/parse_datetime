@@ -539,6 +539,13 @@ mod tests {
     }
 
     #[test]
+    fn parsed_datetime_extended_never_equals_zoned() {
+        let extended = parse_datetime("10000-01-01").unwrap();
+        let zoned = Zoned::now();
+        assert_ne!(extended, zoned);
+    }
+
+    #[test]
     fn test_parse_invalid_datetime() {
         assert!(crate::parse_datetime("bogus +1 day").is_err());
     }
