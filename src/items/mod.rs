@@ -63,7 +63,7 @@ use error::Error;
 
 #[derive(PartialEq, Debug)]
 enum Item {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
@@ -75,8 +75,8 @@ enum Item {
     Pure(String),
 }
 
-/// Parse a date and time string and build a `Zoned` object. The parsed result
-/// is resolved against the given base date and time.
+/// Parse a date and time string and resolve it against the given base date and
+/// time, returning a [`ParsedDateTime`] result.
 pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
     base: Zoned,
     input: S,
@@ -87,8 +87,8 @@ pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
     }
 }
 
-/// Parse a date and time string and build a `Zoned` object. The parsed result
-/// is resolved against the current local date and time.
+/// Parse a date and time string and resolve it against the current local date
+/// and time, returning a [`ParsedDateTime`] result.
 pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDateTime, Error> {
     match parse(&mut input.as_ref()) {
         Ok(builder) => builder.build(), // the builder uses current local date and time if no base is given.
@@ -516,6 +516,46 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31 +1 day", base, "10000-01-01 00:00:00+00:00");
+    }
+
+    #[test]
+    fn boundary_year_9999_absolute_date_parses() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("9999-12-31", base, "9999-12-31 00:00:00+00:00");
+    }
+
+    #[test]
+    fn boundary_year_9999_with_time_parses() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("9999-12-31 12:00", base, "9999-12-31 12:00:00+00:00");
+    }
+
+    #[test]
+    fn boundary_year_9999_with_utc_timezone_parses() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("9999-12-31 12:00 UTC", base, "9999-12-31 12:00:00+00:00");
+    }
+
+    #[test]
+    fn boundary_year_9999_with_explicit_offset_parses() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("9999-12-31 12:00 +01:00", base, "9999-12-31 12:00:00+01:00");
     }
 
     #[test]

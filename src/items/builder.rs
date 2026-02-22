@@ -162,7 +162,11 @@ impl DateTimeBuilder {
         self.set_time(time)
     }
 
-    /// Build a `Zoned` object from the pieces accumulated in this builder.
+    /// Build a parsed datetime result from the pieces accumulated in this builder.
+    ///
+    /// Returns [`ParsedDateTime::InRange`] when the result is representable as a
+    /// [`jiff::Zoned`], or [`ParsedDateTime::Extended`] for large/out-of-range
+    /// year scenarios.
     ///
     /// Resolution order (mirrors GNU `date` semantics):
     ///
@@ -198,6 +202,9 @@ impl DateTimeBuilder {
             return self.build_in_range().map(ParsedDateTime::InRange);
         }
 
+        // Near the year-9999 boundary, otherwise valid inputs can fail during
+        // in-range resolution due to transient timestamp/offset conversions.
+        // Retry in extended mode for boundary-risk contexts.
         match self.clone().build_in_range() {
             Ok(dt) => Ok(ParsedDateTime::InRange(dt)),
             Err(in_range_err) => self.build_extended().or(Err(in_range_err)),
@@ -206,10 +213,6 @@ impl DateTimeBuilder {
 
     fn should_try_extended_fallback(&self) -> bool {
         if self.timestamp.is_some() {
-            return false;
-        }
-
-        if self.relative.is_empty() {
             return false;
         }
 
@@ -517,6 +520,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
 
         for item in items {
             builder = match item {
+                #[cfg(test)]
                 Item::Timestamp(ts) => builder.set_timestamp(ts)?,
                 Item::DateTime(dt) => builder.set_date(dt.date)?.set_time(dt.time)?,
                 Item::Date(d) => builder.set_date(d)?,
@@ -560,6 +564,11 @@ mod tests {
 
     fn time_with_offset() -> time::Time {
         let mut input = "12:30:00+05:00";
+        time::parse(&mut input).unwrap()
+    }
+
+    fn time_with_small_offset() -> time::Time {
+        let mut input = "12:00:00+01:00";
         time::parse(&mut input).unwrap()
     }
 
@@ -887,6 +896,24 @@ mod tests {
         .unwrap();
         let z = expect_in_range_datetime(builder.set_base(base).build().unwrap());
         assert_eq!(z.strftime("%Y-%m-%d").to_string(), "9999-02-01");
+    }
+
+    #[test]
+    fn build_falls_back_to_extended_for_non_relative_boundary_time_offset() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("9999-12-31")),
+            Item::Time(time_with_small_offset()),
+        ])
+        .unwrap();
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
+        assert_eq!((dt.hour, dt.minute, dt.second), (12, 0, 0));
+        assert_eq!(dt.offset_seconds, 3600);
     }
 
     #[test]
