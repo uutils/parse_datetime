@@ -12,7 +12,7 @@ use crate::{ExtendedDateTime, ParsedDateTime};
 /// but without the baseline date and time. So you normally need to set the base
 /// date and time using the `set_base()` method before calling `build()`, or
 /// leave it unset to use the current date and time as the base.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct DateTimeBuilder {
     base: Option<Zoned>,
     timestamp: Option<epoch::Timestamp>,
@@ -194,6 +194,32 @@ impl DateTimeBuilder {
             }
         }
 
+        if !self.should_try_extended_fallback() {
+            return self.build_in_range().map(ParsedDateTime::InRange);
+        }
+
+        match self.clone().build_in_range() {
+            Ok(dt) => Ok(ParsedDateTime::InRange(dt)),
+            Err(in_range_err) => self.build_extended().or(Err(in_range_err)),
+        }
+    }
+
+    fn should_try_extended_fallback(&self) -> bool {
+        if self.timestamp.is_some() {
+            return false;
+        }
+
+        if self.relative.is_empty() {
+            return false;
+        }
+
+        self.date
+            .as_ref()
+            .is_some_and(|d| d.year.unwrap_or(0) >= 9999)
+            || self.base.as_ref().is_some_and(|b| b.year() >= 9999)
+    }
+
+    fn build_in_range(self) -> Result<Zoned, error::Error> {
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
@@ -208,9 +234,7 @@ impl DateTimeBuilder {
         // 2. Absolute timestamp override everything else.
         if let Some(ts) = self.timestamp {
             let ts = jiff::Timestamp::try_from(ts)?;
-            return Ok(ParsedDateTime::InRange(
-                ts.to_zoned(base.offset().to_time_zone()),
-            ));
+            return Ok(ts.to_zoned(base.offset().to_time_zone()));
         }
 
         // 3. Determine whether to truncate the time of day.
@@ -318,7 +342,7 @@ impl DateTimeBuilder {
             dt = dt.datetime().to_zoned((&offset).try_into()?)?;
         }
 
-        Ok(ParsedDateTime::InRange(dt))
+        Ok(dt)
     }
 
     fn build_extended(self) -> Result<ParsedDateTime, error::Error> {
@@ -413,16 +437,7 @@ impl DateTimeBuilder {
         for rel in relative {
             dt = match rel {
                 relative::Relative::Years(years) => dt.checked_add_years(years)?,
-                relative::Relative::Months(months) => {
-                    // Mirror the in-range path: treat one "month" as the
-                    // current month's day count.
-                    let month_len = i64::from(crate::extended::days_in_month(dt.year, dt.month));
-                    dt.checked_add_days(
-                        month_len
-                            .checked_mul(i64::from(months))
-                            .ok_or("multiplication overflow")?,
-                    )?
-                }
+                relative::Relative::Months(months) => dt.checked_add_months(months)?,
                 relative::Relative::Days(days) => dt.checked_add_days(days as i64)?,
                 relative::Relative::Hours(hours) => dt.checked_add_hours(hours as i64)?,
                 relative::Relative::Minutes(minutes) => dt.checked_add_minutes(minutes as i64)?,

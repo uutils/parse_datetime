@@ -220,14 +220,44 @@ impl ExtendedDateTime {
             return Err("year must be no greater than 2147485547");
         }
 
-        // GNU-compatible clamp for leap day.
         let month = self.month;
-        let day = if month == 2 && self.day == 29 && !is_leap_year(year) {
-            28
+        let max_day = days_in_month(year, month);
+        let day = self.day.min(max_day);
+        let overflow_days = self.day.saturating_sub(day);
+        let next = self.with_date(year, month, day)?;
+        if overflow_days == 0 {
+            Ok(next)
         } else {
-            self.day
-        };
-        self.with_date(year, month, day)
+            next.checked_add_days(i64::from(overflow_days))
+        }
+    }
+
+    pub fn checked_add_months(self, months: i32) -> Result<Self, &'static str> {
+        let base_month = i64::from(self.month) - 1;
+        let total = i64::from(self.year)
+            .checked_mul(12)
+            .and_then(|v| v.checked_add(base_month))
+            .and_then(|v| v.checked_add(i64::from(months)))
+            .ok_or("month overflow")?;
+        if total < 0 {
+            return Err("year must be non-negative");
+        }
+
+        let year = u32::try_from(total / 12).map_err(|_| "year overflow")?;
+        if year > GNU_MAX_YEAR {
+            return Err("year must be no greater than 2147485547");
+        }
+        let month = u8::try_from((total % 12) + 1).map_err(|_| "month overflow")?;
+
+        let max_day = days_in_month(year, month);
+        let day = self.day.min(max_day);
+        let overflow_days = self.day.saturating_sub(day);
+        let next = self.with_date(year, month, day)?;
+        if overflow_days == 0 {
+            Ok(next)
+        } else {
+            next.checked_add_days(i64::from(overflow_days))
+        }
     }
 
     pub fn day_of_year(&self) -> u16 {
@@ -359,5 +389,51 @@ mod tests {
         let rt =
             ExtendedDateTime::from_unix_seconds(unix, dt.nanosecond, dt.offset_seconds).unwrap();
         assert_eq!(dt, rt);
+    }
+
+    #[test]
+    fn add_years_overflows_like_gnu() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 2,
+                day: 29,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        let actual = dt.checked_add_years(1).unwrap();
+        assert_eq!((actual.year, actual.month, actual.day), (10001, 3, 1));
+    }
+
+    #[test]
+    fn add_months_overflows_like_gnu() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 1,
+                day: 31,
+            },
+            TimeParts {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+
+        let plus_2 = dt.clone().checked_add_months(2).unwrap();
+        assert_eq!((plus_2.year, plus_2.month, plus_2.day), (10000, 3, 31));
+
+        let plus_3 = dt.checked_add_months(3).unwrap();
+        assert_eq!((plus_3.year, plus_3.month, plus_3.day), (10000, 5, 1));
     }
 }

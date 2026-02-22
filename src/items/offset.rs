@@ -474,4 +474,12 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn total_seconds() {
+        assert_eq!(off(false, 0, 0).total_seconds(), 0);
+        assert_eq!(off(false, 5, 30).total_seconds(), 19_800);
+        assert_eq!(off(true, 5, 30).total_seconds(), -19_800);
+        assert_eq!(off(false, 24, 0).total_seconds(), 86_400);
+    }
 }

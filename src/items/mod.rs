@@ -304,6 +304,35 @@ mod tests {
             .to_string()
     }
 
+    fn format_offset_colon(seconds: i32) -> String {
+        let sign = if seconds < 0 { '-' } else { '+' };
+        let abs = seconds.unsigned_abs();
+        let hours = abs / 3600;
+        let minutes = (abs % 3600) / 60;
+        format!("{sign}{hours:02}:{minutes:02}")
+    }
+
+    fn assert_extended_datetime(input: &str, base: Zoned, expected: &str) {
+        match parse_at_date(base, input).unwrap() {
+            ParsedDateTime::Extended(dt) => {
+                let actual = format!(
+                    "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}",
+                    dt.year,
+                    dt.month,
+                    dt.day,
+                    dt.hour,
+                    dt.minute,
+                    dt.second,
+                    format_offset_colon(dt.offset_seconds)
+                );
+                assert_eq!(actual, expected, "{input}");
+            }
+            ParsedDateTime::InRange(z) => {
+                panic!("expected extended datetime, got in-range: {z}");
+            }
+        }
+    }
+
     #[test]
     fn date_and_time() {
         assert_eq!(
@@ -467,6 +496,52 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("base year must be non-negative"));
+    }
+
+    #[test]
+    fn boundary_rollover_from_9999_falls_back_to_extended() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("9999-12-31 +1 day", base, "10000-01-01 00:00:00+00:00");
+    }
+
+    #[test]
+    fn large_year_relative_parity_months_and_years() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+
+        assert_extended_datetime(
+            "10000-01-31 +2 months",
+            base.clone(),
+            "10000-03-31 00:00:00+00:00",
+        );
+        assert_extended_datetime(
+            "10000-01-31 +3 months",
+            base.clone(),
+            "10000-05-01 00:00:00+00:00",
+        );
+        assert_extended_datetime(
+            "10000-08-31 +6 months",
+            base.clone(),
+            "10001-03-03 00:00:00+00:00",
+        );
+        assert_extended_datetime(
+            "10000-05-31 3 months ago",
+            base.clone(),
+            "10000-03-02 00:00:00+00:00",
+        );
+        assert_extended_datetime("10000-02-29 +1 year", base, "10001-03-01 00:00:00+00:00");
+    }
+
+    #[test]
+    fn rejects_year_above_gnu_max() {
+        assert!(parse_at_local("2147485548-01-01").is_err());
     }
 
     #[test]
