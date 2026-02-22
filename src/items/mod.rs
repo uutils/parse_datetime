@@ -408,13 +408,9 @@ mod tests {
         let result = parse(&mut "2025-05-19 @1690466034");
         assert!(result.is_err());
 
-        // Pure number as year (too large).
+        // Pure number as year (large years are parsed successfully).
         let result = parse(&mut "jul 18 12:30 10000");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("year must be no greater than 9999"));
+        assert!(result.is_ok());
 
         // Pure number as time (too long).
         let result = parse(&mut "01:02 12345");
@@ -447,6 +443,20 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("invalid minute in pure number"));
+    }
+
+    #[test]
+    fn negative_base_year_with_yearless_date_errors() {
+        let base = DateTime::new(-1, 1, 1, 0, 0, 0, 0)
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "11/14");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("base year must be non-negative"));
     }
 
     #[test]
