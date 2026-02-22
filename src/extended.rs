@@ -715,4 +715,10 @@ mod tests {
         assert_eq!(dt.day_of_year(), 366);
         assert_eq!(dt.weekday_monday0(), (dt.weekday_sunday0() + 6) % 7);
     }
+
+    #[test]
+    fn days_in_month_returns_zero_for_invalid_month() {
+        assert_eq!(super::days_in_month(10000, 0), 0);
+        assert_eq!(super::days_in_month(10000, 13), 0);
+    }
 }

@@ -536,7 +536,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jiff::{civil::DateTime, tz::TimeZone};
+    use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 
     fn timestamp() -> epoch::Timestamp {
         let mut input = "@1234567890";
@@ -583,6 +583,11 @@ mod tests {
         relative::parse(&mut input).unwrap()
     }
 
+    fn relative_month() -> relative::Relative {
+        let mut input = "1 month";
+        relative::parse(&mut input).unwrap()
+    }
+
     fn relative_hours() -> relative::Relative {
         let mut input = "2 hours";
         relative::parse(&mut input).unwrap()
@@ -610,6 +615,20 @@ mod tests {
 
     fn timezone() -> jiff::tz::TimeZone {
         jiff::tz::TimeZone::UTC
+    }
+
+    fn expect_extended_datetime(parsed: ParsedDateTime) -> ExtendedDateTime {
+        match parsed {
+            ParsedDateTime::Extended(dt) => dt,
+            ParsedDateTime::InRange(z) => panic!("expected extended datetime, got in-range: {z}"),
+        }
+    }
+
+    fn expect_in_range_datetime(parsed: ParsedDateTime) -> Zoned {
+        match parsed {
+            ParsedDateTime::InRange(z) => z,
+            ParsedDateTime::Extended(dt) => panic!("expected in-range datetime, got {dt:?}"),
+        }
     }
 
     #[test]
@@ -694,6 +713,11 @@ mod tests {
         assert_eq!((mapped as i32).rem_euclid(400), (2024_i32).rem_euclid(400));
         assert_eq!(surrogate_year_for_rules(10000), 9600);
         assert_eq!(weekday_monday0(weekday::Day::Monday), 0);
+        assert_eq!(weekday_monday0(weekday::Day::Tuesday), 1);
+        assert_eq!(weekday_monday0(weekday::Day::Wednesday), 2);
+        assert_eq!(weekday_monday0(weekday::Day::Thursday), 3);
+        assert_eq!(weekday_monday0(weekday::Day::Friday), 4);
+        assert_eq!(weekday_monday0(weekday::Day::Saturday), 5);
         assert_eq!(weekday_monday0(weekday::Day::Sunday), 6);
     }
 
@@ -716,11 +740,8 @@ mod tests {
             Item::Relative(relative_day()),
         ])
         .unwrap();
-        let result = builder.set_base(base).build().unwrap();
-        assert!(matches!(result, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = result {
-            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
-        }
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
     }
 
     #[test]
@@ -735,11 +756,8 @@ mod tests {
             Item::Relative(relative_day_ago()),
         ])
         .unwrap();
-        let result = builder.set_base(base).build().unwrap();
-        assert!(matches!(result, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = result {
-            assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
-        }
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!((dt.year, dt.month, dt.day), (9999, 12, 31));
     }
 
     #[test]
@@ -761,6 +779,27 @@ mod tests {
         .unwrap();
         let offset = resolve_rule_offset_for_extended(&jiff::tz::TimeZone::UTC, &dt).unwrap();
         assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn resolve_rule_offset_for_extended_non_utc_rule() {
+        let dt = ExtendedDateTime::new(
+            DateParts {
+                year: 10000,
+                month: 7,
+                day: 1,
+            },
+            TimeParts {
+                hour: 12,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+            },
+            0,
+        )
+        .unwrap();
+        let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
+        let _ = resolve_rule_offset_for_extended(&tz, &dt).unwrap();
     }
 
     #[test]
@@ -812,12 +851,9 @@ mod tests {
             Item::Relative(relative_seconds()),
         ])
         .unwrap();
-        let result = builder.set_base(base).build().unwrap();
-        assert!(matches!(result, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = result {
-            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
-            assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
-        }
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
+        assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
     }
 
     #[test]
@@ -833,10 +869,110 @@ mod tests {
             Item::Offset(offset_large()),
         ])
         .unwrap();
-        let result = builder.set_base(base).build().unwrap();
-        assert!(matches!(result, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = result {
-            assert_eq!(dt.offset_seconds, 23 * 3600);
-        }
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!(dt.offset_seconds, 23 * 3600);
+    }
+
+    #[test]
+    fn build_prefers_in_range_when_fallback_succeeds() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("9999-01-31")),
+            Item::Relative(relative_day()),
+        ])
+        .unwrap();
+        let z = expect_in_range_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!(z.strftime("%Y-%m-%d").to_string(), "9999-02-01");
+    }
+
+    #[test]
+    fn build_in_range_month_overflow_adjustment_path() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("2021-01-31")),
+            Item::Relative(relative_month()),
+        ])
+        .unwrap();
+        let z = expect_in_range_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!(z.strftime("%Y-%m-%d").to_string(), "2021-03-03");
+    }
+
+    #[test]
+    fn build_extended_uses_base_and_timezone_rule() {
+        let base = "2000-01-01 10:11:12"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-01-01")),
+            Item::TimeZone(tz),
+        ])
+        .unwrap();
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!(dt.year, 10000);
+    }
+
+    #[test]
+    fn build_extended_supports_timezone_without_base() {
+        let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-01-01")),
+            Item::TimeZone(tz),
+        ])
+        .unwrap();
+        let dt = expect_extended_datetime(builder.build().unwrap());
+        assert_eq!(dt.year, 10000);
+    }
+
+    #[test]
+    fn build_extended_preserves_base_time_when_not_truncated() {
+        let base = "2000-01-01 10:11:12.123456789"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let mut builder = DateTimeBuilder::new();
+        builder.base = Some(base);
+        let z = expect_in_range_datetime(builder.build_extended().unwrap());
+        assert_eq!(
+            z.strftime("%Y-%m-%d %H:%M:%S%.9f").to_string(),
+            "2000-01-01 10:11:12.123456789"
+        );
+    }
+
+    #[test]
+    fn build_extended_applies_date_and_weekday_without_time_item() {
+        let base = "2000-01-01 10:11:12"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            Item::Date(date_large("10000-01-01")),
+            Item::Weekday(weekday_next_monday()),
+        ])
+        .unwrap();
+        let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
+        assert_eq!((dt.hour, dt.minute, dt.second), (0, 0, 0));
+    }
+
+    #[test]
+    #[should_panic(expected = "expected in-range datetime")]
+    fn expect_in_range_datetime_panics_for_extended_input() {
+        let parsed = DateTimeBuilder::try_from(vec![Item::Date(date_large("10000-01-01"))])
+            .unwrap()
+            .build()
+            .unwrap();
+        let _ = expect_in_range_datetime(parsed);
     }
 }

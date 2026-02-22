@@ -63,6 +63,7 @@ use error::Error;
 
 #[derive(PartialEq, Debug)]
 enum Item {
+    #[cfg_attr(not(test), allow(dead_code))]
     Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
@@ -213,12 +214,9 @@ fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     trace(
         "parse_timestamp",
         // Expect exactly one timestamp and then EOF (allowing trailing spaces).
-        terminated(epoch::parse.map(Item::Timestamp), preceded(space, eof)),
+        terminated(epoch::parse, preceded(space, eof)),
     )
-    .verify_map(|item: Item| match item {
-        Item::Timestamp(ts) => DateTimeBuilder::new().set_timestamp(ts).ok(),
-        _ => None,
-    })
+    .verify_map(|ts| DateTimeBuilder::new().set_timestamp(ts).ok())
     .parse_next(input)
 }
 
@@ -330,6 +328,20 @@ mod tests {
             ParsedDateTime::InRange(z) => {
                 panic!("expected extended datetime, got in-range: {z}");
             }
+        }
+    }
+
+    fn expect_extended_datetime(parsed: ParsedDateTime) -> crate::ExtendedDateTime {
+        match parsed {
+            ParsedDateTime::Extended(dt) => dt,
+            ParsedDateTime::InRange(z) => panic!("expected extended datetime, got in-range: {z}"),
+        }
+    }
+
+    fn expect_in_range_datetime(parsed: ParsedDateTime) -> Zoned {
+        match parsed {
+            ParsedDateTime::InRange(z) => z,
+            ParsedDateTime::Extended(dt) => panic!("expected in-range datetime, got {dt:?}"),
         }
     }
 
@@ -446,10 +458,8 @@ mod tests {
         let result = parse(&mut "jul 18 12:30 10000");
         assert!(result.is_ok());
         let built = result.unwrap().build().unwrap();
-        assert!(matches!(built, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = built {
-            assert_eq!(dt.year, 10000);
-        }
+        let dt = expect_extended_datetime(built);
+        assert_eq!(dt.year, 10000);
 
         // Pure number as time (too long).
         let result = parse(&mut "01:02 12345");
@@ -552,13 +562,11 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "10000-01-01 -1000 years").unwrap();
-        assert!(matches!(result, ParsedDateTime::InRange(_)));
-        if let ParsedDateTime::InRange(z) = result {
-            assert_eq!(
-                z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
-                "9000-01-01 00:00:00+00:00"
-            );
-        }
+        let z = expect_in_range_datetime(result);
+        assert_eq!(
+            z.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+            "9000-01-01 00:00:00+00:00"
+        );
     }
 
     #[test]
@@ -568,13 +576,45 @@ mod tests {
             .unwrap()
             .to_zoned(TimeZone::UTC)
             .unwrap();
-        let result = parse_at_date(base, "10000-01-01 12:34:56+02:00").unwrap();
-        assert!(matches!(result, ParsedDateTime::Extended(_)));
-        if let ParsedDateTime::Extended(dt) = result {
-            assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
-            assert_eq!((dt.hour, dt.minute, dt.second), (12, 34, 56));
-            assert_eq!(dt.offset_seconds, 2 * 3600);
-        }
+        let dt =
+            expect_extended_datetime(parse_at_date(base, "10000-01-01 12:34:56+02:00").unwrap());
+        assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 1));
+        assert_eq!((dt.hour, dt.minute, dt.second), (12, 34, 56));
+        assert_eq!(dt.offset_seconds, 2 * 3600);
+    }
+
+    #[test]
+    fn parse_at_date_returns_error_for_invalid_input() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let result = parse_at_date(base, "not-a-date");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "expected extended datetime")]
+    fn assert_extended_datetime_panics_for_in_range_input() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        assert_extended_datetime("2001-01-01", base, "2001-01-01 00:00:00+00:00");
+    }
+
+    #[test]
+    #[should_panic(expected = "expected in-range datetime")]
+    fn expect_in_range_datetime_panics_for_extended_input() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let parsed = parse_at_date(base, "10000-01-01").unwrap();
+        let _ = expect_in_range_datetime(parsed);
     }
 
     #[test]
