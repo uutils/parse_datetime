@@ -552,8 +552,7 @@ mod tests {
         date::parse(&mut input).unwrap()
     }
 
-    fn date_large(input: &str) -> date::Date {
-        let mut input = input;
+    fn date_large(mut input: &str) -> date::Date {
         date::parse(&mut input).unwrap()
     }
 
