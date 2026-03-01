@@ -40,7 +40,7 @@ pub(crate) enum Day {
     Sunday,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) struct Weekday {
     pub(crate) offset: i32,
     pub(crate) day: Day,

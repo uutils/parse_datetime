@@ -33,7 +33,7 @@ use super::primitive::{dec_uint, plus_or_minus, s};
 /// - `nanosecond` is always in the range of `0..1_000_000_000`.
 /// - Negative timestamps are represented by a negative `second` value and a
 ///   positive `nanosecond` value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(super) struct Timestamp {
     second: i64,
     nanosecond: u32,
