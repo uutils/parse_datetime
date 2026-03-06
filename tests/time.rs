@@ -20,6 +20,7 @@ pub fn check_time(input: &str, expected: &str, format: &str, base: Option<Zoned>
         Ok(v) => v,
         Err(e) => panic!("Failed to parse time from value '{input}': {e}"),
     }
+    .expect_in_range()
     .with_time_zone(TimeZone::UTC);
 
     assert_eq!(
