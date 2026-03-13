@@ -73,10 +73,7 @@ impl Display for ParseDateTimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseDateTimeError::InvalidInput => {
-                write!(
-                    f,
-                    "Invalid input string: cannot be parsed as a relative time"
-                )
+                write!(f, "Invalid input string")
             }
         }
     }
@@ -131,6 +128,25 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDat
 /// Parses a time string and returns a [`ParsedDateTime`] representing the
 /// absolute time of the string, including extended years that cannot be
 /// represented as [`jiff::Zoned`].
+///
+/// # Examples
+///
+/// ```
+/// use parse_datetime::{parse_datetime_extended, ParsedDateTime};
+///
+/// let parsed = parse_datetime_extended("10000-01-01").unwrap();
+/// assert!(matches!(parsed, ParsedDateTime::Extended(_)));
+/// ```
+///
+/// # Returns
+///
+/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
+/// input string cannot be parsed.
 pub fn parse_datetime_extended<S: AsRef<str> + Clone>(
     input: S,
 ) -> Result<ParsedDateTime, ParseDateTimeError> {
@@ -177,6 +193,27 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 /// Parses a time string at a specific date and returns a [`ParsedDateTime`]
 /// representing the absolute time of the string, including extended years that
 /// cannot be represented as [`jiff::Zoned`].
+///
+/// # Examples
+///
+/// ```
+/// use jiff::Zoned;
+/// use parse_datetime::{parse_datetime_at_date_extended, ParsedDateTime};
+///
+/// let now = Zoned::now();
+/// let parsed = parse_datetime_at_date_extended(now, "10000-01-01").unwrap();
+/// assert!(matches!(parsed, ParsedDateTime::Extended(_)));
+/// ```
+///
+/// # Returns
+///
+/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Err(ParseDateTimeError)` - If the input string cannot be parsed
+///
+/// # Errors
+///
+/// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
+/// input string cannot be parsed.
 pub fn parse_datetime_at_date_extended<S: AsRef<str> + Clone>(
     date: Zoned,
     input: S,

@@ -79,7 +79,7 @@ The `parse_datetime` and `parse_datetime_at_date` functions support absolute dat
 The `parse_datetime` and `parse_datetime_at_date` function return:
 
 - `Ok(Zoned)` - If the input string can be parsed as a `Zoned` object
-- `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed
+- `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed or requires extended-year support
 
 ### parse_datetime_extended and parse_datetime_at_date_extended
 
