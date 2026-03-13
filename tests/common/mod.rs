@@ -4,7 +4,7 @@
 use std::env;
 
 use jiff::Zoned;
-use parse_datetime::{parse_datetime, parse_datetime_at_date, ParsedDateTime};
+use parse_datetime::{parse_datetime_at_date_extended, parse_datetime_extended, ParsedDateTime};
 
 fn format_offset_colon(seconds: i32) -> String {
     let sign = if seconds < 0 { '-' } else { '+' };
@@ -33,7 +33,7 @@ fn format_for_assert(parsed: ParsedDateTime) -> String {
 pub fn check_absolute(input: &str, expected: &str) {
     env::set_var("TZ", "UTC0");
 
-    let parsed = match parse_datetime(input) {
+    let parsed = match parse_datetime_extended(input) {
         Ok(v) => v,
         Err(e) => panic!("Failed to parse date from value '{input}': {e}"),
     };
@@ -44,7 +44,7 @@ pub fn check_absolute(input: &str, expected: &str) {
 pub fn check_relative(now: Zoned, input: &str, expected: &str) {
     env::set_var("TZ", "UTC0");
 
-    let parsed = match parse_datetime_at_date(now, input) {
+    let parsed = match parse_datetime_at_date_extended(now, input) {
         Ok(v) => v,
         Err(e) => panic!("Failed to parse date from value '{input}': {e}"),
     };

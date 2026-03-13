@@ -90,8 +90,14 @@ impl From<items::error::Error> for ParseDateTimeError {
     }
 }
 
-/// Parses a time string and returns a [`ParsedDateTime`] representing the
-/// absolute time of the string.
+fn require_in_range(parsed: ParsedDateTime) -> Result<Zoned, ParseDateTimeError> {
+    match parsed {
+        ParsedDateTime::InRange(z) => Ok(z),
+        ParsedDateTime::Extended(_) => Err(ParseDateTimeError::InvalidInput),
+    }
+}
+
+/// Parses a time string and returns a [`jiff::Zoned`] value.
 ///
 /// # Arguments
 ///
@@ -100,36 +106,38 @@ impl From<items::error::Error> for ParseDateTimeError {
 /// # Examples
 ///
 /// ```
-/// use parse_datetime::{parse_datetime, ParsedDateTime};
+/// use parse_datetime::parse_datetime;
 ///
 /// let time = parse_datetime("2023-06-03 12:00:01Z").unwrap();
-/// match time {
-///     ParsedDateTime::InRange(z) => {
-///         assert_eq!(z.strftime("%F %T").to_string(), "2023-06-03 12:00:01");
-///     }
-///     ParsedDateTime::Extended(_) => unreachable!("unexpected for this input"),
-/// }
+/// assert_eq!(time.strftime("%F %T").to_string(), "2023-06-03 12:00:01");
 /// ```
 ///
 ///
 /// # Returns
 ///
-/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Ok(Zoned)` - If the input string can be parsed as a time
 /// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a
-///   relative time
+///   relative time or requires extended-year support
 ///
 /// # Errors
 ///
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
-/// input string cannot be parsed as a relative time.
-pub fn parse_datetime<S: AsRef<str> + Clone>(
+/// input string cannot be parsed as a relative time or is outside the legacy
+/// in-range `jiff::Zoned` representation.
+pub fn parse_datetime<S: AsRef<str> + Clone>(input: S) -> Result<Zoned, ParseDateTimeError> {
+    parse_datetime_extended(input).and_then(require_in_range)
+}
+
+/// Parses a time string and returns a [`ParsedDateTime`] representing the
+/// absolute time of the string, including extended years that cannot be
+/// represented as [`jiff::Zoned`].
+pub fn parse_datetime_extended<S: AsRef<str> + Clone>(
     input: S,
 ) -> Result<ParsedDateTime, ParseDateTimeError> {
     items::parse_at_local(input).map_err(|e| e.into())
 }
 
-/// Parses a time string at a specific date and returns a [`ParsedDateTime`]
-/// representing the absolute time of the string.
+/// Parses a time string at a specific date and returns a [`jiff::Zoned`] value.
 ///
 /// # Arguments
 ///
@@ -140,28 +148,36 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 ///
 /// ```
 /// use jiff::Zoned;
-/// use parse_datetime::{parse_datetime_at_date, ParsedDateTime};
+/// use parse_datetime::parse_datetime_at_date;
 ///
 ///  let now = Zoned::now();
 ///  let after = parse_datetime_at_date(now, "2024-09-13UTC +3 days").unwrap();
 ///
-///  match after {
-///      ParsedDateTime::InRange(z) => assert_eq!("2024-09-16", z.strftime("%F").to_string()),
-///      ParsedDateTime::Extended(_) => unreachable!("unexpected for this input"),
-///  }
+///  assert_eq!("2024-09-16", after.strftime("%F").to_string());
 /// ```
 ///
 /// # Returns
 ///
-/// * `Ok(ParsedDateTime)` - If the input string can be parsed as a time
+/// * `Ok(Zoned)` - If the input string can be parsed as a time
 /// * `Err(ParseDateTimeError)` - If the input string cannot be parsed as a
-///   relative time
+///   relative time or requires extended-year support
 ///
 /// # Errors
 ///
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
-/// input string cannot be parsed as a relative time.
+/// input string cannot be parsed as a relative time or is outside the legacy
+/// in-range `jiff::Zoned` representation.
 pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
+    date: Zoned,
+    input: S,
+) -> Result<Zoned, ParseDateTimeError> {
+    parse_datetime_at_date_extended(date, input).and_then(require_in_range)
+}
+
+/// Parses a time string at a specific date and returns a [`ParsedDateTime`]
+/// representing the absolute time of the string, including extended years that
+/// cannot be represented as [`jiff::Zoned`].
+pub fn parse_datetime_at_date_extended<S: AsRef<str> + Clone>(
     date: Zoned,
     input: S,
 ) -> Result<ParsedDateTime, ParseDateTimeError> {
@@ -175,7 +191,7 @@ mod tests {
         ToSpan, Zoned,
     };
 
-    use crate::parse_datetime;
+    use crate::{parse_datetime, parse_datetime_extended, ParseDateTimeError, ParsedDateTime};
 
     #[cfg(test)]
     mod iso_8601 {
@@ -186,35 +202,35 @@ mod tests {
         #[test]
         fn test_t_sep() {
             let dt = "2021-02-15T06:37:47 +0000";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
         #[test]
         fn test_space_sep() {
             let dt = "2021-02-15 06:37:47 +0000";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
         #[test]
         fn test_space_sep_offset() {
             let dt = "2021-02-14 22:37:47 -0800";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
         #[test]
         fn test_t_sep_offset() {
             let dt = "2021-02-14T22:37:47 -0800";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
         #[test]
         fn test_t_sep_single_digit_offset_no_space() {
             let dt = "2021-02-14T22:37:47-8";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
@@ -239,7 +255,7 @@ mod tests {
         #[test]
         fn test_epoch_seconds() {
             let dt = "@1613371067";
-            let actual = parse_datetime(dt).unwrap().expect_in_range();
+            let actual = parse_datetime(dt).unwrap();
             assert_eq!(actual.timestamp().as_second(), TEST_TIME);
         }
 
@@ -300,7 +316,7 @@ mod tests {
 
             let expected = format!("{}{}", Zoned::now().strftime("%Y%m%d"), "0000+0700");
             for offset in offsets {
-                let actual = parse_datetime(offset).unwrap().expect_in_range();
+                let actual = parse_datetime(offset).unwrap();
                 assert_eq!(expected, actual.strftime("%Y%m%d%H%M%z").to_string());
             }
         }
@@ -310,7 +326,7 @@ mod tests {
             let offsets = vec!["UTC+00:15", "UTC+0015", "Z+00:15", "Z+0015"];
             let expected = format!("{}{}", Zoned::now().strftime("%Y%m%d"), "0000+0015");
             for offset in offsets {
-                let actual = parse_datetime(offset).unwrap().expect_in_range();
+                let actual = parse_datetime(offset).unwrap();
                 assert_eq!(expected, actual.strftime("%Y%m%d%H%M%z").to_string());
             }
         }
@@ -407,9 +423,7 @@ mod tests {
         use crate::parse_datetime_at_date;
 
         fn get_formatted_date(date: &Zoned, weekday: &str) -> String {
-            let result = parse_datetime_at_date(date.clone(), weekday)
-                .unwrap()
-                .expect_in_range();
+            let result = parse_datetime_at_date(date.clone(), weekday).unwrap();
 
             result.strftime("%F %T %9f").to_string()
         }
@@ -472,16 +486,12 @@ mod tests {
             for offset in offsets {
                 // positive offset
                 let time = Timestamp::from_second(offset).unwrap();
-                let dt = parse_datetime(format!("@{offset}"))
-                    .unwrap()
-                    .expect_in_range();
+                let dt = parse_datetime(format!("@{offset}")).unwrap();
                 assert_eq!(dt.timestamp(), time);
 
                 // negative offset
                 let time = Timestamp::from_second(-offset).unwrap();
-                let dt = parse_datetime(format!("@-{offset}"))
-                    .unwrap()
-                    .expect_in_range();
+                let dt = parse_datetime(format!("@-{offset}")).unwrap();
                 assert_eq!(dt.timestamp(), time);
             }
         }
@@ -529,20 +539,34 @@ mod tests {
 
     #[test]
     fn parsed_datetime_accessors_cover_both_variants() {
-        let in_range = parse_datetime("2023-06-03 12:00:01Z").unwrap();
+        let in_range = parse_datetime_extended("2023-06-03 12:00:01Z").unwrap();
         assert!(in_range.as_zoned().is_some());
         assert!(in_range.into_zoned().is_some());
 
-        let extended = parse_datetime("10000-01-01").unwrap();
+        let extended = parse_datetime_extended("10000-01-01").unwrap();
         assert!(extended.as_zoned().is_none());
         assert!(extended.into_zoned().is_none());
     }
 
     #[test]
     fn parsed_datetime_extended_never_equals_zoned() {
-        let extended = parse_datetime("10000-01-01").unwrap();
+        let extended = parse_datetime_extended("10000-01-01").unwrap();
         let zoned = Zoned::now();
         assert_ne!(extended, zoned);
+    }
+
+    #[test]
+    fn legacy_api_rejects_extended_results() {
+        assert_eq!(
+            parse_datetime("10000-01-01"),
+            Err(ParseDateTimeError::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn extended_api_accepts_extended_results() {
+        let parsed = parse_datetime_extended("10000-01-01").unwrap();
+        assert!(matches!(parsed, ParsedDateTime::Extended(_)));
     }
 
     #[test]
@@ -710,7 +734,6 @@ mod tests {
             assert_eq!(
                 parse_datetime("28 feb + 1 month")
                     .expect("parse_datetime")
-                    .expect_in_range()
                     .strftime("%m%d")
                     .to_string(),
                 "0328"
@@ -730,7 +753,6 @@ mod tests {
             assert_eq!(
                 parse_datetime("28 feb 2023 + 1 day")
                     .unwrap()
-                    .expect_in_range()
                     .strftime("%m%d")
                     .to_string(),
                 "0301"
@@ -742,7 +764,6 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-01-31 + 1 month")
                     .unwrap()
-                    .expect_in_range()
                     .strftime("%Y-%m-%dT%H:%M:%S")
                     .to_string(),
                 "2024-03-02T00:00:00",
@@ -751,7 +772,6 @@ mod tests {
             assert_eq!(
                 parse_datetime("2024-02-29 + 1 month")
                     .unwrap()
-                    .expect_in_range()
                     .strftime("%Y-%m-%dT%H:%M:%S")
                     .to_string(),
                 "2024-03-29T00:00:00",
@@ -768,31 +788,19 @@ mod tests {
             let input = "0000-03-02 00:00:00";
             assert_eq!(
                 input,
-                parse_datetime(input)
-                    .unwrap()
-                    .expect_in_range()
-                    .strftime(FMT)
-                    .to_string()
+                parse_datetime(input).unwrap().strftime(FMT).to_string()
             );
 
             let input = "2621-03-10 00:00:00";
             assert_eq!(
                 input,
-                parse_datetime(input)
-                    .unwrap()
-                    .expect_in_range()
-                    .strftime(FMT)
-                    .to_string()
+                parse_datetime(input).unwrap().strftime(FMT).to_string()
             );
 
             let input = "1038-03-10 00:00:00";
             assert_eq!(
                 input,
-                parse_datetime(input)
-                    .unwrap()
-                    .expect_in_range()
-                    .strftime(FMT)
-                    .to_string()
+                parse_datetime(input).unwrap().strftime(FMT).to_string()
             );
         }
     }
