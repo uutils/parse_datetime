@@ -4,7 +4,7 @@
 [![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/parse_datetime/blob/main/LICENSE)
 [![CodeCov](https://codecov.io/gh/uutils/parse_datetime/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/parse_datetime)
 
-A Rust crate for parsing human-readable relative time strings and human-readable datetime strings and converting them to a jiff's `Zoned` object.
+A Rust crate for parsing human-readable relative time strings and human-readable datetime strings.
 
 ## Features
 
@@ -22,7 +22,7 @@ Add `parse_datetime` to your `Cargo.toml` with:
 cargo add parse_datetime
 ```
 
-Then, import the crate and use the `parse_datetime_at_date` function:
+Then, import the crate and use the `parse_datetime_at_date` function for the legacy in-range `jiff::Zoned` API:
 
 ```rs
 use jiff::{ToSpan, Zoned};
@@ -37,7 +37,7 @@ assert_eq!(
 );
 ```
 
-For DateTime parsing, import the `parse_datetime` function:
+For datetime parsing, import the `parse_datetime` function:
 
 ```rs
 use jiff::{civil::{date, time} ,Zoned};
@@ -45,6 +45,15 @@ use parse_datetime::parse_datetime;
 
 let dt = parse_datetime("2021-02-14 06:37:47");
 assert_eq!(dt.unwrap(), Zoned::now().with().date(date(2021, 2, 14)).time(time(6, 37, 47, 0)).build().unwrap());
+```
+
+To preserve out-of-range years, use the extended-aware entrypoints:
+
+```rs
+use parse_datetime::{parse_datetime_extended, ParsedDateTime};
+
+let dt = parse_datetime_extended("10000-01-01").unwrap();
+assert!(matches!(dt, ParsedDateTime::Extended(_)));
 ```
 
 ### Supported Formats
@@ -70,6 +79,14 @@ The `parse_datetime` and `parse_datetime_at_date` functions support absolute dat
 The `parse_datetime` and `parse_datetime_at_date` function return:
 
 - `Ok(Zoned)` - If the input string can be parsed as a `Zoned` object
+- `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed or requires extended-year support
+
+### parse_datetime_extended and parse_datetime_at_date_extended
+
+The extended-aware entrypoints return:
+
+- `Ok(ParsedDateTime::InRange(Zoned))` - If the input is representable as a `Zoned` object
+- `Ok(ParsedDateTime::Extended(_))` - If the input requires extended-year support
 - `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed
 
 ## Fuzzer
