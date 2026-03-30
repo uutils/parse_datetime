@@ -3,6 +3,7 @@ on: [push, pull_request]
 name: Basic CI
 
 env:
+  CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
   RUST_MIN_SRV: "1.71.1"
 
@@ -15,7 +16,6 @@ jobs:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
       - run: cargo check
 
   test:
@@ -26,7 +26,6 @@ jobs:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
 
   fmt:
@@ -34,8 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -46,8 +43,6 @@ jobs:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup component add clippy
       - run: cargo clippy --all-targets -- -D warnings
 
   min_version:
@@ -75,14 +70,14 @@ jobs:
           - { os: windows-latest , features: windows }
     steps:
     - uses: actions/checkout@v6
+    - name: emulate nightly toolchain
+      run: echo "RUSTC_BOOTSTRAP=1" >> "${GITHUB_ENV}"
     - name: Initialize workflow variables
       id: vars
       shell: bash
       run: |
         ## VARs setup
         outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo "${var}=${!var}" >> $GITHUB_OUTPUT; done; }
-        # toolchain
-        TOOLCHAIN="nightly" ## default to "nightly" toolchain (required for certain required unstable compiler flags) ## !maint: refactor when stable channel has needed support
         # * specify gnu-type TOOLCHAIN for windows; `grcov` requires gnu-style code coverage data files
         case ${{ matrix.job.os }} in windows-*) TOOLCHAIN="$TOOLCHAIN-x86_64-pc-windows-gnu" ;; esac;
         # * use requested TOOLCHAIN if specified
@@ -94,13 +89,12 @@ jobs:
         outputs CODECOV_FLAGS
 
     - name: rust toolchain ~ install
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@nightly # this job is not reproducible...
       with:
         components: llvm-tools-preview
     - name: Test
       run: cargo test --no-fail-fast
       env:
-        CARGO_INCREMENTAL: "0"
         RUSTC_WRAPPER: ""
         RUSTFLAGS: "-Cinstrument-coverage -Zcoverage-options=branch -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
         RUSTDOCFLAGS: "-Cpanic=abort"
@@ -109,12 +103,12 @@ jobs:
       id: build_grcov
       shell: bash
       run: |
-        git clone https://github.com/mozilla/grcov.git ~/grcov/
+        git clone --depth=1 https://github.com/mozilla/grcov.git ~/grcov/
         cd ~/grcov
         # Hardcode the version of crossbeam-epoch. See
         # https://github.com/uutils/coreutils/issues/3680
         sed -i -e "s|tempfile =|crossbeam-epoch = \"=0.9.8\"\ntempfile =|" Cargo.toml
-        cargo install --path .
+        cargo install --path . --locked
         cd -
 # Uncomment when the upstream issue
 # https://github.com/mozilla/grcov/issues/849 is fixed
@@ -155,13 +149,14 @@ jobs:
       RUN_FOR: 60
     steps:
     - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@nightly
+    - name: emulate nightly toolchain
+      run: echo "RUSTC_BOOTSTRAP=1" >> "${GITHUB_ENV}"
     - name: Install `cargo-fuzz`
-      run: cargo install cargo-fuzz
+      run: cargo install cargo-fuzz --locked
     - uses: Swatinem/rust-cache@v2
     - name: Run from_str for XX seconds
       shell: bash
       run: |
         ## Run it
         cd fuzz
-        cargo +nightly fuzz run fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+        cargo fuzz run fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
