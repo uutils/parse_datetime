@@ -63,8 +63,6 @@ use error::Error;
 
 #[derive(PartialEq, Debug)]
 enum Item {
-    #[cfg(test)]
-    Timestamp(epoch::Timestamp),
     DateTime(combined::DateTime),
     Date(date::Date),
     Time(time::Time),
