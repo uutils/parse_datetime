@@ -49,6 +49,11 @@ impl ParsedDateTime {
         }
     }
 
+    /// Unwraps the `InRange` variant, panicking if this is an `Extended` value.
+    ///
+    /// This is a convenience for contexts where the caller is certain the result
+    /// is in range (e.g., tests). Prefer [`into_zoned`](Self::into_zoned) or
+    /// pattern matching in production code.
     pub fn expect_in_range(self) -> Zoned {
         self.into_zoned()
             .expect("ParsedDateTime is not representable as jiff::Zoned")
@@ -64,6 +69,7 @@ impl fmt::Display for ParsedDateTime {
     }
 }
 
+/// An `Extended` value never compares equal to a `Zoned`.
 impl PartialEq<Zoned> for ParsedDateTime {
     fn eq(&self, other: &Zoned) -> bool {
         match self {
