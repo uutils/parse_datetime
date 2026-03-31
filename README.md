@@ -52,6 +52,21 @@ match dt.unwrap() {
 }
 ```
 
+For years beyond jiff's representable range (e.g., year 10000+), the result is an `ExtendedDateTime`:
+
+```rs
+use parse_datetime::{parse_datetime, ParsedDateTime};
+
+let dt = parse_datetime("12000-01-01").unwrap();
+match dt {
+  ParsedDateTime::Extended(ext) => {
+    assert_eq!(ext.year, 12000);
+    assert_eq!(ext.to_string(), "12000-01-01 00:00:00+00:00");
+  }
+  ParsedDateTime::InRange(_) => unreachable!("year 12000 is out of jiff range"),
+}
+```
+
 ### Supported Formats
 
 The `parse_datetime` and `parse_datetime_at_date` functions support absolute datetime and the following relative times:
