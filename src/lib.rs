@@ -55,6 +55,15 @@ impl ParsedDateTime {
     }
 }
 
+impl fmt::Display for ParsedDateTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParsedDateTime::InRange(z) => write!(f, "{}", z.strftime("%Y-%m-%d %H:%M:%S%:z")),
+            ParsedDateTime::Extended(dt) => write!(f, "{dt}"),
+        }
+    }
+}
+
 impl PartialEq<Zoned> for ParsedDateTime {
     fn eq(&self, other: &Zoned) -> bool {
         match self {

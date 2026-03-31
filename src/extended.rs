@@ -1,6 +1,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+use std::fmt;
+
 use crate::GNU_MAX_YEAR;
 
 const SECONDS_PER_DAY: i64 = 86_400;
@@ -286,6 +288,20 @@ impl ExtendedDateTime {
     /// Weekday in range 0..=6 where 0=Monday, 1=Tuesday, ..., 6=Sunday.
     pub fn weekday_monday0(&self) -> u8 {
         (self.weekday_sunday0() + 6) % 7
+    }
+}
+
+impl fmt::Display for ExtendedDateTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sign = if self.offset_seconds < 0 { '-' } else { '+' };
+        let abs = self.offset_seconds.unsigned_abs();
+        let oh = abs / 3600;
+        let om = (abs % 3600) / 60;
+        write!(
+            f,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}{:02}:{:02}",
+            self.year, self.month, self.day, self.hour, self.minute, self.second, sign, oh, om,
+        )
     }
 }
 
