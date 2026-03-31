@@ -3,6 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/parse_datetime.svg)](https://crates.io/crates/parse_datetime)
 [![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/uutils/parse_datetime/blob/main/LICENSE)
 [![CodeCov](https://codecov.io/gh/uutils/parse_datetime/branch/main/graph/badge.svg)](https://codecov.io/gh/uutils/parse_datetime)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/uutils/parse_datetime?utm_source=badge)
 
 A Rust crate for parsing human-readable relative time strings and
 human-readable datetime strings.

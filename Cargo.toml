@@ -15,3 +15,10 @@ jiff = { version = "0.2.15", default-features = false, features = ["tz-system", 
 
 [dev-dependencies]
 rstest = "0.26"
+
+[dev-dependencies.codspeed-criterion-compat]
+version = "2.7"
+
+[[bench]]
+name = "parse_datetime"
+harness = false
