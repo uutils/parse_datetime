@@ -8,6 +8,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.7"
+arbitrary = { version = "1", features = ["derive"] }
+jiff = "0.2"
 
 [dependencies.parse_datetime]
 path = "../"
@@ -15,5 +17,11 @@ path = "../"
 [[bin]]
 name = "fuzz_parse_datetime"
 path = "fuzz_targets/parse_datetime.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_large_year"
+path = "fuzz_targets/large_year.rs"
 test = false
 doc = false
