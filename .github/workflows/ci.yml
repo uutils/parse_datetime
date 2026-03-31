@@ -154,9 +154,15 @@ jobs:
     - name: Install `cargo-fuzz`
       run: cargo install cargo-fuzz --locked
     - uses: Swatinem/rust-cache@v2
-    - name: Run from_str for XX seconds
+    - name: Run fuzz_parse_datetime for XX seconds
       shell: bash
       run: |
         ## Run it
         cd fuzz
         cargo fuzz run fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+    - name: Run fuzz_large_year for XX seconds
+      shell: bash
+      run: |
+        ## Run it
+        cd fuzz
+        cargo fuzz run fuzz_large_year -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
