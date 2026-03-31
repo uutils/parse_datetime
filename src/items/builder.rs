@@ -520,8 +520,6 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
 
         for item in items {
             builder = match item {
-                #[cfg(test)]
-                Item::Timestamp(ts) => builder.set_timestamp(ts)?,
                 Item::DateTime(dt) => builder.set_date(dt.date)?.set_time(dt.time)?,
                 Item::Date(d) => builder.set_date(d)?,
                 Item::Time(t) => builder.set_time(t)?,
@@ -647,10 +645,6 @@ mod tests {
                 "timezone rule cannot appear more than once",
             ),
             (
-                vec![Item::Timestamp(timestamp()), Item::Timestamp(timestamp())],
-                "timestamp cannot appear more than once",
-            ),
-            (
                 vec![Item::Date(date()), Item::Date(date())],
                 "date cannot appear more than once",
             ),
@@ -675,28 +669,60 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_timestamp_error() {
+        let builder = DateTimeBuilder::new().set_timestamp(timestamp()).unwrap();
+        assert_eq!(
+            builder.set_timestamp(timestamp()).unwrap_err(),
+            "timestamp cannot appear more than once"
+        );
+    }
+
+    #[test]
     fn timestamp_cannot_be_combined_with_other_items() {
-        let test_cases = vec![
-            vec![Item::Date(date()), Item::Timestamp(timestamp())],
-            vec![Item::Time(time()), Item::Timestamp(timestamp())],
-            vec![Item::Weekday(weekday()), Item::Timestamp(timestamp())],
-            vec![Item::Offset(offset()), Item::Timestamp(timestamp())],
-            vec![Item::Relative(relative_day()), Item::Timestamp(timestamp())],
-            vec![Item::Timestamp(timestamp()), Item::Date(date())],
-            vec![Item::Timestamp(timestamp()), Item::Time(time())],
-            vec![Item::Timestamp(timestamp()), Item::Weekday(weekday())],
-            vec![Item::Timestamp(timestamp()), Item::Relative(relative_day())],
-            vec![Item::Timestamp(timestamp()), Item::Offset(offset())],
-            vec![Item::Timestamp(timestamp()), Item::Pure("2023".to_string())],
+        // Setting a timestamp after other items have been set.
+        let builders_with_items: Vec<DateTimeBuilder> = vec![
+            DateTimeBuilder::new().set_date(date()).unwrap(),
+            DateTimeBuilder::new().set_time(time()).unwrap(),
+            DateTimeBuilder::new().set_weekday(weekday()).unwrap(),
+            DateTimeBuilder::new().set_offset(offset()).unwrap(),
+            DateTimeBuilder::new()
+                .push_relative(relative_day())
+                .unwrap(),
         ];
 
-        for items in test_cases {
-            let result = DateTimeBuilder::try_from(items);
+        for builder in builders_with_items {
             assert_eq!(
-                result.unwrap_err(),
+                builder.set_timestamp(timestamp()).unwrap_err(),
                 "timestamp cannot be combined with other date/time items"
             );
         }
+
+        // Setting other items after a timestamp has been set.
+        let ts_builder = || DateTimeBuilder::new().set_timestamp(timestamp()).unwrap();
+        assert_eq!(
+            ts_builder().set_date(date()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().set_time(time()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().set_weekday(weekday()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().push_relative(relative_day()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().set_offset(offset()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().set_pure("2023".to_string()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
     }
 
     #[test]
