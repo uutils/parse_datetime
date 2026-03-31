@@ -63,7 +63,14 @@ impl ParsedDateTime {
 impl fmt::Display for ParsedDateTime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParsedDateTime::InRange(z) => write!(f, "{}", z.strftime("%Y-%m-%d %H:%M:%S%:z")),
+            ParsedDateTime::InRange(z) => {
+                let ns = z.datetime().time().subsec_nanosecond();
+                if ns != 0 {
+                    write!(f, "{}", z.strftime("%Y-%m-%d %H:%M:%S%.9f%:z"))
+                } else {
+                    write!(f, "{}", z.strftime("%Y-%m-%d %H:%M:%S%:z"))
+                }
+            }
             ParsedDateTime::Extended(dt) => write!(f, "{dt}"),
         }
     }

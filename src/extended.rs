@@ -297,11 +297,28 @@ impl fmt::Display for ExtendedDateTime {
         let abs = self.offset_seconds.unsigned_abs();
         let oh = abs / 3600;
         let om = (abs % 3600) / 60;
-        write!(
-            f,
-            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}{:02}:{:02}",
-            self.year, self.month, self.day, self.hour, self.minute, self.second, sign, oh, om,
-        )
+        if self.nanosecond != 0 {
+            write!(
+                f,
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:09}{}{:02}:{:02}",
+                self.year,
+                self.month,
+                self.day,
+                self.hour,
+                self.minute,
+                self.second,
+                self.nanosecond,
+                sign,
+                oh,
+                om,
+            )
+        } else {
+            write!(
+                f,
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}{:02}:{:02}",
+                self.year, self.month, self.day, self.hour, self.minute, self.second, sign, oh, om,
+            )
+        }
     }
 }
 
