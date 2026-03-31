@@ -811,4 +811,80 @@ mod tests {
             );
         }
     }
+
+    #[cfg(test)]
+    mod display {
+        use jiff::{civil::DateTime, tz::TimeZone};
+
+        use crate::{parse_datetime_at_date, ExtendedDateTime, ParsedDateTime};
+
+        #[test]
+        fn in_range_without_nanoseconds() {
+            let base = "2024-06-15 08:30:00"
+                .parse::<DateTime>()
+                .unwrap()
+                .to_zoned(TimeZone::UTC)
+                .unwrap();
+            let parsed = parse_datetime_at_date(base, "2024-06-15 08:30:00").unwrap();
+            assert_eq!(parsed.to_string(), "2024-06-15 08:30:00+00:00");
+        }
+
+        #[test]
+        fn in_range_with_nanoseconds() {
+            let base = "2024-06-15 08:30:00.123456789"
+                .parse::<DateTime>()
+                .unwrap()
+                .to_zoned(TimeZone::UTC)
+                .unwrap();
+            // Parsing "now" at a base with subsecond precision preserves it.
+            let parsed = parse_datetime_at_date(base, "now").unwrap();
+            assert_eq!(parsed.to_string(), "2024-06-15 08:30:00.123456789+00:00");
+        }
+
+        #[test]
+        fn extended_without_nanoseconds() {
+            let dt = ExtendedDateTime::new(
+                crate::DateParts {
+                    year: 12000,
+                    month: 3,
+                    day: 15,
+                },
+                crate::TimeParts {
+                    hour: 10,
+                    minute: 30,
+                    second: 45,
+                    nanosecond: 0,
+                },
+                3600,
+            )
+            .unwrap();
+            assert_eq!(
+                ParsedDateTime::Extended(dt).to_string(),
+                "12000-03-15 10:30:45+01:00"
+            );
+        }
+
+        #[test]
+        fn extended_with_nanoseconds() {
+            let dt = ExtendedDateTime::new(
+                crate::DateParts {
+                    year: 12000,
+                    month: 3,
+                    day: 15,
+                },
+                crate::TimeParts {
+                    hour: 10,
+                    minute: 30,
+                    second: 45,
+                    nanosecond: 123456789,
+                },
+                -18000,
+            )
+            .unwrap();
+            assert_eq!(
+                ParsedDateTime::Extended(dt).to_string(),
+                "12000-03-15 10:30:45.123456789-05:00"
+            );
+        }
+    }
 }
