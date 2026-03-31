@@ -538,7 +538,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jiff::{civil::DateTime, tz::TimeZone, Zoned};
+    use jiff::{civil::DateTime, tz::TimeZone};
 
     fn timestamp() -> epoch::Timestamp {
         let mut input = "@1234567890";
@@ -627,13 +627,6 @@ mod tests {
         match parsed {
             ParsedDateTime::Extended(dt) => dt,
             ParsedDateTime::InRange(z) => panic!("expected extended datetime, got in-range: {z}"),
-        }
-    }
-
-    fn expect_in_range_datetime(parsed: ParsedDateTime) -> Zoned {
-        match parsed {
-            ParsedDateTime::InRange(z) => z,
-            ParsedDateTime::Extended(dt) => panic!("expected in-range datetime, got {dt:?}"),
         }
     }
 
@@ -919,7 +912,7 @@ mod tests {
             Item::Relative(relative_day()),
         ])
         .unwrap();
-        let z = expect_in_range_datetime(builder.set_base(base).build().unwrap());
+        let z = builder.set_base(base).build().unwrap().expect_in_range();
         assert_eq!(z.strftime("%Y-%m-%d").to_string(), "9999-02-01");
     }
 
@@ -953,7 +946,7 @@ mod tests {
             Item::Relative(relative_month()),
         ])
         .unwrap();
-        let z = expect_in_range_datetime(builder.set_base(base).build().unwrap());
+        let z = builder.set_base(base).build().unwrap().expect_in_range();
         assert_eq!(z.strftime("%Y-%m-%d").to_string(), "2021-03-03");
     }
 
@@ -995,7 +988,7 @@ mod tests {
             .unwrap();
         let mut builder = DateTimeBuilder::new();
         builder.base = Some(base);
-        let z = expect_in_range_datetime(builder.build_extended().unwrap());
+        let z = builder.build_extended().unwrap().expect_in_range();
         assert_eq!(
             z.strftime("%Y-%m-%d %H:%M:%S%.9f").to_string(),
             "2000-01-01 10:11:12.123456789"
@@ -1019,12 +1012,12 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "expected in-range datetime")]
-    fn expect_in_range_datetime_panics_for_extended_input() {
+    #[should_panic(expected = "ParsedDateTime is not representable as jiff::Zoned")]
+    fn expect_in_range_panics_for_extended_input() {
         let parsed = DateTimeBuilder::try_from(vec![Item::Date(date_large("10000-01-01"))])
             .unwrap()
             .build()
             .unwrap();
-        let _ = expect_in_range_datetime(parsed);
+        let _ = parsed.expect_in_range();
     }
 }
