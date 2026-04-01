@@ -61,7 +61,8 @@ let dt = parse_datetime("12000-01-01").unwrap();
 match dt {
   ParsedDateTime::Extended(ext) => {
     assert_eq!(ext.year, 12000);
-    assert_eq!(ext.to_string(), "12000-01-01 00:00:00+00:00");
+    assert_eq!(ext.month, 1);
+    assert_eq!(ext.day, 1);
   }
   ParsedDateTime::InRange(_) => unreachable!("year 12000 is out of jiff range"),
 }
