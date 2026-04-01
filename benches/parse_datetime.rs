@@ -94,6 +94,33 @@ fn bench_invalid_input(c: &mut Criterion) {
     });
 }
 
+fn bench_extended_year(c: &mut Criterion) {
+    c.bench_function("parse_extended_year", |b| {
+        b.iter(|| parse_datetime("10000-01-01"))
+    });
+}
+
+fn bench_extended_year_rollover(c: &mut Criterion) {
+    c.bench_function("parse_extended_year_rollover", |b| {
+        b.iter(|| parse_datetime("9999-12-31 +1 day"))
+    });
+}
+
+fn bench_extended_year_relative(c: &mut Criterion) {
+    let base = jiff::civil::DateTime::from(jiff::civil::date(2000, 1, 1))
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap();
+    c.bench_function("parse_extended_year_relative", |b| {
+        b.iter(|| parse_datetime_at_date(base.clone(), "10000-01-01 +1 day"))
+    });
+}
+
+fn bench_extended_large_year(c: &mut Criterion) {
+    c.bench_function("parse_extended_large_year", |b| {
+        b.iter(|| parse_datetime("999999-06-15"))
+    });
+}
+
 criterion_group!(
     benches,
     bench_iso_datetime,
@@ -111,5 +138,9 @@ criterion_group!(
     bench_datetime_with_timezone_name,
     bench_datetime_ending_in_z,
     bench_invalid_input,
+    bench_extended_year,
+    bench_extended_year_rollover,
+    bench_extended_year_relative,
+    bench_extended_large_year,
 );
 criterion_main!(benches);
