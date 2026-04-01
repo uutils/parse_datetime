@@ -1,6 +1,6 @@
 [package]
 name = "parse_datetime"
-description = "parsing human-readable time strings and converting them to a DateTime"
+description = "parsing human-readable time strings and converting them to a Zoned datetime"
 version = "0.15.0"
 edition = "2021"
 license = "MIT"
