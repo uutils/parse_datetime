@@ -49,6 +49,57 @@ impl ParsedDateTime {
         }
     }
 
+    /// Returns the number of seconds since the Unix epoch, using floor
+    /// division (rounding toward negative infinity).
+    ///
+    /// This matches the behavior of GNU `date +%s` for negative fractional
+    /// timestamps. For example, a timestamp of −1.5 seconds returns −2
+    /// (not −1 as truncation toward zero would give).
+    ///
+    /// Note: `jiff::Timestamp::as_second()` uses truncation toward zero,
+    /// which differs from the POSIX/GNU convention for `%s`. This method
+    /// corrects for that.
+    pub fn unix_epoch_second(&self) -> i64 {
+        match self {
+            ParsedDateTime::InRange(z) => {
+                let ts = z.timestamp();
+                let s = ts.as_second();
+                let ns = ts.subsec_nanosecond();
+                // jiff stores negative fractional timestamps with a negative
+                // subsec_nanosecond (e.g. -1.5s → as_second=-1, subsec=-500ms).
+                // Floor semantics require subtracting 1 from the second when
+                // the nanosecond component is negative.
+                if ns < 0 {
+                    s - 1
+                } else {
+                    s
+                }
+            }
+            ParsedDateTime::Extended(ext) => ext.unix_seconds(),
+        }
+    }
+
+    /// Returns the sub-second nanosecond component, always in `0..1_000_000_000`.
+    ///
+    /// This is the complement of [`unix_epoch_second`](Self::unix_epoch_second):
+    /// the full timestamp equals `unix_epoch_second() + subsec_nanosecond() / 1e9`.
+    ///
+    /// For negative fractional timestamps the nanosecond is re-normalized to be
+    /// non-negative (matching the GNU `timespec` convention).
+    pub fn subsec_nanosecond(&self) -> i32 {
+        match self {
+            ParsedDateTime::InRange(z) => {
+                let ns = z.timestamp().subsec_nanosecond();
+                if ns < 0 {
+                    1_000_000_000 + ns
+                } else {
+                    ns
+                }
+            }
+            ParsedDateTime::Extended(_) => 0,
+        }
+    }
+
     /// Unwraps the `InRange` variant, panicking if this is an `Extended` value.
     ///
     /// This is a convenience for contexts where the caller is certain the result
@@ -885,6 +936,74 @@ mod tests {
                 ParsedDateTime::Extended(dt).to_string(),
                 "12000-03-15 10:30:45.123456789-05:00"
             );
+        }
+    }
+
+    mod unix_epoch_second {
+        use jiff::{civil::DateTime, tz::TimeZone};
+
+        use crate::parse_datetime_at_date;
+
+        fn epoch_second(input: &str) -> (i64, i32) {
+            let base = "2024-01-01 00:00:00"
+                .parse::<DateTime>()
+                .unwrap()
+                .to_zoned(TimeZone::UTC)
+                .unwrap();
+            let parsed = parse_datetime_at_date(base, input).unwrap();
+            (parsed.unix_epoch_second(), parsed.subsec_nanosecond())
+        }
+
+        #[test]
+        fn positive_integer_epoch() {
+            let (sec, nsec) = epoch_second("@1690466034");
+            assert_eq!(sec, 1690466034);
+            assert_eq!(nsec, 0);
+        }
+
+        #[test]
+        fn positive_fractional_epoch() {
+            let (sec, nsec) = epoch_second("@1690466034.5");
+            assert_eq!(sec, 1690466034);
+            assert_eq!(nsec, 500_000_000);
+        }
+
+        #[test]
+        fn negative_integer_epoch() {
+            let (sec, nsec) = epoch_second("@-1");
+            assert_eq!(sec, -1);
+            assert_eq!(nsec, 0);
+        }
+
+        #[test]
+        fn negative_fractional_epoch_floors() {
+            // Issue #283: @-1.5 must floor to -2, not truncate to -1.
+            let (sec, nsec) = epoch_second("@-1.5");
+            assert_eq!(sec, -2, "floor(-1.5) should be -2, not -1");
+            assert_eq!(nsec, 500_000_000);
+        }
+
+        #[test]
+        fn negative_fractional_epoch_large() {
+            // From issue #283: @-893375784.554767216
+            let (sec, nsec) = epoch_second("@-893375784.554767216");
+            assert_eq!(sec, -893375785);
+            assert_eq!(nsec, 445_232_784);
+        }
+
+        #[test]
+        fn zero_epoch() {
+            let (sec, nsec) = epoch_second("@0");
+            assert_eq!(sec, 0);
+            assert_eq!(nsec, 0);
+        }
+
+        #[test]
+        fn negative_zero_fractional() {
+            // @-0.5 should floor to -1
+            let (sec, nsec) = epoch_second("@-0.5");
+            assert_eq!(sec, -1);
+            assert_eq!(nsec, 500_000_000);
         }
     }
 }
