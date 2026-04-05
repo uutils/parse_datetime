@@ -34,7 +34,7 @@ pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTime> {
         date: trace("iso_date", alt((date::iso1, date::iso2))),
         // Note: the `T` is lowercased by the main parse function
         _: alt((s('t').void(), (' ', space).void())),
-        time: trace("iso_time", time::iso),
+        time: trace("iso_time", time::parse),
     })
     .parse_next(input)
 }
