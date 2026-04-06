@@ -942,7 +942,7 @@ mod tests {
     mod unix_epoch_second {
         use jiff::{civil::DateTime, tz::TimeZone};
 
-        use crate::parse_datetime_at_date;
+        use crate::{parse_datetime, parse_datetime_at_date, ParsedDateTime};
 
         fn epoch_second(input: &str) -> (i64, i32) {
             let base = "2024-01-01 00:00:00"
@@ -1004,6 +1004,17 @@ mod tests {
             let (sec, nsec) = epoch_second("@-0.5");
             assert_eq!(sec, -1);
             assert_eq!(nsec, 500_000_000);
+        }
+
+        #[test]
+        fn extended_values_use_extended_epoch_path() {
+            let parsed = parse_datetime("10000-01-01").unwrap();
+            let ParsedDateTime::Extended(ext) = &parsed else {
+                panic!("expected extended parsed datetime");
+            };
+
+            assert_eq!(parsed.unix_epoch_second(), ext.unix_seconds());
+            assert_eq!(parsed.subsec_nanosecond(), 0);
         }
     }
 }
