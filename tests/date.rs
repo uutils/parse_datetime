@@ -286,7 +286,6 @@ fn test_embedded_timezone(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
-
 // Issue #280: bare timezone abbreviation 'ut'/'UT' (Universal Time) should be
 // accepted as UTC. GNU date accepts these; previously parse_datetime rejected them
 // because 'ut' was absent from the named-timezone table.
@@ -298,13 +297,18 @@ fn test_bare_ut_timezone_is_accepted() {
         assert!(
             result.is_ok(),
             "expected bare timezone '{}' to be accepted, got: {:?}",
-            input, result,
+            input,
+            result,
         );
-        let offset_secs = result.unwrap()
+        let offset_secs = result
+            .unwrap()
             .as_zoned()
             .map(|z| z.offset().seconds())
             .unwrap_or(0);
-        assert_eq!(offset_secs, 0,
-            "expected 'ut' to resolve to UTC offset 0, got {} seconds", offset_secs);
+        assert_eq!(
+            offset_secs, 0,
+            "expected 'ut' to resolve to UTC offset 0, got {} seconds",
+            offset_secs
+        );
     }
 }
