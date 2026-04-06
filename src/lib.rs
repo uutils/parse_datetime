@@ -702,10 +702,7 @@ mod tests {
         for abbr in ["ut", "UT", "gmt", "GMT"] {
             let result = parse_datetime(abbr)
                 .unwrap_or_else(|_| panic!("bare timezone '{abbr}' should be accepted"));
-            let offset_secs = result
-                .expect_in_range()
-                .offset()
-                .seconds();
+            let offset_secs = result.expect_in_range().offset().seconds();
             assert_eq!(offset_secs, 0, "'{abbr}' should resolve to UTC (+0)");
         }
     }
