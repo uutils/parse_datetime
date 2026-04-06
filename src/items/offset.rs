@@ -281,7 +281,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "w" => Ok("-10"),
         "v" => Ok("-9"),
         "utc" => Ok("+0"),
-        "ut" => Ok("+0"),  // Universal Time = UTC
+        "ut" => Ok("+0"), // Universal Time = UTC
         "u" => Ok("-8"),
         "t" => Ok("-7"),
         "sst" => Ok("-11"),
