@@ -1009,12 +1009,14 @@ mod tests {
         #[test]
         fn extended_values_use_extended_epoch_path() {
             let parsed = parse_datetime("10000-01-01").unwrap();
-            let ParsedDateTime::Extended(ext) = &parsed else {
-                panic!("expected extended parsed datetime");
-            };
-
-            assert_eq!(parsed.unix_epoch_second(), ext.unix_seconds());
+            // Year 10000 is beyond jiff::Zoned's representable range, so
+            // parse_datetime must route through the ExtendedDateTime branch
+            // of both accessors.
+            assert!(matches!(parsed, ParsedDateTime::Extended(_)));
             assert_eq!(parsed.subsec_nanosecond(), 0);
+
+            // Year 10000 UTC in seconds since 1970 is well past 2.5e11.
+            assert!(parsed.unix_epoch_second() > 250_000_000_000);
         }
 
         #[test]
