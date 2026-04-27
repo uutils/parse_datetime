@@ -694,6 +694,19 @@ mod tests {
         }
     }
 
+    /// GNU `date` accepts bare `ut` / `UT` as a synonym for UTC (issue #280).
+    /// `gmt` and `GMT` already worked; this test covers all four forms.
+    #[test]
+    fn test_bare_utc_timezone_abbreviations() {
+        // All four should parse without error and produce a result in UTC (+00:00).
+        for abbr in ["ut", "UT", "gmt", "GMT"] {
+            let result = parse_datetime(abbr)
+                .unwrap_or_else(|_| panic!("bare timezone '{abbr}' should be accepted"));
+            let offset_secs = result.expect_in_range().offset().seconds();
+            assert_eq!(offset_secs, 0, "'{abbr}' should resolve to UTC (+0)");
+        }
+    }
+
     #[test]
     fn test_weekday_only() {
         let now = Zoned::now();
