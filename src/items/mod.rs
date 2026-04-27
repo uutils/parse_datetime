@@ -54,7 +54,8 @@ use primitive::space;
 use winnow::{
     combinator::{alt, eof, preceded, repeat_till, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
-    stream::Stream,
+    stream::{AsChar, Stream},
+    token::take_while,
     ModalResult, Parser,
 };
 
@@ -71,6 +72,9 @@ enum Item {
     Offset(offset::Offset),
     TimeZone(jiff::tz::TimeZone),
     Pure(String),
+    /// An unrecognized alphabetic token silently ignored for GNU `date` compatibility.
+    /// GNU `date` ignores trailing word-tokens it doesn't recognize (e.g. `8j` → 08:00:00).
+    Noise,
 }
 
 /// Parse a date and time string and resolve it against the given base date and
@@ -261,9 +265,24 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             weekday::parse.map(Item::Weekday),
             offset::parse.map(Item::Offset),
             pure::parse.map(Item::Pure),
+            noise_token,
         )),
     )
     .parse_next(input)
+}
+
+/// Consume an unrecognized alphabetic word and silently discard it.
+///
+/// GNU `date` ignores trailing word-tokens it does not recognize (issue #279).
+/// For example, `8j` is accepted and the `j` is silently dropped, yielding
+/// 08:00:00, just as GNU `date -d '8j'` does.
+///
+/// This parser is the last alternative in `parse_item`, so it only fires after
+/// every other item parser has already failed.
+fn noise_token(input: &mut &str) -> ModalResult<Item> {
+    primitive::s(take_while(1.., AsChar::is_alpha))
+        .map(|_| Item::Noise)
+        .parse_next(input)
 }
 
 /// Create an error with context for unexpected input.
@@ -722,6 +741,37 @@ mod tests {
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
+    }
+
+    /// GNU `date` silently ignores unrecognized alphabetic tokens that trail a
+    /// pure number (issue #279). E.g. `8j` and `8 j` both produce 08:00:00.
+    #[test]
+    fn noise_after_pure_number() {
+        let now = Zoned::now().with_time_zone(TimeZone::UTC);
+
+        // Adjacent suffix: "8j" → hour 8
+        let result = at_date(parse(&mut "8j").unwrap(), now.clone());
+        assert_eq!(result.hour(), 8);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
+
+        // Space-separated suffix: "8 j" → hour 8
+        let result = at_date(parse(&mut "8 j").unwrap(), now.clone());
+        assert_eq!(result.hour(), 8);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
+
+        // Noise following a full date+pure-time: "1230foo" → 12:30
+        let result = at_date(parse(&mut "1230foo").unwrap(), now.clone());
+        assert_eq!(result.hour(), 12);
+        assert_eq!(result.minute(), 30);
+
+        // Noise must NOT be accepted when it precedes a real item (leading garbage).
+        assert!(parse(&mut "bogus +1 day").is_err());
+        // Noise must NOT be accepted after a non-pure item (e.g. after a date).
+        assert!(parse(&mut "2025-01-01 abcdef").is_err());
+        // A standalone unrecognized word is still an error.
+        assert!(parse(&mut "notadate").is_err());
     }
 
     #[test]
