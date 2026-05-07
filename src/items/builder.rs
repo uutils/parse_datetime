@@ -517,52 +517,17 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
 
     fn try_from(items: Vec<Item>) -> Result<Self, Self::Error> {
         let mut builder = DateTimeBuilder::new();
-        // GNU date silently ignores unrecognized alphabetic tokens that directly
-        // follow a pure number (e.g. `8j` or `8 j` → 08:00:00). A Noise token
-        // is only valid in that position; anywhere else it is an error.
-        let mut prev_was_pure = false;
 
         for item in items {
             builder = match item {
-                Item::Noise => {
-                    if !prev_was_pure {
-                        return Err("unrecognized token");
-                    }
-                    prev_was_pure = false;
-                    builder
-                }
-                Item::Pure(pure) => {
-                    prev_was_pure = true;
-                    builder.set_pure(pure)?
-                }
-                Item::DateTime(dt) => {
-                    prev_was_pure = false;
-                    builder.set_date(dt.date)?.set_time(dt.time)?
-                }
-                Item::Date(d) => {
-                    prev_was_pure = false;
-                    builder.set_date(d)?
-                }
-                Item::Time(t) => {
-                    prev_was_pure = false;
-                    builder.set_time(t)?
-                }
-                Item::Weekday(weekday) => {
-                    prev_was_pure = false;
-                    builder.set_weekday(weekday)?
-                }
-                Item::Offset(offset) => {
-                    prev_was_pure = false;
-                    builder.set_offset(offset)?
-                }
-                Item::Relative(rel) => {
-                    prev_was_pure = false;
-                    builder.push_relative(rel)?
-                }
-                Item::TimeZone(tz) => {
-                    prev_was_pure = false;
-                    builder.set_timezone(tz)?
-                }
+                Item::DateTime(dt) => builder.set_date(dt.date)?.set_time(dt.time)?,
+                Item::Date(d) => builder.set_date(d)?,
+                Item::Time(t) => builder.set_time(t)?,
+                Item::Weekday(weekday) => builder.set_weekday(weekday)?,
+                Item::Offset(offset) => builder.set_offset(offset)?,
+                Item::Relative(rel) => builder.push_relative(rel)?,
+                Item::TimeZone(tz) => builder.set_timezone(tz)?,
+                Item::Pure(pure) => builder.set_pure(pure)?,
             }
         }
 
