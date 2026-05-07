@@ -52,7 +52,7 @@ use crate::ParsedDateTime;
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
-    combinator::{alt, eof, preceded, repeat_till, terminated, trace},
+    combinator::{alt, eof, opt, preceded, repeat_till, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
     stream::{AsChar, Stream},
     token::take_while,
@@ -72,9 +72,6 @@ enum Item {
     Offset(offset::Offset),
     TimeZone(jiff::tz::TimeZone),
     Pure(String),
-    /// An unrecognized alphabetic token silently ignored for GNU `date` compatibility.
-    /// GNU `date` ignores trailing word-tokens it doesn't recognize (e.g. `8j` → 08:00:00).
-    Noise,
 }
 
 /// Parse a date and time string and resolve it against the given base date and
@@ -253,9 +250,20 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     items.try_into().map_err(|e| expect_error(input, e))
 }
 
-/// Parse an item.
+/// Parse a single item.
+///
+/// In addition to the regular item parsers, this also implements GNU `date`'s
+/// behavior of silently ignoring unrecognized alphabetic tokens that trail a
+/// pure number (issue #279). For example, `8j` and `8 j` both produce
+/// 08:00:00, just as `date -d '8j'` does.
+///
+/// Noise consumption is gated on (a) the parsed item being a `Pure` and (b)
+/// the immediately-following input not parsing as any other recognized item.
+/// Gating on `Pure` keeps the hot invalid-input path (e.g. `NotADate`) cheap
+/// — no extra alt-branch is tried — and the lookahead prevents valid tokens
+/// like `BRT` from being eaten when they trail a pure number such as `8 BRT`.
 fn parse_item(input: &mut &str) -> ModalResult<Item> {
-    trace(
+    let item = trace(
         "parse_item",
         alt((
             combined::parse.map(Item::DateTime),
@@ -265,24 +273,34 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             weekday::parse.map(Item::Weekday),
             offset::parse.map(Item::Offset),
             pure::parse.map(Item::Pure),
-            noise_token,
         )),
     )
-    .parse_next(input)
-}
+    .parse_next(input)?;
 
-/// Consume an unrecognized alphabetic word and silently discard it.
-///
-/// GNU `date` ignores trailing word-tokens it does not recognize (issue #279).
-/// For example, `8j` is accepted and the `j` is silently dropped, yielding
-/// 08:00:00, just as GNU `date -d '8j'` does.
-///
-/// This parser is the last alternative in `parse_item`, so it only fires after
-/// every other item parser has already failed.
-fn noise_token(input: &mut &str) -> ModalResult<Item> {
-    primitive::s(take_while(1.., AsChar::is_alpha))
-        .map(|_| Item::Noise)
-        .parse_next(input)
+    if matches!(item, Item::Pure(_)) {
+        // Peek the remaining input through the same item parsers (cheap: &str
+        // is a pointer-pair). If none of them match, then any leading alpha
+        // word is unrecognized noise and we consume it; otherwise we leave the
+        // token alone so the next iteration can parse it normally.
+        let mut probe = *input;
+        let next_is_real_item = alt((
+            combined::parse.map(|_| ()),
+            date::parse.map(|_| ()),
+            time::parse.map(|_| ()),
+            relative::parse.map(|_| ()),
+            weekday::parse.map(|_| ()),
+            offset::parse.map(|_| ()),
+            pure::parse.map(|_| ()),
+        ))
+        .parse_next(&mut probe)
+        .is_ok();
+
+        if !next_is_real_item {
+            let _ = opt(primitive::s(take_while(1.., AsChar::is_alpha))).parse_next(input)?;
+        }
+    }
+
+    Ok(item)
 }
 
 /// Create an error with context for unexpected input.
