@@ -285,3 +285,31 @@ fn test_multiple_month_skip(#[case] base: &str, #[case] input: &str, #[case] exp
 fn test_embedded_timezone(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
+
+// Regression test for uutils/coreutils#12555.
+// A fixed offset (e.g. the "UTC" keyword) must anchor the instant *before*
+// relative adjustments are applied. Otherwise, when the base zone observes DST,
+// adding a large relative offset drifts the wall-clock across a DST boundary
+// and re-anchoring at the fixed offset bakes in the extra hour.
+// "1970-01-01 UTC + N seconds" must equal exactly N seconds after the epoch,
+// regardless of the base zone's DST rules.
+#[test]
+fn test_utc_keyword_plus_relative_seconds_across_dst() {
+    // Base in a DST-observing zone (Europe/Berlin); the value only matters as
+    // the default zone for interpreting the date, not the result.
+    let base = "2020-06-15 12:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::get("Europe/Berlin").unwrap())
+        .unwrap();
+
+    // A timestamp landing in summer (CEST, UTC+2) while the epoch base is in
+    // winter (CET, UTC+1), so the DST offset differs between base and result.
+    let seconds = 1_780_318_971_i64;
+    let input = format!("1970-01-01 UTC {seconds} seconds");
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, input)
+        .unwrap()
+        .expect_in_range();
+    assert_eq!(parsed.timestamp().as_second(), seconds);
+}

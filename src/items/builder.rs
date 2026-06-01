@@ -189,8 +189,8 @@ impl DateTimeBuilder {
     ///   - b. Apply time. If time carries an explicit numeric offset, apply the
     ///     offset before setting time.
     ///   - c. Apply weekday (e.g., "next Friday" or "last Monday").
-    ///   - d. Apply relative adjustments (e.g., "+3 days", "-2 months").
-    ///   - e. Apply final fixed offset if present.
+    ///   - d. Apply fixed offset if present (anchors the instant).
+    ///   - e. Apply relative adjustments (e.g., "+3 days", "-2 months").
     pub(super) fn build(self) -> Result<ParsedDateTime, error::Error> {
         if let Some(date) = self.date.as_ref() {
             if date.year.unwrap_or(0) > 9999 {
@@ -317,7 +317,17 @@ impl DateTimeBuilder {
             dt = dt.checked_add(Span::new().try_days(delta)?)?;
         }
 
-        // 4d. Apply relative adjustments.
+        // 4d. Apply fixed offset. This anchors the instant before relative
+        // adjustments so that "1970/01/01 UTC N seconds" adds N seconds to the
+        // fixed-offset instant rather than to a local wall-clock that may drift
+        // across a DST boundary (see issue uutils/coreutils#12555).
+        if let Some(offset) = self.offset {
+            let (offset, hour_adjustment) = offset.normalize();
+            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
+            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+        }
+
+        // 4e. Apply relative adjustments.
         for rel in self.relative {
             dt = match rel {
                 relative::Relative::Years(_) | relative::Relative::Months(_) => {
@@ -336,13 +346,6 @@ impl DateTimeBuilder {
                 }
                 _ => dt.checked_add::<Span>(rel.try_into()?)?,
             };
-        }
-
-        // 4e. Apply final fixed offset.
-        if let Some(offset) = self.offset {
-            let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
         }
 
         Ok(dt)
