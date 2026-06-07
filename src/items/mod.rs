@@ -52,9 +52,10 @@ use crate::ParsedDateTime;
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
-    combinator::{alt, eof, preceded, repeat_till, terminated, trace},
+    combinator::{alt, eof, opt, preceded, repeat_till, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
-    stream::Stream,
+    stream::{AsChar, Stream},
+    token::take_while,
     ModalResult, Parser,
 };
 
@@ -249,9 +250,20 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     items.try_into().map_err(|e| expect_error(input, e))
 }
 
-/// Parse an item.
+/// Parse a single item.
+///
+/// In addition to the regular item parsers, this also implements GNU `date`'s
+/// behavior of silently ignoring unrecognized alphabetic tokens that trail a
+/// pure number (issue #279). For example, `8j` and `8 j` both produce
+/// 08:00:00, just as `date -d '8j'` does.
+///
+/// Noise consumption is gated on (a) the parsed item being a `Pure` and (b)
+/// the immediately-following input not parsing as any other recognized item.
+/// Gating on `Pure` keeps the hot invalid-input path (e.g. `NotADate`) cheap
+/// — no extra alt-branch is tried — and the lookahead prevents valid tokens
+/// like `BRT` from being eaten when they trail a pure number such as `8 BRT`.
 fn parse_item(input: &mut &str) -> ModalResult<Item> {
-    trace(
+    let item = trace(
         "parse_item",
         alt((
             combined::parse.map(Item::DateTime),
@@ -263,7 +275,32 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             pure::parse.map(Item::Pure),
         )),
     )
-    .parse_next(input)
+    .parse_next(input)?;
+
+    if matches!(item, Item::Pure(_)) {
+        // Peek the remaining input through the same item parsers (cheap: &str
+        // is a pointer-pair). If none of them match, then any leading alpha
+        // word is unrecognized noise and we consume it; otherwise we leave the
+        // token alone so the next iteration can parse it normally.
+        let mut probe = *input;
+        let next_is_real_item = alt((
+            combined::parse.map(|_| ()),
+            date::parse.map(|_| ()),
+            time::parse.map(|_| ()),
+            relative::parse.map(|_| ()),
+            weekday::parse.map(|_| ()),
+            offset::parse.map(|_| ()),
+            pure::parse.map(|_| ()),
+        ))
+        .parse_next(&mut probe)
+        .is_ok();
+
+        if !next_is_real_item {
+            let _ = opt(primitive::s(take_while(1.., AsChar::is_alpha))).parse_next(input)?;
+        }
+    }
+
+    Ok(item)
 }
 
 /// Create an error with context for unexpected input.
@@ -722,6 +759,37 @@ mod tests {
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
         assert_eq!(result.second(), 0);
+    }
+
+    /// GNU `date` silently ignores unrecognized alphabetic tokens that trail a
+    /// pure number (issue #279). E.g. `8j` and `8 j` both produce 08:00:00.
+    #[test]
+    fn noise_after_pure_number() {
+        let now = Zoned::now().with_time_zone(TimeZone::UTC);
+
+        // Adjacent suffix: "8j" → hour 8
+        let result = at_date(parse(&mut "8j").unwrap(), now.clone());
+        assert_eq!(result.hour(), 8);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
+
+        // Space-separated suffix: "8 j" → hour 8
+        let result = at_date(parse(&mut "8 j").unwrap(), now.clone());
+        assert_eq!(result.hour(), 8);
+        assert_eq!(result.minute(), 0);
+        assert_eq!(result.second(), 0);
+
+        // Noise following a full date+pure-time: "1230foo" → 12:30
+        let result = at_date(parse(&mut "1230foo").unwrap(), now.clone());
+        assert_eq!(result.hour(), 12);
+        assert_eq!(result.minute(), 30);
+
+        // Noise must NOT be accepted when it precedes a real item (leading garbage).
+        assert!(parse(&mut "bogus +1 day").is_err());
+        // Noise must NOT be accepted after a non-pure item (e.g. after a date).
+        assert!(parse(&mut "2025-01-01 abcdef").is_err());
+        // A standalone unrecognized word is still an error.
+        assert!(parse(&mut "notadate").is_err());
     }
 
     #[test]
