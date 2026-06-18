@@ -15,7 +15,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: cargo check
 
   test:
@@ -25,14 +25,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: cargo test
 
   fmt:
     name: cargo fmt --all -- --check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -42,7 +42,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: cargo clippy --all-targets -- -D warnings
 
   min_version:
@@ -52,7 +52,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_MIN_SRV }}
@@ -69,7 +69,7 @@ jobs:
           - { os: macos-latest   , features: macos }
           - { os: windows-latest , features: windows }
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: emulate nightly toolchain
       run: echo "RUSTC_BOOTSTRAP=1" >> "${GITHUB_ENV}"
     - name: Initialize workflow variables
@@ -148,7 +148,7 @@ jobs:
     env:
       RUN_FOR: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: emulate nightly toolchain
       run: echo "RUSTC_BOOTSTRAP=1" >> "${GITHUB_ENV}"
     - name: Install `cargo-fuzz`
