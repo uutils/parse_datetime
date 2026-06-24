@@ -16,7 +16,7 @@
 //! > discarded.
 use winnow::{
     combinator::{alt, trace},
-    seq, ModalResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::items::space;
@@ -29,14 +29,32 @@ pub(crate) struct DateTime {
     pub(crate) time: time::Time,
 }
 
+fn remaining_starts_with_meridiem(input: &str) -> bool {
+    let trimmed = input.trim_start();
+    trimmed.starts_with("am")
+        || trimmed.starts_with("pm")
+        || trimmed.starts_with("a.m.")
+        || trimmed.starts_with("p.m.")
+}
+
 pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTime> {
-    seq!(DateTime {
-        date: trace("iso_date", alt((date::iso1, date::iso2))),
-        // Note: the `T` is lowercased by the main parse function
-        _: alt((s('t').void(), (' ', space).void())),
-        time: trace("iso_time", time::iso),
-    })
-    .parse_next(input)
+    let date = trace("iso_date", alt((date::iso1, date::iso2))).parse_next(input)?;
+    // Note: the `T` is lowercased by the main parse function
+    alt((s('t').void(), (' ', space).void())).parse_next(input)?;
+
+    let mut iso_input = *input;
+    if let Ok(parsed_time) = trace("iso_time", time::iso).parse_next(&mut iso_input) {
+        if !remaining_starts_with_meridiem(iso_input) {
+            *input = iso_input;
+            return Ok(DateTime {
+                date,
+                time: parsed_time,
+            });
+        }
+    }
+
+    let time = trace("iso_time", time::parse).parse_next(input)?;
+    Ok(DateTime { date, time })
 }
 
 #[cfg(test)]
@@ -71,6 +89,33 @@ mod tests {
         ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).ok(), reference, "Failed string: {old_s}")
+        }
+    }
+
+    #[test]
+    fn date_and_time_ampm() {
+        let reference = Some(DateTime {
+            date: Date {
+                day: 15,
+                month: 6,
+                year: Some(2024),
+            },
+            time: Time {
+                hour: 15,
+                minute: 0,
+                second: 0,
+                nanosecond: 0,
+                offset: None,
+            },
+        });
+
+        for mut s in [
+            "2024-06-15 3:00 pm",
+            "2024-06-15 3:00pm",
+            "2024-06-15 3:00 p.m.",
+        ] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).ok(), reference, "Failed string: {old_s}");
         }
     }
 }
