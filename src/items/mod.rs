@@ -378,6 +378,14 @@ mod tests {
     }
 
     #[test]
+    fn date_and_time_ampm() {
+        // https://github.com/uutils/parse_datetime/issues/282
+        assert_eq!("12:00", test_eq_fmt("%H:%M", "2024-06-15 12:00 PM"));
+        assert_eq!("11:30", test_eq_fmt("%H:%M", "2024-06-15 11:30am"));
+        assert_eq!("15:00", test_eq_fmt("%H:%M", "2024-06-15 3:00 PM"));
+    }
+
+    #[test]
     fn empty() {
         let result = parse(&mut "");
         assert!(result.is_ok());
