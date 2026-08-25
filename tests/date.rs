@@ -325,3 +325,74 @@ fn test_utc_keyword_plus_relative_seconds_across_dst() {
         .expect_in_range();
     assert_eq!(parsed.timestamp().as_second(), seconds);
 }
+
+// The military time zone letter `j`.
+//
+// Every other military letter (`a`-`i`, `k`-`y`, and `z` for UTC) denotes a
+// fixed offset from UTC. GNU `date` defines `j` as *local* time instead, so it
+// follows the base zone's DST rules rather than pinning an offset:
+//
+//   $ TZ=America/New_York date -d '8j'           # 2026-08-25 08:00 -0400
+//   $ TZ=America/New_York date -d '2026-01-01 j' # 2026-01-01 00:00 -0500
+//   $ TZ=America/New_York date -d '8z'           # 2026-08-25 04:00 -0400
+//
+// Verified against GNU coreutils 9.4.
+#[rstest]
+// Winter: New York is on EST (UTC-5).
+#[case::est("2026-01-15 12:00:00", -5 * 3600)]
+// Summer: the same zone is on EDT (UTC-4). A fixed offset could not do this.
+#[case::edt("2026-07-15 12:00:00", -4 * 3600)]
+fn test_military_j_is_local_time(#[case] base: &str, #[case] expected_offset: i32) {
+    let base = base
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::get("America/New_York").unwrap())
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base.clone(), "8j")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.hour(), 8, "`8j` should be 08:00 local");
+    assert_eq!(
+        parsed.offset().seconds(),
+        expected_offset,
+        "`8j` should take the base zone's offset"
+    );
+
+    // `z` is UTC, so it must *not* follow the base zone. This is what
+    // distinguishes `j` from every other military letter.
+    let utc = parse_datetime::parse_datetime_at_date(base, "8z")
+        .unwrap()
+        .expect_in_range();
+    assert_eq!(utc.offset().seconds(), 0, "`8z` should be UTC");
+}
+
+#[rstest]
+#[case::bare("j")]
+#[case::attached("8j")]
+#[case::uppercase("8J")]
+#[case::spaced("8 j")]
+#[case::leading("j 8")]
+fn test_military_j_accepted(#[case] input: &str) {
+    assert!(
+        parse_datetime::parse_datetime(input).is_ok(),
+        "`{input}` should parse"
+    );
+}
+
+#[rstest]
+// `j` is a time zone item, so a second one is a repeated zone, as in GNU.
+#[case::j_then_utc("8j utc")]
+#[case::utc_then_j("8 utc j")]
+#[case::j_twice("8 j j")]
+#[case::j_then_numeric("j +05:00")]
+// The whole alphabetic word is matched, so `j` never steals a prefix.
+#[case::doubled_letter("jj")]
+#[case::doubled_letter_after_number("8 jj")]
+fn test_military_j_rejected(#[case] input: &str) {
+    assert!(
+        parse_datetime::parse_datetime(input).is_err(),
+        "`{input}` should be rejected, as GNU date does"
+    );
+}
