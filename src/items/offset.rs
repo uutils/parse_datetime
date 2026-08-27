@@ -302,9 +302,13 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "mst" => Ok("-7"),
         "msk" => Ok("+3"),
         "msd" => Ok("+4"),
+        "mez" => Ok("+1"),
+        "mesz" => Ok("+2"),
+        "mest" => Ok("+2"),
         "mdt" => Ok("-6"),
         "m" => Ok("+12"),
         "l" => Ok("+11"),
+        "kst" => Ok("+9"),
         "k" => Ok("+10"),
         "jst" => Ok("+9"),
         "ist" => Ok("+5:30"),
@@ -431,6 +435,12 @@ mod tests {
             ("cst", off(true, 6, 0)),   // negative offset
             ("ist", off(false, 5, 30)), // positive offset with non-zero minutes
             ("nst", off(true, 3, 30)),  // negative offset with non-zero minutes
+            // Accepted by GNU date but previously missing here, which made
+            // `date -d "2024-01-15 12:00 MEZ"` fail (uutils/coreutils#13865).
+            ("mez", off(false, 1, 0)),
+            ("mesz", off(false, 2, 0)),
+            ("mest", off(false, 2, 0)),
+            ("kst", off(false, 9, 0)),
             ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
         ] {
             let mut s = input;
