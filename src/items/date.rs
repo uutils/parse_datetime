@@ -27,7 +27,7 @@
 //! > ‘September’.
 
 use winnow::{
-    ascii::{alpha1, multispace1},
+    ascii::alpha1,
     combinator::{alt, eof, opt, preceded, terminated},
     error::ErrMode,
     stream::AsChar,
@@ -36,7 +36,7 @@ use winnow::{
 };
 
 use super::{
-    primitive::{ctx_err, dec_uint, s},
+    primitive::{ctx_err, dec_uint, multispace1, s},
     year::{year_from_str, year_str},
 };
 
