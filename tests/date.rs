@@ -75,6 +75,18 @@ fn test_absolute_date_numeric(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// Any run of ASCII whitespace may separate items, like in GNU date. The
+// expected values were verified with GNU date (`date -d 'input'`).
+#[rstest]
+#[case::vertical_tab_between_date_and_year("Jan 23\x0B2026 1:00AM", "2026-01-23 01:00:00+00:00")]
+#[case::form_feed_between_date_and_year("Jan 23\x0C2026 1:00AM", "2026-01-23 01:00:00+00:00")]
+#[case::vertical_tab_after_comma("Jan 23,\x0B2026", "2026-01-23 00:00:00+00:00")]
+#[case::vertical_tab_before_time("14 nov 2026\x0B1:00AM", "2026-11-14 01:00:00+00:00")]
+#[case::vertical_tab_as_iso_separator("2026-01-23\x0B01:00:00", "2026-01-23 01:00:00+00:00")]
+fn test_whitespace_between_items(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
 #[rstest]
 #[case::us_style("11/14", 2022, "2022-11-14 00:00:00+00:00")]
 #[case::alphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]

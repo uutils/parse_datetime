@@ -392,6 +392,12 @@ mod tests {
     }
 
     #[test]
+    fn whitespace_only() {
+        let result = parse(&mut "\x0B \x0C");
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn invalid() {
         let result = parse(&mut "2025-05-19 2024-05-20 06:14:49");
         assert!(result.is_err());

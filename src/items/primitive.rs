@@ -6,7 +6,7 @@
 use std::str::FromStr;
 
 use winnow::{
-    ascii::{digit1, multispace0, Uint},
+    ascii::{digit1, Uint},
     combinator::{alt, delimited, not, opt, peek, preceded, repeat, separated},
     error::{ContextError, ParserError, StrContext, StrContextValue},
     stream::AsChar,
@@ -24,6 +24,23 @@ where
     E: ParserError<&'a str>,
 {
     preceded(space, p)
+}
+
+/// Same as winnow's `multispace0`, but also accepting `\v` and `\f`, like
+/// the whitespace GNU `date` accepts between tokens
+fn multispace0<'a, E>(input: &mut &'a str) -> winnow::Result<&'a str, E>
+where
+    E: ParserError<&'a str>,
+{
+    take_while(0.., (' ', '\t', '\n', '\x0B', '\x0C', '\r')).parse_next(input)
+}
+
+/// Same as [`multispace0`], but requiring at least one character
+pub(super) fn multispace1<'a, E>(input: &mut &'a str) -> winnow::Result<&'a str, E>
+where
+    E: ParserError<&'a str>,
+{
+    take_while(1.., (' ', '\t', '\n', '\x0B', '\x0C', '\r')).parse_next(input)
 }
 
 /// Parse the space in-between tokens
