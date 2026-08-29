@@ -396,3 +396,41 @@ fn test_military_j_rejected(#[case] input: &str) {
         "`{input}` should be rejected, as GNU date does"
     );
 }
+
+// A relative item keeps the base time of day, even when combined with a time
+// zone item. Only a date, a weekday, or a lone zone item resets it to
+// midnight:
+//
+//   $ TZ=America/New_York date -d 'j 1 day'   # tomorrow, current time of day
+//   $ TZ=America/New_York date -d 'utc 1 day' # ditto, in UTC
+//   $ TZ=America/New_York date -d 'j'         # today at 00:00
+//   $ TZ=America/New_York date -d 'j monday'  # next monday at 00:00
+//
+// Verified against GNU coreutils 9.7.
+#[rstest]
+#[case::local_zone_and_relative("j 1 day", "2026-08-30 11:30:45")]
+#[case::relative_then_local_zone("5 minutes j", "2026-08-29 11:35:45")]
+#[case::offset_and_relative("utc 1 day", "2026-08-30 11:30:45")]
+#[case::relative_then_offset("5 minutes utc", "2026-08-29 11:35:45")]
+#[case::timezone_rule_and_relative("TZ=\"Europe/Paris\" 1 day", "2026-08-30 17:30:45")]
+// Without a relative item, a zone item still truncates to midnight.
+#[case::local_zone_alone("j", "2026-08-29 00:00:00")]
+#[case::local_zone_and_weekday("j monday", "2026-08-31 00:00:00")]
+#[case::offset_alone("utc", "2026-08-29 00:00:00")]
+fn test_zone_item_keeps_time_of_day_with_relative(#[case] input: &str, #[case] expected: &str) {
+    let base = "2026-08-29 11:30:45"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::get("America/New_York").unwrap())
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, input)
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(
+        parsed.datetime().to_string(),
+        expected.parse::<DateTime>().unwrap().to_string(),
+        "`{input}` should resolve to {expected} in its own zone"
+    );
+}

@@ -264,13 +264,15 @@ impl DateTimeBuilder {
             return Ok(ts.to_zoned(base.offset().to_time_zone()));
         }
 
-        // 3. Determine whether to truncate the time of day.
+        // 3. Determine whether to truncate the time of day. Like GNU, a
+        // relative item on its own keeps the current time of day, while a date,
+        // a weekday, or a timezone item without any relative item resets it to
+        // midnight.
+        let zone_seen = self.offset.is_some() || self.local_zone || has_timezone;
         let need_midnight = self.date.is_some()
             || self.time.is_some()
             || self.weekday.is_some()
-            || self.offset.is_some()
-            || self.local_zone
-            || has_timezone;
+            || (zone_seen && self.relative.is_empty());
 
         let mut dt = if need_midnight {
             base.with().time(civil::time(0, 0, 0, 0)).build()?
@@ -401,12 +403,13 @@ impl DateTimeBuilder {
         };
         let rule_tz = base.time_zone().clone();
 
+        // See `build_in_range` for why a relative item alone keeps the
+        // current time of day.
+        let zone_seen = offset.is_some() || local_zone || has_timezone;
         let need_midnight = date.is_some()
             || time.is_some()
             || weekday.is_some()
-            || offset.is_some()
-            || local_zone
-            || has_timezone;
+            || (zone_seen && relative.is_empty());
         let mut dt = ExtendedDateTime::new(
             DateParts {
                 year: u32::try_from(base.year()).map_err(|_| "year must be non-negative")?,
