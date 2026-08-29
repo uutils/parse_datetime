@@ -20,6 +20,10 @@ pub(crate) struct DateTimeBuilder {
     time: Option<time::Time>,
     weekday: Option<weekday::Weekday>,
     offset: Option<offset::Offset>,
+    /// Whether the military timezone letter `j` was given. It is a timezone
+    /// item, so it excludes any other one, but it means local time and so
+    /// contributes no offset of its own.
+    local_zone: bool,
     timezone: Option<jiff::tz::TimeZone>,
     relative: Vec<relative::Relative>,
 }
@@ -59,6 +63,7 @@ impl DateTimeBuilder {
             || self.time.is_some()
             || self.weekday.is_some()
             || self.offset.is_some()
+            || self.local_zone
             || !self.relative.is_empty()
         {
             return Err("timestamp cannot be combined with other date/time items");
@@ -84,7 +89,7 @@ impl DateTimeBuilder {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.time.is_some() {
             return Err("time cannot appear more than once");
-        } else if self.offset.is_some() && time.offset.is_some() {
+        } else if (self.offset.is_some() || self.local_zone) && time.offset.is_some() {
             return Err("time offset and timezone are mutually exclusive");
         }
 
@@ -107,12 +112,31 @@ impl DateTimeBuilder {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with other date/time items");
         } else if self.offset.is_some()
+            || self.local_zone
             || self.time.as_ref().and_then(|t| t.offset.as_ref()).is_some()
         {
             return Err("time offset cannot appear more than once");
         }
 
         self.offset = Some(timezone);
+        Ok(self)
+    }
+
+    /// Record the military timezone letter `j` (local time).
+    ///
+    /// It occupies the same slot as a numeric offset, so GNU rejects `8j utc`,
+    /// `8 utc j` and `8 j j` as a repeated timezone, and so do we.
+    fn set_local_zone(mut self) -> Result<Self, &'static str> {
+        if self.timestamp.is_some() {
+            return Err("timestamp cannot be combined with other date/time items");
+        } else if self.offset.is_some()
+            || self.local_zone
+            || self.time.as_ref().and_then(|t| t.offset.as_ref()).is_some()
+        {
+            return Err("time offset cannot appear more than once");
+        }
+
+        self.local_zone = true;
         Ok(self)
     }
 
@@ -245,6 +269,7 @@ impl DateTimeBuilder {
             || self.time.is_some()
             || self.weekday.is_some()
             || self.offset.is_some()
+            || self.local_zone
             || has_timezone;
 
         let mut dt = if need_midnight {
@@ -362,6 +387,7 @@ impl DateTimeBuilder {
             time,
             weekday,
             offset,
+            local_zone,
             timezone,
             relative,
         } = self;
@@ -379,6 +405,7 @@ impl DateTimeBuilder {
             || time.is_some()
             || weekday.is_some()
             || offset.is_some()
+            || local_zone
             || has_timezone;
         let mut dt = ExtendedDateTime::new(
             DateParts {
@@ -528,6 +555,7 @@ impl TryFrom<Vec<Item>> for DateTimeBuilder {
                 Item::Time(t) => builder.set_time(t)?,
                 Item::Weekday(weekday) => builder.set_weekday(weekday)?,
                 Item::Offset(offset) => builder.set_offset(offset)?,
+                Item::LocalZone => builder.set_local_zone()?,
                 Item::Relative(rel) => builder.push_relative(rel)?,
                 Item::TimeZone(tz) => builder.set_timezone(tz)?,
                 Item::Pure(pure) => builder.set_pure(pure)?,
@@ -681,6 +709,7 @@ mod tests {
             DateTimeBuilder::new().set_time(time()).unwrap(),
             DateTimeBuilder::new().set_weekday(weekday()).unwrap(),
             DateTimeBuilder::new().set_offset(offset()).unwrap(),
+            DateTimeBuilder::new().set_local_zone().unwrap(),
             DateTimeBuilder::new()
                 .push_relative(relative_day())
                 .unwrap(),
@@ -713,6 +742,10 @@ mod tests {
         );
         assert_eq!(
             ts_builder().set_offset(offset()).unwrap_err(),
+            "timestamp cannot be combined with other date/time items"
+        );
+        assert_eq!(
+            ts_builder().set_local_zone().unwrap_err(),
             "timestamp cannot be combined with other date/time items"
         );
         assert_eq!(

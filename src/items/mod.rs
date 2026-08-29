@@ -69,6 +69,10 @@ enum Item {
     Weekday(weekday::Weekday),
     Relative(relative::Relative),
     Offset(offset::Offset),
+    /// The military timezone letter `j`, which GNU `date` defines as local
+    /// time. It is a timezone item like [`Item::Offset`], but carries no
+    /// offset, so it cannot be represented as one.
+    LocalZone,
     TimeZone(jiff::tz::TimeZone),
     Pure(String),
 }
@@ -260,6 +264,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
             relative::parse.map(Item::Relative),
             weekday::parse.map(Item::Weekday),
             offset::parse.map(Item::Offset),
+            offset::parse_local.map(|()| Item::LocalZone),
             pure::parse.map(Item::Pure),
         )),
     )
@@ -784,5 +789,31 @@ mod tests {
         ] {
             assert_eq!(parse_build(input), expected, "{input}");
         }
+    }
+    /// `j` is a time zone item, so it participates in the same duplicate check
+    /// as a numeric offset. GNU rejects all three of these as a repeated zone.
+    #[test]
+    fn military_j_is_a_timezone_item() {
+        // Parses on its own, attached or spaced, in either case.
+        for input in ["j", "8j", "8 j", "8J", "j 8"] {
+            assert!(parse(&mut &*input).is_ok(), "`{input}` should parse");
+        }
+
+        for input in ["8j utc", "8 utc j", "8 j j"] {
+            let result = parse(&mut &*input);
+            assert!(result.is_err(), "`{input}` should be rejected");
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("time offset cannot appear more than once"),
+                "`{input}` should report a repeated time offset"
+            );
+        }
+
+        // A bare numeric offset is not an item on its own (the grammar requires
+        // a named zone), so this is rejected by the parser rather than by the
+        // duplicate check. GNU rejects it too.
+        assert!(parse(&mut "j +05:00").is_err());
     }
 }

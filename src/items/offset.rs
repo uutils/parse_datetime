@@ -168,8 +168,28 @@ impl Display for Offset {
     }
 }
 
+/// I'm assuming there are no timezone abbreviations with more
+/// than 6 charactres
+const MAX_TZ_SIZE: usize = 6;
+
 pub(super) fn parse(input: &mut &str) -> ModalResult<Offset> {
     timezone_name_offset.parse_next(input)
+}
+
+/// Parse the military timezone letter `j`.
+///
+/// Every other military letter denotes a fixed offset from UTC, but GNU `date`
+/// defines `j` as local time, which cannot be expressed as an [`Offset`] at
+/// all. It is therefore reported to the builder as its own item.
+///
+/// The whole alphabetic word is consumed before comparing, so `jan` is left to
+/// the date parser rather than being read as `j` followed by `an`, and `jj` is
+/// rejected rather than matching a `j` prefix.
+pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
+    s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha))
+        .verify(|word: &str| word.eq_ignore_ascii_case("j"))
+        .void()
+        .parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`.
@@ -188,9 +208,6 @@ pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
 
 /// Parse a timezone by name, with an optional numeric offset appended.
 fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
-    /// I'm assuming there are no timezone abbreviations with more
-    /// than 6 charactres
-    const MAX_TZ_SIZE: usize = 6;
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
     let tz = timezone_name_to_offset(nextword)?;
 
@@ -493,5 +510,32 @@ mod tests {
         assert_eq!(off(false, 5, 30).total_seconds(), 19_800);
         assert_eq!(off(true, 5, 30).total_seconds(), -19_800);
         assert_eq!(off(false, 24, 0).total_seconds(), 86_400);
+    }
+    /// `j` is the one military letter that is not an offset, so it is parsed
+    /// separately. The whole alphabetic word must be consumed before matching,
+    /// otherwise `jan` would be read as `j` followed by `an`.
+    #[test]
+    fn military_letter_j_local() {
+        for input in ["j", "J", " j"] {
+            let mut s = input;
+            assert!(
+                parse_local(&mut s).is_ok(),
+                "`{input}` should parse as local time"
+            );
+            assert!(s.is_empty(), "`{input}` should be fully consumed");
+        }
+
+        for input in ["jj", "jan", "jst", "z", "a", ""] {
+            let mut s = input;
+            assert!(
+                parse_local(&mut s).is_err(),
+                "`{input}` should not parse as local time"
+            );
+        }
+
+        // `j` is absent from the offset table, so the offset parser must not
+        // claim it.
+        let mut s = "j";
+        assert!(timezone_name_offset(&mut s).is_err());
     }
 }
