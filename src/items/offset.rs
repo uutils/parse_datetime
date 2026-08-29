@@ -168,8 +168,7 @@ impl Display for Offset {
     }
 }
 
-/// I'm assuming there are no timezone abbreviations with more
-/// than 6 charactres
+/// Timezone abbreviations are assumed to be no longer than 6 characters.
 const MAX_TZ_SIZE: usize = 6;
 
 pub(super) fn parse(input: &mut &str) -> ModalResult<Offset> {
