@@ -59,9 +59,23 @@ impl TryFrom<Relative> for jiff::Span {
             Relative::Days(days) => jiff::Span::new().try_days(days),
             Relative::Hours(hours) => jiff::Span::new().try_hours(hours),
             Relative::Minutes(minutes) => jiff::Span::new().try_minutes(minutes),
-            Relative::Seconds(seconds, nanoseconds) => jiff::Span::new()
-                .try_seconds(seconds)
-                .and_then(|span| span.try_nanoseconds(nanoseconds)),
+            Relative::Seconds(seconds, nanoseconds) => {
+                // `Relative::Seconds` is a floor decomposition: the value is
+                // `seconds + nanoseconds / 1e9` with a non-negative fraction, so
+                // -0.25 seconds is held as `(-1, 750_000_000)`. A `jiff::Span`
+                // is sign-uniform, so the fraction has to be rebalanced onto the
+                // sign of the whole seconds first; combining the fields as they
+                // are would subtract the fraction instead of adding it.
+                let (seconds, nanoseconds) = if seconds < 0 && nanoseconds > 0 {
+                    (seconds + 1, -i64::from(1_000_000_000 - nanoseconds))
+                } else {
+                    (seconds, i64::from(nanoseconds))
+                };
+
+                jiff::Span::new()
+                    .try_seconds(seconds)
+                    .and_then(|span| span.try_nanoseconds(nanoseconds))
+            }
         }
         .map_err(|_| "relative value is invalid")
     }
