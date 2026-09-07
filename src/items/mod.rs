@@ -816,4 +816,47 @@ mod tests {
         // duplicate check. GNU rejects it too.
         assert!(parse(&mut "j +05:00").is_err());
     }
+    /// A numeric offset after a time of day is a time zone correction, even
+    /// when a relative item follows it. GNU `date` reads
+    /// `2026-08-27 12:00 +3 hours` as the zone `+03:00` plus a bare `hours`
+    /// (which means one hour), i.e. 10:00 UTC.
+    #[test]
+    fn numeric_offset_before_relative_item() {
+        for (expected, input) in [
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 +3 hours"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 +3 hour"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 +3hours"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 + 3 hours"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 +03 hours"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00 +0300 hours"),
+            ("2026-08-27 10:00:00", "2026-08-27 12:00:00 +3 hours"),
+            ("2026-08-27 10:05:00", "2026-08-27 12:00 +3 hours 5 minutes"),
+            ("2026-08-27 08:00:00", "2026-08-27 12:00 +3 hours ago"),
+            ("2026-08-28 09:00:00", "2026-08-27 12:00 +3 days"),
+            ("2026-08-27 09:01:00", "2026-08-27 12:00 +3 minutes"),
+            ("2026-08-27 16:00:00", "2026-08-27 12:00 -3 hours"),
+            ("2026-08-27 00:00:00", "2026-08-27 12:00 +13 hours"),
+            // A named zone already fills the zone slot, so the numeric value
+            // stays a relative item.
+            ("2026-08-27 15:00:00", "2026-08-27 12:00 utc +3 hours"),
+            // Without a time of day there is no zone slot to fill either.
+            ("2026-08-27 03:00:00", "2026-08-27 +3 hours"),
+            // A fractional number is never a zone correction.
+            ("2026-08-27 12:00:01", "2026-08-27 12:00 +1.5 seconds"),
+        ] {
+            let parsed = parse(&mut &*input)
+                .map(at_utc)
+                .expect("parsing failed during tests")
+                .with_time_zone(TimeZone::UTC);
+            assert_eq!(
+                expected,
+                parsed.strftime("%Y-%m-%d %H:%M:%S").to_string(),
+                "{input}"
+            );
+        }
+
+        // `+30` is not a valid zone correction, and GNU rejects the whole
+        // input rather than falling back to a relative item.
+        assert!(parse(&mut "2026-08-27 12:00 +30 hours").is_err());
+    }
 }
