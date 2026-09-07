@@ -280,3 +280,39 @@ fn test_time_seconds_ago_invalid(#[case] input: &str) {
         "Input string '{input}' did not produce an error when parsing"
     );
 }
+
+// Fractional relative seconds, checked against GNU date 9.11 with
+// TZ=UTC date --date="2026-08-27 12:00:00 <input>" +"%H:%M:%S.%N"
+#[rstest]
+#[case::plus_half("+0.5 sec", "12:00:00.500000000")]
+#[case::minus_half("-0.5 sec", "11:59:59.500000000")]
+#[case::plus_one_and_a_half("+1.5 sec", "12:00:01.500000000")]
+#[case::minus_one_and_a_half("-1.5 sec", "11:59:58.500000000")]
+#[case::plus_quarter("+0.25 sec", "12:00:00.250000000")]
+#[case::minus_quarter("-0.25 sec", "11:59:59.750000000")]
+#[case::plus_one_and_three_quarters("+1.75 sec", "12:00:01.750000000")]
+#[case::minus_one_and_three_quarters("-1.75 sec", "11:59:58.250000000")]
+#[case::plus_two_and_an_eighth("+2.125 sec", "12:00:02.125000000")]
+#[case::minus_two_and_an_eighth("-2.125 sec", "11:59:57.875000000")]
+#[case::minus_nine_nanoseconds("-0.000000009 sec", "11:59:59.999999991")]
+#[case::minus_almost_one("-0.999999999 sec", "11:59:59.000000001")]
+#[case::plus_half_ago("+0.5 sec ago", "11:59:59.500000000")]
+#[case::minus_half_ago("-0.5 sec ago", "12:00:00.500000000")]
+#[case::plus_one_and_a_half_ago("+1.5 sec ago", "11:59:58.500000000")]
+#[case::unsigned_half_ago("0.5 sec ago", "11:59:59.500000000")]
+#[case::unsigned_half("0.5 sec", "12:00:00.500000000")]
+#[case::plus_zero_fraction("+0.0 sec", "12:00:00.000000000")]
+#[case::minus_zero_fraction("-0.0 sec", "12:00:00.000000000")]
+#[case::minus_whole_with_fraction_zero("-1.0 sec", "11:59:59.000000000")]
+#[case::minus_whole("-1 second ago", "12:00:01.000000000")]
+#[case::plural_minus_half("-0.5 seconds", "11:59:59.500000000")]
+#[case::abbreviated_minus_half("-0.5 secs", "11:59:59.500000000")]
+fn test_relative_fractional_seconds(#[case] input: &str, #[case] expected: &str) {
+    let base = "2026-08-27 12:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+
+    check_time(input, expected, "%H:%M:%S.%N", Some(base));
+}
