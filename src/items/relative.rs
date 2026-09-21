@@ -85,7 +85,7 @@ fn seconds(input: &mut &str) -> ModalResult<Relative> {
         opt(alt((s('+').value(1), s('-').value(-1)))),
         s(sec_and_nsec),
         s(alpha1).verify(|s: &str| matches!(s, "seconds" | "second" | "sec" | "secs")),
-        ago,
+        direction,
     )
         .verify_map(|(sign, (sec, nsec), _, ago)| {
             let sec = i64::try_from(sec).ok()?;
@@ -102,7 +102,7 @@ fn seconds(input: &mut &str) -> ModalResult<Relative> {
 }
 
 fn displacement(input: &mut &str) -> ModalResult<Relative> {
-    (opt(ordinal), s(alpha1), ago)
+    (opt(ordinal), s(alpha1), direction)
         .verify_map(|(n, unit, ago): (Option<i32>, &str, bool)| {
             let multiplier = n.unwrap_or(1) * if ago { -1 } else { 1 };
             Some(match unit.strip_suffix('s').unwrap_or(unit) {
@@ -120,8 +120,10 @@ fn displacement(input: &mut &str) -> ModalResult<Relative> {
         .parse_next(input)
 }
 
-fn ago(input: &mut &str) -> ModalResult<bool> {
-    opt(s("ago")).map(|o| o.is_some()).parse_next(input)
+fn direction(input: &mut &str) -> ModalResult<bool> {
+    opt(alt((s("ago").value(true), s("hence").value(false))))
+        .map(|backward| backward.unwrap_or(false))
+        .parse_next(input)
 }
 
 #[cfg(test)]

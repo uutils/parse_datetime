@@ -785,6 +785,30 @@ mod tests {
         use crate::parse_datetime;
 
         #[test]
+        fn test_hence_suffix() {
+            let now: jiff::Zoned = "2026-01-15T12:00:00Z[UTC]".parse().unwrap();
+            for relative in [
+                "2 months",
+                "year",
+                "-2 days",
+                "next week",
+                "0 hours",
+                "1.5 seconds",
+            ] {
+                let expected = crate::parse_datetime_at_date(now.clone(), relative).unwrap();
+                for suffix in ["hence", "HENCE"] {
+                    assert_eq!(
+                        crate::parse_datetime_at_date(now.clone(), format!("{relative} {suffix}"))
+                            .unwrap(),
+                        expected,
+                    );
+                }
+            }
+            assert!(crate::parse_datetime_at_date(now.clone(), "hence").is_err());
+            assert!(crate::parse_datetime_at_date(now, "2 days henceforth").is_err());
+        }
+
+        #[test]
         fn test_month() {
             assert_eq!(
                 parse_datetime("28 feb + 1 month")

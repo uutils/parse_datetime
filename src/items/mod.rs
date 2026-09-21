@@ -159,7 +159,7 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDa
 ///
 /// time_offset         = ( "+" | "-" ) , dec_uint , [ ":" , dec_uint ] ;
 ///
-/// relative            = [ numeric_ordinal  ] , unit , [ "ago" ] | day_shift ;
+/// relative            = [ numeric_ordinal  ] , unit , [ "ago" | "hence" ] | day_shift ;
 ///
 /// unit                = "year" | "years"
 ///                     | "month" | "months"

@@ -77,7 +77,7 @@ The `parse_datetime` and `parse_datetime_at_date` functions support absolute dat
 - "now" or "today"
 - "yesterday"
 - "tomorrow"
-- use "ago" for the past
+- use "ago" for the past or "hence" for the future
 - use "next" or "last" with `unit` (e.g., "next week", "last year")
 - unix timestamps (for example "@0" "@1344000")
 
