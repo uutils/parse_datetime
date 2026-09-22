@@ -298,6 +298,19 @@ fn test_embedded_timezone(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// Zone abbreviations must resolve to the offsets GNU date assigns them,
+// not to other real meanings of the same letters, e.g. BST as Bangladesh
+// Standard Time rather than British Summer Time.
+#[rstest]
+#[case::bst("2026-06-15 12:00 BST", "2026-06-15 12:00:00+01:00")]
+#[case::gst("2026-06-15 12:00 GST", "2026-06-15 12:00:00+10:00")]
+#[case::ast("2026-06-15 12:00 AST", "2026-06-15 12:00:00-04:00")]
+#[case::adt("2026-06-15 12:00 ADT", "2026-06-15 12:00:00-03:00")]
+#[case::sst("2026-06-15 12:00 SST", "2026-06-15 12:00:00-12:00")]
+fn test_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
 // Regression test for uutils/coreutils#12555.
 // A fixed offset (e.g. the "UTC" keyword) must anchor the instant *before*
 // relative adjustments are applied. Otherwise, when the base zone observes DST,

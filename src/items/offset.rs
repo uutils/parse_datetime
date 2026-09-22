@@ -300,7 +300,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "ut" => Ok("+0"),
         "u" => Ok("-8"),
         "t" => Ok("-7"),
-        "sst" => Ok("-11"),
+        "sst" => Ok("-12"),
         "sgt" => Ok("+8"),
         "sast" => Ok("+2"),
         "s" => Ok("-6"),
@@ -331,7 +331,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "i" => Ok("+9"),
         "hst" => Ok("-10"),
         "h" => Ok("+8"),
-        "gst" => Ok("+4"),
+        "gst" => Ok("+10"),
         "gmt" => Ok("+0"),
         "g" => Ok("+7"),
         "f" => Ok("+6"),
@@ -350,15 +350,15 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "cdt" => Ok("-5"),
         "cat" => Ok("+2"),
         "c" => Ok("+3"),
-        "bst" => Ok("+6"),
+        "bst" => Ok("+1"),
         "brt" => Ok("-3"),
         "brst" => Ok("-2"),
         "b" => Ok("+2"),
-        "ast" => Ok("-3"),
+        "ast" => Ok("-4"),
         "art" => Ok("-3"),
         "akst" => Ok("-9"),
         "akdt" => Ok("-8"),
-        "adt" => Ok("+4"),
+        "adt" => Ok("-3"),
         "a" => Ok("+1"),
         _ => Err(ErrMode::Backtrack(ContextError::new())),
     }?;
@@ -457,6 +457,12 @@ mod tests {
             ("mesz", off(false, 2, 0)),
             ("mest", off(false, 2, 0)),
             ("kst", off(false, 9, 0)),
+            // Corrected to the offsets GNU date assigns these abbreviations.
+            ("adt", off(true, 3, 0)),   // Atlantic Daylight, was +4
+            ("ast", off(true, 4, 0)),   // Atlantic Standard, was -3
+            ("bst", off(false, 1, 0)),  // British Summer, was +6
+            ("gst", off(false, 10, 0)), // Guam Standard, was +4
+            ("sst", off(true, 12, 0)),  // Samoa Standard, was -11
             ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
         ] {
             let mut s = input;
