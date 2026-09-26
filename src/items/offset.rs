@@ -198,11 +198,21 @@ pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
     // "+8 years". GNU date parses them the second way, so we do the same here.
     //
     // Return early if the input can be parsed as a relative time.
+    // The lookahead is only needed when an offset would actually parse, so
+    // try the (cheap) offset first and check for a relative time afterwards.
+    let start = input.checkpoint();
+    let result = alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input);
+    if matches!(result, Err(ErrMode::Backtrack(_))) {
+        return result;
+    }
+
+    let end = input.checkpoint();
+    input.reset(&start);
     if peek(relative::parse).parse_next(input).is_ok() {
         return Err(ErrMode::Backtrack(ContextError::new()));
     }
-
-    alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input)
+    input.reset(&end);
+    result
 }
 
 /// Parse a timezone by name, with an optional numeric offset appended.
@@ -215,15 +225,12 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     // second way, so we do the same here.
     //
     // Only process if the input cannot be parsed as a relative time.
-    if peek(relative::parse).parse_next(input).is_err() {
-        let start = input.checkpoint();
-        if let Ok(other_tz) = timezone_offset.parse_next(input) {
-            let new_tz = tz.merge(other_tz);
-
-            return Ok(new_tz);
-        };
-        input.reset(&start);
-    }
+    // `timezone_offset` itself rejects input that parses as a relative time.
+    let start = input.checkpoint();
+    if let Ok(other_tz) = timezone_offset.parse_next(input) {
+        return Ok(tz.merge(other_tz));
+    };
+    input.reset(&start);
 
     Ok(tz)
 }
@@ -287,83 +294,87 @@ fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
 /// https://www.timeanddate.com/time/zones/. GNU date only supports a subset of
 /// these. We support the same subset as GNU date.
 fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
-    let mut offset_str = match input {
-        "z" => Ok("+0"),
-        "y" => Ok("-12"),
-        "x" => Ok("-11"),
-        "wet" => Ok("+0"),
-        "west" => Ok("+1"),
-        "wat" => Ok("+1"),
-        "w" => Ok("-10"),
-        "v" => Ok("-9"),
-        "utc" => Ok("+0"),
-        "ut" => Ok("+0"),
-        "u" => Ok("-8"),
-        "t" => Ok("-7"),
-        "sst" => Ok("-11"),
-        "sgt" => Ok("+8"),
-        "sast" => Ok("+2"),
-        "s" => Ok("-6"),
-        "r" => Ok("-5"),
-        "q" => Ok("-4"),
-        "pst" => Ok("-8"),
-        "pdt" => Ok("-7"),
-        "p" => Ok("-3"),
-        "o" => Ok("-2"),
-        "nzst" => Ok("+12"),
-        "nzdt" => Ok("+13"),
-        "nst" => Ok("-3:30"),
-        "ndt" => Ok("-2:30"),
-        "n" => Ok("-1"),
-        "mst" => Ok("-7"),
-        "msk" => Ok("+3"),
-        "msd" => Ok("+4"),
-        "mez" => Ok("+1"),
-        "mesz" => Ok("+2"),
-        "mest" => Ok("+2"),
-        "mdt" => Ok("-6"),
-        "m" => Ok("+12"),
-        "l" => Ok("+11"),
-        "kst" => Ok("+9"),
-        "k" => Ok("+10"),
-        "jst" => Ok("+9"),
-        "ist" => Ok("+5:30"),
-        "i" => Ok("+9"),
-        "hst" => Ok("-10"),
-        "h" => Ok("+8"),
-        "gst" => Ok("+4"),
-        "gmt" => Ok("+0"),
-        "g" => Ok("+7"),
-        "f" => Ok("+6"),
-        "est" => Ok("-5"),
-        "eet" => Ok("+2"),
-        "eest" => Ok("+3"),
-        "edt" => Ok("-4"),
-        "eat" => Ok("+3"),
-        "e" => Ok("+5"),
-        "d" => Ok("+4"),
-        "cst" => Ok("-6"),
-        "clt" => Ok("-4"),
-        "clst" => Ok("-3"),
-        "cet" => Ok("+1"),
-        "cest" => Ok("+2"),
-        "cdt" => Ok("-5"),
-        "cat" => Ok("+2"),
-        "c" => Ok("+3"),
-        "bst" => Ok("+6"),
-        "brt" => Ok("-3"),
-        "brst" => Ok("-2"),
-        "b" => Ok("+2"),
-        "ast" => Ok("-3"),
-        "art" => Ok("-3"),
-        "akst" => Ok("-9"),
-        "akdt" => Ok("-8"),
-        "adt" => Ok("+4"),
-        "a" => Ok("+1"),
-        _ => Err(ErrMode::Backtrack(ContextError::new())),
-    }?;
+    let (negative, hours, minutes) = match input {
+        "z" => (false, 0, 0),
+        "y" => (true, 12, 0),
+        "x" => (true, 11, 0),
+        "wet" => (false, 0, 0),
+        "west" => (false, 1, 0),
+        "wat" => (false, 1, 0),
+        "w" => (true, 10, 0),
+        "v" => (true, 9, 0),
+        "utc" => (false, 0, 0),
+        "ut" => (false, 0, 0),
+        "u" => (true, 8, 0),
+        "t" => (true, 7, 0),
+        "sst" => (true, 11, 0),
+        "sgt" => (false, 8, 0),
+        "sast" => (false, 2, 0),
+        "s" => (true, 6, 0),
+        "r" => (true, 5, 0),
+        "q" => (true, 4, 0),
+        "pst" => (true, 8, 0),
+        "pdt" => (true, 7, 0),
+        "p" => (true, 3, 0),
+        "o" => (true, 2, 0),
+        "nzst" => (false, 12, 0),
+        "nzdt" => (false, 13, 0),
+        "nst" => (true, 3, 30),
+        "ndt" => (true, 2, 30),
+        "n" => (true, 1, 0),
+        "mst" => (true, 7, 0),
+        "msk" => (false, 3, 0),
+        "msd" => (false, 4, 0),
+        "mez" => (false, 1, 0),
+        "mesz" => (false, 2, 0),
+        "mest" => (false, 2, 0),
+        "mdt" => (true, 6, 0),
+        "m" => (false, 12, 0),
+        "l" => (false, 11, 0),
+        "kst" => (false, 9, 0),
+        "k" => (false, 10, 0),
+        "jst" => (false, 9, 0),
+        "ist" => (false, 5, 30),
+        "i" => (false, 9, 0),
+        "hst" => (true, 10, 0),
+        "h" => (false, 8, 0),
+        "gst" => (false, 4, 0),
+        "gmt" => (false, 0, 0),
+        "g" => (false, 7, 0),
+        "f" => (false, 6, 0),
+        "est" => (true, 5, 0),
+        "eet" => (false, 2, 0),
+        "eest" => (false, 3, 0),
+        "edt" => (true, 4, 0),
+        "eat" => (false, 3, 0),
+        "e" => (false, 5, 0),
+        "d" => (false, 4, 0),
+        "cst" => (true, 6, 0),
+        "clt" => (true, 4, 0),
+        "clst" => (true, 3, 0),
+        "cet" => (false, 1, 0),
+        "cest" => (false, 2, 0),
+        "cdt" => (true, 5, 0),
+        "cat" => (false, 2, 0),
+        "c" => (false, 3, 0),
+        "bst" => (false, 6, 0),
+        "brt" => (true, 3, 0),
+        "brst" => (true, 2, 0),
+        "b" => (false, 2, 0),
+        "ast" => (true, 3, 0),
+        "art" => (true, 3, 0),
+        "akst" => (true, 9, 0),
+        "akdt" => (true, 8, 0),
+        "adt" => (false, 4, 0),
+        "a" => (false, 1, 0),
+        _ => return Err(ErrMode::Backtrack(ContextError::new())),
+    };
 
-    timezone_offset(&mut offset_str)
+    Ok(Offset {
+        negative,
+        hours,
+        minutes,
+    })
 }
 
 #[cfg(test)]
