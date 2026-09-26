@@ -35,7 +35,7 @@ fn text_ordinal(input: &mut &str) -> ModalResult<i32> {
                 "fifth" => 5,
                 "sixth" => 6,
                 "seventh" => 7,
-                "eight" => 8,
+                "eighth" => 8,
                 "ninth" => 9,
                 "tenth" => 10,
                 "eleventh" => 11,
