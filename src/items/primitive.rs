@@ -32,7 +32,13 @@ fn multispace0<'a, E>(input: &mut &'a str) -> winnow::Result<&'a str, E>
 where
     E: ParserError<&'a str>,
 {
-    take_while(0.., (' ', '\t', '\n', '\x0B', '\x0C', '\r')).parse_next(input)
+    let len = input
+        .bytes()
+        .take_while(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\x0B' | b'\x0C' | b'\r'))
+        .count();
+    let (ws, rest) = input.split_at(len);
+    *input = rest;
+    Ok(ws)
 }
 
 /// Same as [`multispace0`], but requiring at least one character
@@ -50,6 +56,11 @@ pub(super) fn space<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
 {
+    // Fast path: most calls see no comment or ignorable sign
+    multispace0.parse_next(input)?;
+    if !input.starts_with(['(', '-', '+']) {
+        return Ok(());
+    }
     separated(0.., multispace0, alt((comment, ignored_hyphen_or_plus))).parse_next(input)
 }
 
