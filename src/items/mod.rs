@@ -236,8 +236,12 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     let tz = timezone::parse(input).map(Item::TimeZone);
 
     // Convert input to lowercase for case-insensitive parsing.
-    let lower = input.to_ascii_lowercase();
-    let input = &mut lower.as_str();
+    let lower: std::borrow::Cow<str> = if input.bytes().any(|b| b.is_ascii_uppercase()) {
+        input.to_ascii_lowercase().into()
+    } else {
+        (*input).into()
+    };
+    let input = &mut lower.as_ref();
 
     let (mut items, _): (Vec<Item>, _) = trace(
         "parse_items",
@@ -255,10 +259,25 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
 
 /// Parse an item.
 fn parse_item(input: &mut &str) -> ModalResult<Item> {
+    // An ISO date is either the start of a combined date and time item or a
+    // date item on its own. Parse it once instead of once per alternative.
+    let start = input.checkpoint();
+    if let Ok(date) = alt((date::iso1, date::iso2)).parse_next(input) {
+        let after_date = input.checkpoint();
+        match combined::parse_time_after_date(input, date.clone()) {
+            Ok(dt) => return Ok(Item::DateTime(dt)),
+            Err(ErrMode::Backtrack(_)) => {
+                input.reset(&after_date);
+                return Ok(Item::Date(date));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    input.reset(&start);
+
     trace(
         "parse_item",
         alt((
-            combined::parse.map(Item::DateTime),
             date::parse.map(Item::Date),
             time::parse.map(Item::Time),
             relative::parse.map(Item::Relative),
