@@ -127,8 +127,10 @@ impl TryFrom<Date> for jiff::civil::Date {
     }
 }
 
-pub(super) fn parse(input: &mut &str) -> ModalResult<Date> {
-    alt((iso1, iso2, us, literal1, literal2, literal3)).parse_next(input)
+/// Parse a date that is not in ISO format. ISO dates are parsed by [`iso1`]
+/// and [`iso2`], which the caller tries first.
+pub(super) fn parse_non_iso(input: &mut &str) -> ModalResult<Date> {
+    alt((us, literal1, literal2, literal3)).parse_next(input)
 }
 
 /// Parse `[year]-[month]-[day]`
@@ -299,7 +301,13 @@ fn day_from_str(s: &str) -> ModalResult<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, Date};
+    use winnow::{combinator::alt, ModalResult, Parser};
+
+    use super::Date;
+
+    fn parse(input: &mut &str) -> ModalResult<Date> {
+        alt((super::iso1, super::iso2, super::parse_non_iso)).parse_next(input)
+    }
 
     // Test cases from the GNU docs:
     //

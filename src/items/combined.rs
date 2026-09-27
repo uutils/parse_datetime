@@ -37,12 +37,6 @@ fn remaining_starts_with_meridiem(input: &str) -> bool {
         || trimmed.starts_with("p.m.")
 }
 
-#[cfg(test)]
-pub(crate) fn parse(input: &mut &str) -> ModalResult<DateTime> {
-    let date = trace("iso_date", alt((date::iso1, date::iso2))).parse_next(input)?;
-    parse_time_after_date(input, date)
-}
-
 /// Parse the separator and time of a combined item whose ISO date has already
 /// been parsed.
 pub(crate) fn parse_time_after_date(input: &mut &str, date: date::Date) -> ModalResult<DateTime> {
@@ -66,8 +60,15 @@ pub(crate) fn parse_time_after_date(input: &mut &str, date: date::Date) -> Modal
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, DateTime};
-    use crate::items::{date::Date, time::Time};
+    use winnow::{combinator::alt, ModalResult, Parser};
+
+    use super::{parse_time_after_date, DateTime};
+    use crate::items::{date, date::Date, time::Time};
+
+    fn parse(input: &mut &str) -> ModalResult<DateTime> {
+        let date = alt((date::iso1, date::iso2)).parse_next(input)?;
+        parse_time_after_date(input, date)
+    }
 
     #[test]
     fn some_date() {

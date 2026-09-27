@@ -48,6 +48,8 @@ mod primitive;
 
 pub(crate) mod error;
 
+use std::borrow::Cow;
+
 use crate::ParsedDateTime;
 use jiff::Zoned;
 use primitive::space;
@@ -236,7 +238,7 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     let tz = timezone::parse(input).map(Item::TimeZone);
 
     // Convert input to lowercase for case-insensitive parsing.
-    let lower: std::borrow::Cow<str> = if input.bytes().any(|b| b.is_ascii_uppercase()) {
+    let lower: Cow<str> = if input.bytes().any(|b| b.is_ascii_uppercase()) {
         input.to_ascii_lowercase().into()
     } else {
         (*input).into()
@@ -278,7 +280,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
     trace(
         "parse_item",
         alt((
-            date::parse.map(Item::Date),
+            date::parse_non_iso.map(Item::Date),
             time::parse.map(Item::Time),
             relative::parse.map(Item::Relative),
             weekday::parse.map(Item::Weekday),
