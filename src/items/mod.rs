@@ -765,6 +765,21 @@ mod tests {
     }
 
     #[test]
+    fn offset_followed_by_relative() {
+        let base = "2000-01-01 12:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+
+        // Both read "+8 years" as a relative item, not as an offset of +8.
+        for input in ["UTC +8 years", "+8 years"] {
+            let result = parse_at_date(base.clone(), input).unwrap();
+            assert_eq!(result.to_string(), "2008-01-01 12:00:00+00:00", "{input}");
+        }
+    }
+
+    #[test]
     fn pure() {
         let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
