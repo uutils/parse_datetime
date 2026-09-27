@@ -521,6 +521,33 @@ mod tests {
                 "2023-03-05 00:00:00 000000000"
             );
         }
+
+        #[test]
+        fn test_weekday_abbreviation_with_period() {
+
+            let date = "2023-02-28 10:12:03"
+                .parse::<DateTime>()
+                .unwrap()
+                .to_zoned(TimeZone::system())
+                .unwrap();
+
+            for (weekday, expected) in [
+                ("mon.", "2023-03-06 00:00:00 000000000"),
+                ("tue.", "2023-02-28 00:00:00 000000000"),
+                ("wed.", "2023-03-01 00:00:00 000000000"),
+                ("thu.", "2023-03-02 00:00:00 000000000"),
+                ("fri.", "2023-03-03 00:00:00 000000000"),
+                ("sat.", "2023-03-04 00:00:00 000000000"),
+                ("sun.", "2023-03-05 00:00:00 000000000"),
+            ] {
+                assert_eq!(get_formatted_date(&date, weekday), expected, "{weekday}");
+            }
+
+            let actual = crate::parse_datetime("wed., 2024-01-03")
+                .unwrap()
+                .expect_in_range();
+            assert_eq!(actual.strftime("%F %T").to_string(), "2024-01-03 00:00:00");
+        }
     }
 
     #[cfg(test)]
