@@ -581,11 +581,11 @@ mod tests {
 
     fn date() -> date::Date {
         let mut input = "2023-06-15";
-        date::parse(&mut input).unwrap()
+        date::iso1(&mut input).unwrap()
     }
 
     fn date_large(mut input: &str) -> date::Date {
-        date::parse(&mut input).unwrap()
+        date::iso1(&mut input).unwrap()
     }
 
     fn time() -> time::Time {
