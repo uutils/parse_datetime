@@ -230,4 +230,27 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn space_skips_comments_and_ignored_signs() {
+        for (input, rest) in [
+            ("", ""),
+            ("abc", "abc"),
+            (" \t abc", "abc"),
+            ("(foo) abc", "abc"),
+            (" (a (b)) abc", "abc"),
+            ("- abc", "abc"),
+            ("+ (c) abc", "abc"),
+            ("- (c) 12", "12"),
+            // A sign followed by a digit is not ignored.
+            ("- 12", "- 12"),
+            (" +12", "+12"),
+            // An unbalanced comment is not skipped.
+            ("(foo abc", "(foo abc"),
+        ] {
+            let mut s = input;
+            space::<ContextError>(&mut s).unwrap();
+            assert_eq!(s, rest, "{input:?}");
+        }
+    }
 }
