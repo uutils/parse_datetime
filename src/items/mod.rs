@@ -780,6 +780,30 @@ mod tests {
     }
 
     #[test]
+    fn comments_and_ignored_signs() {
+        let base = "2000-06-15 12:34:56"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+
+        for (input, expected) in [
+            ("1997-01-01 (foo) 10:00", "1997-01-01 10:00:00+00:00"),
+            ("1997-01-01 (a (b)) 10:00", "1997-01-01 10:00:00+00:00"),
+            ("(foo) 1997-01-01", "1997-01-01 00:00:00+00:00"),
+            ("+ (c) 1997-01-01", "1997-01-01 00:00:00+00:00"),
+            ("- (c) 1997-01-01", "1997-01-01 00:00:00+00:00"),
+            ("1997-01-01 (x) + 1 day", "1997-01-02 00:00:00+00:00"),
+        ] {
+            let result = parse_at_date(base.clone(), input).unwrap();
+            assert_eq!(result.to_string(), expected, "{input}");
+        }
+
+        // Like GNU, a hyphen followed by a digit is a sign, not ignored.
+        assert!(parse_at_date(base.clone(), "- 1997-01-01").is_err());
+    }
+
+    #[test]
     fn pure() {
         let now = Zoned::now().with_time_zone(TimeZone::UTC);
 
