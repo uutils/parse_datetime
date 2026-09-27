@@ -506,6 +506,24 @@ mod tests {
     }
 
     #[test]
+    fn offset_followed_by_relative() {
+        // "+8 years" is a relative item, so it is not an offset.
+        let mut s = "+8 years";
+        assert!(timezone_offset(&mut s).is_err());
+        assert_eq!(s, "+8 years");
+
+        // "utc +8 years" is "utc" followed by the relative item "+8 years".
+        let mut s = "utc +8 years";
+        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 0, 0));
+        assert_eq!(s, " +8 years");
+
+        // Without a relative item, the offset is still merged.
+        let mut s = "utc +8";
+        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 8, 0));
+        assert!(s.is_empty());
+    }
+
+    #[test]
     fn total_seconds() {
         assert_eq!(off(false, 0, 0).total_seconds(), 0);
         assert_eq!(off(false, 5, 30).total_seconds(), 19_800);
