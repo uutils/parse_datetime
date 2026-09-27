@@ -193,13 +193,8 @@ pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
 
 /// Parse a timezone starting with `+` or `-`.
 pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
-    // Strings like "+8 years" are ambiguous, they can either be parsed as a
-    // timezone offset "+8" and a relative time "years", or just a relative time
-    // "+8 years". GNU date parses them the second way, so we do the same here.
-    //
-    // Return early if the input can be parsed as a relative time.
-    // The lookahead is only needed when an offset would actually parse, so
-    // try the (cheap) offset first and check for a relative time afterwards.
+    // Like GNU, read "+8 years" as a relative item, not as "+8" and "years".
+    // The costlier relative check only runs once an offset has parsed.
     let start = input.checkpoint();
     let result = alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input);
     if matches!(result, Err(ErrMode::Backtrack(_))) {
@@ -220,12 +215,8 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
     let tz = timezone_name_to_offset(nextword)?;
 
-    // Strings like "UTC +8 years" are ambiguous, they can either be parsed as
-    // "UTC+8" and "years", or "UTC" and "+8 years". GNU date parses them the
-    // second way, so we do the same here.
-    //
-    // Only process if the input cannot be parsed as a relative time.
-    // `timezone_offset` itself rejects input that parses as a relative time.
+    // Like GNU, read "UTC +8 years" as "UTC" and "+8 years", not as "UTC+8"
+    // and "years". `timezone_offset` rejects input that parses as relative.
     let start = input.checkpoint();
     if let Ok(other_tz) = timezone_offset.parse_next(input) {
         return Ok(tz.merge(other_tz));
