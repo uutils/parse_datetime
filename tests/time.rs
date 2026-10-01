@@ -5,7 +5,7 @@ use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use parse_datetime::parse_datetime_at_date;
 use rstest::rstest;
 
-// The expected values are produced by GNU date version 8.32
+// The expected values are produced by GNU date version 9.11
 // export LC_TIME=en_US.UTF-8
 // export TZ=UTC
 // date date --date="12:34:56+09:00" +"%H:%M:%S.%N"
@@ -281,8 +281,8 @@ fn test_time_seconds_ago_invalid(#[case] input: &str) {
     );
 }
 
-// Fractional relative seconds, checked against GNU date 9.11 with
-// TZ=UTC date --date="2026-08-27 12:00:00 <input>" +"%H:%M:%S.%N"
+// Fractional relative seconds, checked with
+// TZ=UTC date --date="2026-08-27 12:00:00 +0000 <input>" +"%H:%M:%S.%N"
 #[rstest]
 #[case::plus_half("+0.5 sec", "12:00:00.500000000")]
 #[case::minus_half("-0.5 sec", "11:59:59.500000000")]

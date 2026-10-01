@@ -60,12 +60,8 @@ impl TryFrom<Relative> for jiff::Span {
             Relative::Hours(hours) => jiff::Span::new().try_hours(hours),
             Relative::Minutes(minutes) => jiff::Span::new().try_minutes(minutes),
             Relative::Seconds(seconds, nanoseconds) => {
-                // `Relative::Seconds` is a floor decomposition: the value is
-                // `seconds + nanoseconds / 1e9` with a non-negative fraction, so
-                // -0.25 seconds is held as `(-1, 750_000_000)`. A `jiff::Span`
-                // is sign-uniform, so the fraction has to be rebalanced onto the
-                // sign of the whole seconds first; combining the fields as they
-                // are would subtract the fraction instead of adding it.
+                // -0.25 is stored as (-1, 750_000_000), but a `jiff::Span` needs
+                // both fields with one sign, so move the fraction onto it.
                 let (seconds, nanoseconds) = if seconds < 0 && nanoseconds > 0 {
                     (seconds + 1, -i64::from(1_000_000_000 - nanoseconds))
                 } else {
