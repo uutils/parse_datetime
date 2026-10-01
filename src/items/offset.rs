@@ -31,7 +31,7 @@ use winnow::{
     combinator::{alt, peek},
     error::{ContextError, ErrMode},
     stream::{AsChar, Stream},
-    token::take_while,
+    token::{one_of, take_while},
     ModalResult, Parser,
 };
 
@@ -193,12 +193,17 @@ pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
 
 /// Parse a timezone starting with `+` or `-`.
 pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
-    // Strings like "+8 years" are ambiguous, they can either be parsed as a
-    // timezone offset "+8" and a relative time "years", or just a relative time
-    // "+8 years". GNU date parses them the second way, so we do the same here.
-    //
-    // Return early if the input can be parsed as a relative time.
-    if peek(relative::parse).parse_next(input).is_ok() {
+    // A fractional number is never a zone correction: GNU reads
+    // `12:00 +1.5 seconds` as a relative item, so leave it to that parser.
+    let has_fraction = peek((
+        plus_or_minus::<ErrMode<ContextError>>,
+        s(dec_uint_str),
+        '.',
+        one_of(AsChar::is_dec_digit),
+    ))
+    .parse_next(input)
+    .is_ok();
+    if has_fraction {
         return Err(ErrMode::Backtrack(ContextError::new()));
     }
 
@@ -433,7 +438,7 @@ mod tests {
             "+2500",    // invalid: hours > 24
             "-2361",    // invalid: minutes > 60
             "+2401",    // invalid: minutes > 0 when hours == 24
-            "+23 days", // invalid: ambiguous with relative time parsing
+            "+25 days", // invalid: hours > 24, even when followed by a relative item
         ] {
             let mut s = input;
             assert!(timezone_offset(&mut s).is_err(), "{input}");
