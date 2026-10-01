@@ -193,18 +193,17 @@ pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
 
 /// Parse a timezone starting with `+` or `-`.
 pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
-    // A number with a fractional part is never a zone correction: GNU `date`
-    // reads `12:00 +1.5 seconds` as the relative item `+1.5 seconds`, not as
-    // the offset `+01:00` followed by a stray `.5 seconds`. Backtrack so that
-    // the relative parser gets a chance at it.
-    let fraction: ModalResult<_> = peek((
-        plus_or_minus,
+    // A fractional number is never a zone correction: GNU reads
+    // `12:00 +1.5 seconds` as a relative item, so leave it to that parser.
+    let has_fraction = peek((
+        plus_or_minus::<ErrMode<ContextError>>,
         s(dec_uint_str),
         '.',
         one_of(AsChar::is_dec_digit),
     ))
-    .parse_next(input);
-    if fraction.is_ok() {
+    .parse_next(input)
+    .is_ok();
+    if has_fraction {
         return Err(ErrMode::Backtrack(ContextError::new()));
     }
 
