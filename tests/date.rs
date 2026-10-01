@@ -434,3 +434,57 @@ fn test_zone_item_keeps_time_of_day_with_relative(#[case] input: &str, #[case] e
         "`{input}` should resolve to {expected} in its own zone"
     );
 }
+
+// A weekday is ignored when an explicit calendar date is given, whether or
+// not it matches the date and whatever ordinal it carries. A weekday on its
+// own (or with only a time or relative items) still moves to that day.
+//
+//   $ TZ=UTC date -d 'wed 2026-08-17'           # Mon 2026-08-17
+//   $ TZ=UTC date -d 'next friday sep 25 2026'  # Fri 2026-09-25
+//   $ TZ=UTC date -d 'wed 10:30'                # next wednesday at 10:30
+//
+// `date --debug` warns that the day is ignored when explicit dates are
+// given. Verified against GNU coreutils 9.7, with the base below being
+// Thursday 2026-10-01.
+#[rstest]
+#[case::mismatching_named_month("Wednesday August 17 2026", "2026-08-17 00:00:00")]
+#[case::matching_named_month("Monday August 17 2026", "2026-08-17 00:00:00")]
+#[case::abbreviated_with_comma("Wed, Aug 17 2026", "2026-08-17 00:00:00")]
+#[case::day_month_with_comma("Wednesday, 17 August 2026", "2026-08-17 00:00:00")]
+#[case::named_month_without_year("Wed Aug 17", "2026-08-17 00:00:00")]
+#[case::iso_date("Wed 2026-08-17", "2026-08-17 00:00:00")]
+#[case::iso_date_then_weekday("2026-08-17 Wed", "2026-08-17 00:00:00")]
+#[case::us_date("Wed 08/17/2026", "2026-08-17 00:00:00")]
+#[case::date_and_time("Wed 2026-08-17 10:30", "2026-08-17 10:30:00")]
+#[case::time_before_date("Wed 10:30 2026-08-17", "2026-08-17 10:30:00")]
+#[case::iso_datetime("2026-08-17T10:30:00 Wed", "2026-08-17 10:30:00")]
+#[case::next_weekday("next Friday Sep 25 2026", "2026-09-25 00:00:00")]
+#[case::next_other_weekday("next Sunday Sep 25 2026", "2026-09-25 00:00:00")]
+#[case::last_weekday("last Wed 2026-08-17", "2026-08-17 00:00:00")]
+#[case::ordinal_weekday("third Wed 2026-08-17", "2026-08-17 00:00:00")]
+#[case::numeric_ordinal_weekday("2 Wed 2026-08-17", "2026-08-17 00:00:00")]
+#[case::date_output_format("Sun Sep 25 12:00:00 AM UTC 2026", "2026-09-25 00:00:00")]
+// Relative items still apply on top of the given date.
+#[case::relative_day("Wed 2026-08-17 +1 day", "2026-08-18 00:00:00")]
+#[case::relative_week("Wed 2026-08-17 next week", "2026-08-24 00:00:00")]
+// Without a date, the weekday is still honoured.
+#[case::weekday_alone("Wed", "2026-10-07 00:00:00")]
+#[case::weekday_and_time("Wed 10:30", "2026-10-07 10:30:00")]
+#[case::weekday_and_relative("Wed +1 day", "2026-10-08 00:00:00")]
+fn test_weekday_ignored_with_explicit_date(#[case] input: &str, #[case] expected: &str) {
+    let base = "2026-10-01 12:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, input)
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(
+        parsed.datetime().to_string(),
+        expected.parse::<DateTime>().unwrap().to_string(),
+        "`{input}` should resolve to {expected}"
+    );
+}

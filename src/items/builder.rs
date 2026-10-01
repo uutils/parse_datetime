@@ -212,10 +212,18 @@ impl DateTimeBuilder {
     ///     from the base instant.
     ///   - b. Apply time. If time carries an explicit numeric offset, apply the
     ///     offset before setting time.
-    ///   - c. Apply weekday (e.g., "next Friday" or "last Monday").
+    ///   - c. Apply weekday (e.g., "next Friday" or "last Monday"). A weekday
+    ///     is ignored when an explicit calendar date is given.
     ///   - d. Apply fixed offset if present (anchors the instant).
     ///   - e. Apply relative adjustments (e.g., "+3 days", "-2 months").
-    pub(super) fn build(self) -> Result<ParsedDateTime, error::Error> {
+    pub(super) fn build(mut self) -> Result<ParsedDateTime, error::Error> {
+        // An explicit calendar date wins over a weekday, even a mismatching
+        // one or one with an ordinal: `wed 2026-08-17` and `next fri sep 25`
+        // both resolve to the given date, as in GNU date.
+        if self.date.is_some() {
+            self.weekday = None;
+        }
+
         if let Some(date) = self.date.as_ref() {
             if date.year.unwrap_or(0) > 9999 {
                 return self.build_extended();
@@ -902,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn build_extended_applies_relative_units_and_weekday() {
+    fn build_extended_applies_relative_units_and_ignores_weekday_with_date() {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
@@ -918,7 +926,9 @@ mod tests {
         ])
         .unwrap();
         let dt = expect_extended_datetime(builder.set_base(base).build().unwrap());
-        assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 4));
+        // The weekday is ignored because a date is given, so only the relative
+        // items move it (GNU: `next mon 10000-01-01 +1 day` is 10000-01-02).
+        assert_eq!((dt.year, dt.month, dt.day), (10000, 1, 2));
         assert_eq!((dt.hour, dt.minute, dt.second), (2, 3, 4));
     }
 
