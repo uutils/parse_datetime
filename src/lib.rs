@@ -521,6 +521,20 @@ mod tests {
                 "2023-03-05 00:00:00 000000000"
             );
         }
+
+        #[test]
+        fn test_weekday_with_text_ordinal() {
+            let date = "2023-02-28 10:12:03"
+                .parse::<DateTime>()
+                .unwrap()
+                .to_zoned(TimeZone::system())
+                .unwrap();
+
+            assert_eq!(
+                get_formatted_date(&date, "eighth monday"),
+                "2023-04-24 00:00:00 000000000"
+            );
+        }
     }
 
     #[cfg(test)]
