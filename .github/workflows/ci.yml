@@ -147,22 +147,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUN_FOR: 60
+      # cargo-fuzz uses nightly features
+      RUSTC_BOOTSTRAP: 1
     steps:
     - uses: actions/checkout@v7
-    - name: emulate nightly toolchain
-      run: echo "RUSTC_BOOTSTRAP=1" >> "${GITHUB_ENV}"
     - name: Install `cargo-fuzz`
-      run: cargo install cargo-fuzz --locked
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-fuzz
     - uses: Swatinem/rust-cache@v2
     - name: Run fuzz_parse_datetime for XX seconds
       shell: bash
       run: |
         ## Run it
         cd fuzz
-        cargo fuzz run fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+        # https://github.com/rust-fuzz/cargo-fuzz/issues/398
+        cargo fuzz run --target host-tuple fuzz_parse_datetime -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
     - name: Run fuzz_large_year for XX seconds
       shell: bash
       run: |
         ## Run it
         cd fuzz
-        cargo fuzz run fuzz_large_year -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
+        cargo fuzz run --target host-tuple fuzz_large_year -- -max_total_time=${{ env.RUN_FOR }} -detect_leaks=0
