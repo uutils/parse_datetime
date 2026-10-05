@@ -435,17 +435,8 @@ fn test_zone_item_keeps_time_of_day_with_relative(#[case] input: &str, #[case] e
     );
 }
 
-// A weekday is ignored when an explicit calendar date is given, whether or
-// not it matches the date and whatever ordinal it carries. A weekday on its
-// own (or with only a time or relative items) still moves to that day.
-//
-//   $ TZ=UTC date -d 'wed 2026-08-17'           # Mon 2026-08-17
-//   $ TZ=UTC date -d 'next friday sep 25 2026'  # Fri 2026-09-25
-//   $ TZ=UTC date -d 'wed 10:30'                # next wednesday at 10:30
-//
-// `date --debug` warns that the day is ignored when explicit dates are
-// given. Verified against GNU coreutils 9.7, with the base below being
-// Thursday 2026-10-01.
+// A weekday is ignored when an explicit date is given, as in GNU date
+// (checked against coreutils 9.12, base Thursday 2026-10-01).
 #[rstest]
 #[case::mismatching_named_month("Wednesday August 17 2026", "2026-08-17 00:00:00")]
 #[case::matching_named_month("Monday August 17 2026", "2026-08-17 00:00:00")]
