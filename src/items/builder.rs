@@ -217,9 +217,6 @@ impl DateTimeBuilder {
     ///   - d. Apply fixed offset if present (anchors the instant).
     ///   - e. Apply relative adjustments (e.g., "+3 days", "-2 months").
     pub(super) fn build(mut self) -> Result<ParsedDateTime, error::Error> {
-        // An explicit calendar date wins over a weekday, even a mismatching
-        // one or one with an ordinal: `wed 2026-08-17` and `next fri sep 25`
-        // both resolve to the given date, as in GNU date.
         if self.date.is_some() {
             self.weekday = None;
         }
