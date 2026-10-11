@@ -298,7 +298,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "ut" => (false, 0, 0),
         "u" => (true, 8, 0),
         "t" => (true, 7, 0),
-        "sst" => (true, 11, 0),
+        "sst" => (true, 12, 0),
         "sgt" => (false, 8, 0),
         "sast" => (false, 2, 0),
         "s" => (true, 6, 0),
@@ -329,7 +329,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "i" => (false, 9, 0),
         "hst" => (true, 10, 0),
         "h" => (false, 8, 0),
-        "gst" => (false, 4, 0),
+        "gst" => (false, 10, 0),
         "gmt" => (false, 0, 0),
         "g" => (false, 7, 0),
         "f" => (false, 6, 0),
@@ -348,15 +348,15 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
         "cdt" => (true, 5, 0),
         "cat" => (false, 2, 0),
         "c" => (false, 3, 0),
-        "bst" => (false, 6, 0),
+        "bst" => (false, 1, 0),
         "brt" => (true, 3, 0),
         "brst" => (true, 2, 0),
         "b" => (false, 2, 0),
-        "ast" => (true, 3, 0),
+        "ast" => (true, 4, 0),
         "art" => (true, 3, 0),
         "akst" => (true, 9, 0),
         "akdt" => (true, 8, 0),
-        "adt" => (false, 4, 0),
+        "adt" => (true, 3, 0),
         "a" => (false, 1, 0),
         _ => return Err(ErrMode::Backtrack(ContextError::new())),
     };
@@ -459,6 +459,12 @@ mod tests {
             ("mesz", off(false, 2, 0)),
             ("mest", off(false, 2, 0)),
             ("kst", off(false, 9, 0)),
+            // Corrected to the offsets GNU date assigns these abbreviations.
+            ("adt", off(true, 3, 0)),   // Atlantic Daylight, was +4
+            ("ast", off(true, 4, 0)),   // Atlantic Standard, was -3
+            ("bst", off(false, 1, 0)),  // British Summer, was +6
+            ("gst", off(false, 10, 0)), // Guam Standard, was +4
+            ("sst", off(true, 12, 0)),  // was -11
             ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
         ] {
             let mut s = input;
