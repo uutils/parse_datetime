@@ -55,7 +55,16 @@ fn bench_relative_keywords(c: &mut Criterion) {
 }
 
 fn bench_weekday(c: &mut Criterion) {
-    c.bench_function("parse_weekday", |b| b.iter(|| parse_datetime("wednesday")));
+    // Use a fixed reference date: the cost of resolving a weekday depends on
+    // how many days separate it from "today", so relying on the current date
+    // makes the measurement vary with the day the benchmark runs.
+    // 2000-01-03 is a Monday, so "wednesday" resolves two days ahead.
+    let base = jiff::civil::DateTime::from(jiff::civil::date(2000, 1, 3))
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .unwrap();
+    c.bench_function("parse_weekday", |b| {
+        b.iter(|| parse_datetime_at_date(base.clone(), "wednesday"))
+    });
 }
 
 fn bench_timezone_offset(c: &mut Criterion) {
