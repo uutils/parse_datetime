@@ -538,7 +538,6 @@ mod tests {
 
         #[test]
         fn test_weekday_abbreviation_with_period() {
-
             let date = "2023-02-28 10:12:03"
                 .parse::<DateTime>()
                 .unwrap()
@@ -557,10 +556,13 @@ mod tests {
                 assert_eq!(get_formatted_date(&date, weekday), expected, "{weekday}");
             }
 
-            let actual = crate::parse_datetime("wed., 2024-01-03")
-                .unwrap()
-                .expect_in_range();
-            assert_eq!(actual.strftime("%F %T").to_string(), "2024-01-03 00:00:00");
+            for (input, expected) in [
+                ("wed., 2024-01-03", "2024-01-03 00:00:00"),
+                ("mon., 2024-01-03", "2024-01-03 00:00:00"),
+            ] {
+                let actual = crate::parse_datetime(input).unwrap().expect_in_range();
+                assert_eq!(actual.strftime("%F %T").to_string(), expected, "{input}");
+            }
         }
     }
 
