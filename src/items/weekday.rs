@@ -70,7 +70,7 @@ pub(super) fn parse(input: &mut &str) -> ModalResult<Weekday> {
 }
 
 fn day(input: &mut &str) -> ModalResult<Day> {
-    s(alpha1)
+    s((alpha1, opt('.')).take())
         .verify_map(|s: &str| {
             Some(match s {
                 "monday" | "mon" | "mon." => Day::Monday,
