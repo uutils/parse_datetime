@@ -215,6 +215,22 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
     let tz = timezone_name_to_offset(nextword)?;
 
+    // A standard time zone followed by the word DST is its daylight saving
+    // time zone, one hour ahead: "EST DST" is EDT.
+    if takes_dst(nextword) {
+        let start = input.checkpoint();
+        let word: ModalResult<&str> =
+            s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input);
+        if word.is_ok_and(|word| word.eq_ignore_ascii_case("dst")) {
+            return Ok(tz.merge(Offset {
+                negative: false,
+                hours: 1,
+                minutes: 0,
+            }));
+        }
+        input.reset(&start);
+    }
+
     // Like GNU, read "UTC +8 years" as "UTC" and "+8 years", not as "UTC+8"
     // and "years". `timezone_offset` rejects input that parses as relative.
     let start = input.checkpoint();
@@ -277,6 +293,31 @@ fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
                 .try_into()
                 .map_err(|e| ErrMode::Cut(ctx_err(e)))
         })
+}
+
+/// Whether a named timezone can be followed by DST. GNU date rejects it after
+/// a daylight saving time zone, and after `t`.
+fn takes_dst(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "t" | "west"
+            | "pdt"
+            | "nzdt"
+            | "ndt"
+            | "msd"
+            | "mesz"
+            | "mest"
+            | "mdt"
+            | "eest"
+            | "edt"
+            | "clst"
+            | "cest"
+            | "cdt"
+            | "bst"
+            | "brst"
+            | "akdt"
+            | "adt"
+    )
 }
 
 /// Named timezone list.
@@ -502,6 +543,34 @@ mod tests {
             "abc+08:00",   // invalid: non-existent timezone
             "utc+25",      // invalid: invalid offset
             "utc+23 days", // invalid: ambiguous with relative time parsing
+        ] {
+            let mut s = input;
+            assert!(
+                timezone_name_offset(&mut s).is_err() || !s.is_empty(),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn timezone_name_with_dst() {
+        for (input, expected) in [
+            ("est dst", off(true, 4, 0)),   // EST is UTC-5, so EST DST is UTC-4
+            ("cet  dst", off(false, 2, 0)), // more than one space
+            ("utc dst", off(false, 1, 0)),  // UTC
+            ("ist dst", off(false, 6, 30)), // offset with minutes (ist=+5:30)
+            ("a dst", off(false, 2, 0)),    // military letter (a=+1)
+        ] {
+            let mut s = input;
+            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert!(s.is_empty(), "{input}");
+        }
+
+        for input in [
+            "edt dst", // already a daylight saving time zone
+            "t dst",   // rejected by GNU date as well
+            "estdst",  // DST must be a separate word
+            "est dstx",
         ] {
             let mut s = input;
             assert!(
