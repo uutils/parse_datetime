@@ -213,15 +213,15 @@ pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
 /// Parse a timezone by name, with an optional numeric offset appended.
 fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
     let nextword = s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input)?;
-    let tz = timezone_name_to_offset(nextword)?;
+    let (tz, takes_dst) = timezone_name_to_offset(nextword)?;
 
     // A standard time zone followed by the word DST is its daylight saving
     // time zone, one hour ahead: "EST DST" is EDT.
-    if takes_dst(nextword) {
+    if takes_dst {
         let start = input.checkpoint();
         let word: ModalResult<&str> =
             s(take_while(1..=MAX_TZ_SIZE, AsChar::is_alpha)).parse_next(input);
-        if word.is_ok_and(|word| word.eq_ignore_ascii_case("dst")) {
+        if word == Ok("dst") {
             return Ok(tz.merge(Offset {
                 negative: false,
                 hours: 1,
@@ -295,118 +295,99 @@ fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
         })
 }
 
-/// Whether a named timezone can be followed by DST. GNU date rejects it after
-/// a daylight saving time zone, and after `t`.
-fn takes_dst(name: &str) -> bool {
-    !matches!(
-        name.to_ascii_lowercase().as_str(),
-        "t" | "west"
-            | "pdt"
-            | "nzdt"
-            | "ndt"
-            | "msd"
-            | "mesz"
-            | "mest"
-            | "mdt"
-            | "eest"
-            | "edt"
-            | "clst"
-            | "cest"
-            | "cdt"
-            | "bst"
-            | "brst"
-            | "akdt"
-            | "adt"
-    )
-}
-
 /// Named timezone list.
 ///
 /// The full list of timezones can be extracted from
 /// https://www.timeanddate.com/time/zones/. GNU date only supports a subset of
 /// these. We support the same subset as GNU date.
-fn timezone_name_to_offset(input: &str) -> ModalResult<Offset> {
-    let (negative, hours, minutes) = match input {
-        "z" => (false, 0, 0),
-        "y" => (true, 12, 0),
-        "x" => (true, 11, 0),
-        "wet" => (false, 0, 0),
-        "west" => (false, 1, 0),
-        "wat" => (false, 1, 0),
-        "w" => (true, 10, 0),
-        "v" => (true, 9, 0),
-        "utc" => (false, 0, 0),
-        "ut" => (false, 0, 0),
-        "u" => (true, 8, 0),
-        "t" => (true, 7, 0),
-        "sst" => (true, 12, 0),
-        "sgt" => (false, 8, 0),
-        "sast" => (false, 2, 0),
-        "s" => (true, 6, 0),
-        "r" => (true, 5, 0),
-        "q" => (true, 4, 0),
-        "pst" => (true, 8, 0),
-        "pdt" => (true, 7, 0),
-        "p" => (true, 3, 0),
-        "o" => (true, 2, 0),
-        "nzst" => (false, 12, 0),
-        "nzdt" => (false, 13, 0),
-        "nst" => (true, 3, 30),
-        "ndt" => (true, 2, 30),
-        "n" => (true, 1, 0),
-        "mst" => (true, 7, 0),
-        "msk" => (false, 3, 0),
-        "msd" => (false, 4, 0),
-        "mez" => (false, 1, 0),
-        "mesz" => (false, 2, 0),
-        "mest" => (false, 2, 0),
-        "mdt" => (true, 6, 0),
-        "m" => (false, 12, 0),
-        "l" => (false, 11, 0),
-        "kst" => (false, 9, 0),
-        "k" => (false, 10, 0),
-        "jst" => (false, 9, 0),
-        "ist" => (false, 5, 30),
-        "i" => (false, 9, 0),
-        "hst" => (true, 10, 0),
-        "h" => (false, 8, 0),
-        "gst" => (false, 10, 0),
-        "gmt" => (false, 0, 0),
-        "g" => (false, 7, 0),
-        "f" => (false, 6, 0),
-        "est" => (true, 5, 0),
-        "eet" => (false, 2, 0),
-        "eest" => (false, 3, 0),
-        "edt" => (true, 4, 0),
-        "eat" => (false, 3, 0),
-        "e" => (false, 5, 0),
-        "d" => (false, 4, 0),
-        "cst" => (true, 6, 0),
-        "clt" => (true, 4, 0),
-        "clst" => (true, 3, 0),
-        "cet" => (false, 1, 0),
-        "cest" => (false, 2, 0),
-        "cdt" => (true, 5, 0),
-        "cat" => (false, 2, 0),
-        "c" => (false, 3, 0),
-        "bst" => (false, 1, 0),
-        "brt" => (true, 3, 0),
-        "brst" => (true, 2, 0),
-        "b" => (false, 2, 0),
-        "ast" => (true, 4, 0),
-        "art" => (true, 3, 0),
-        "akst" => (true, 9, 0),
-        "akdt" => (true, 8, 0),
-        "adt" => (true, 3, 0),
-        "a" => (false, 1, 0),
+///
+/// The flag says whether the zone can be followed by DST. GNU date rejects it
+/// after a daylight saving time zone, and after `t`.
+fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
+    let (negative, hours, minutes, takes_dst) = match input {
+        "z" => (false, 0, 0, true),
+        "y" => (true, 12, 0, true),
+        "x" => (true, 11, 0, true),
+        "wet" => (false, 0, 0, true),
+        "west" => (false, 1, 0, false),
+        "wat" => (false, 1, 0, true),
+        "w" => (true, 10, 0, true),
+        "v" => (true, 9, 0, true),
+        "utc" => (false, 0, 0, true),
+        "ut" => (false, 0, 0, true),
+        "u" => (true, 8, 0, true),
+        "t" => (true, 7, 0, false),
+        "sst" => (true, 12, 0, true),
+        "sgt" => (false, 8, 0, true),
+        "sast" => (false, 2, 0, true),
+        "s" => (true, 6, 0, true),
+        "r" => (true, 5, 0, true),
+        "q" => (true, 4, 0, true),
+        "pst" => (true, 8, 0, true),
+        "pdt" => (true, 7, 0, false),
+        "p" => (true, 3, 0, true),
+        "o" => (true, 2, 0, true),
+        "nzst" => (false, 12, 0, true),
+        "nzdt" => (false, 13, 0, false),
+        "nst" => (true, 3, 30, true),
+        "ndt" => (true, 2, 30, false),
+        "n" => (true, 1, 0, true),
+        "mst" => (true, 7, 0, true),
+        "msk" => (false, 3, 0, true),
+        "msd" => (false, 4, 0, false),
+        "mez" => (false, 1, 0, true),
+        "mesz" => (false, 2, 0, false),
+        "mest" => (false, 2, 0, false),
+        "mdt" => (true, 6, 0, false),
+        "m" => (false, 12, 0, true),
+        "l" => (false, 11, 0, true),
+        "kst" => (false, 9, 0, true),
+        "k" => (false, 10, 0, true),
+        "jst" => (false, 9, 0, true),
+        "ist" => (false, 5, 30, true),
+        "i" => (false, 9, 0, true),
+        "hst" => (true, 10, 0, true),
+        "h" => (false, 8, 0, true),
+        "gst" => (false, 10, 0, true),
+        "gmt" => (false, 0, 0, true),
+        "g" => (false, 7, 0, true),
+        "f" => (false, 6, 0, true),
+        "est" => (true, 5, 0, true),
+        "eet" => (false, 2, 0, true),
+        "eest" => (false, 3, 0, false),
+        "edt" => (true, 4, 0, false),
+        "eat" => (false, 3, 0, true),
+        "e" => (false, 5, 0, true),
+        "d" => (false, 4, 0, true),
+        "cst" => (true, 6, 0, true),
+        "clt" => (true, 4, 0, true),
+        "clst" => (true, 3, 0, false),
+        "cet" => (false, 1, 0, true),
+        "cest" => (false, 2, 0, false),
+        "cdt" => (true, 5, 0, false),
+        "cat" => (false, 2, 0, true),
+        "c" => (false, 3, 0, true),
+        "bst" => (false, 1, 0, false),
+        "brt" => (true, 3, 0, true),
+        "brst" => (true, 2, 0, false),
+        "b" => (false, 2, 0, true),
+        "ast" => (true, 4, 0, true),
+        "art" => (true, 3, 0, true),
+        "akst" => (true, 9, 0, true),
+        "akdt" => (true, 8, 0, false),
+        "adt" => (true, 3, 0, false),
+        "a" => (false, 1, 0, true),
         _ => return Err(ErrMode::Backtrack(ContextError::new())),
     };
 
-    Ok(Offset {
-        negative,
-        hours,
-        minutes,
-    })
+    Ok((
+        Offset {
+            negative,
+            hours,
+            minutes,
+        },
+        takes_dst,
+    ))
 }
 
 #[cfg(test)]

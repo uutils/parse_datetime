@@ -87,6 +87,15 @@ fn test_time_correction(#[case] input: &str, #[case] expected: &str) {
 }
 
 #[rstest]
+#[case::est("2026-01-10 10:00 EST DST", "2026-01-10 14:00:00")]
+#[case::lowercase("2026-01-10 10:00 est dst", "2026-01-10 14:00:00")]
+#[case::cet("2026-01-10 10:00 CET DST", "2026-01-10 08:00:00")]
+#[case::ist_with_minutes("2026-01-10 10:00 IST DST", "2026-01-10 03:30:00")]
+fn test_time_zone_dst(#[case] input: &str, #[case] expected: &str) {
+    check_time(input, expected, "%Y-%m-%d %H:%M:%S", None);
+}
+
+#[rstest]
 #[case::plus_12("11:34:56+12:00", "2022-06-09 23:34:56")]
 #[case::minus_12("12:34:56-12:00", "2022-06-11 00:34:56")]
 #[case::plus_1259("12:34:56+12:59", "2022-06-09 23:35:56")]
@@ -121,6 +130,7 @@ fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &st
 #[case("10:59am+01")]
 #[case("10:59+01pm")]
 #[case("23:59:59+00:00:00")]
+#[case("2026-01-10 10:00 EDT DST")]
 fn test_time_invalid(#[case] input: &str) {
     let result = parse_datetime::parse_datetime(input);
     assert_eq!(
