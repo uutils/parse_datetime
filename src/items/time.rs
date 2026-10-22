@@ -45,7 +45,7 @@ use winnow::{
 
 use super::{
     epoch::sec_and_nsec,
-    offset::{timezone_offset, Offset},
+    offset::{time_zone_correction, timezone_offset, Offset},
     primitive::{colon, ctx_err, dec_uint, s},
 };
 
@@ -99,7 +99,7 @@ pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
             colon,
             minute,
             opt(preceded(colon, second)),
-            opt(timezone_offset),
+            opt(time_zone_correction),
         )
             .map(|(hour, _, minute, sec_nsec, offset)| Time {
                 hour,
