@@ -31,7 +31,7 @@ use winnow::{
     combinator::{alt, peek},
     error::{ContextError, ErrMode},
     stream::{AsChar, Stream},
-    token::take_while,
+    token::{one_of, take_while},
     ModalResult, Parser,
 };
 
@@ -189,6 +189,26 @@ pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
         .verify(|word: &str| word.eq_ignore_ascii_case("j"))
         .void()
         .parse_next(input)
+}
+
+/// Parse the zone correction that follows a time of day.
+///
+/// Unlike [`timezone_offset`], a relative unit after the number does not
+/// disqualify it: GNU reads `12:00 +3 hours` as the zone `+03:00` plus a bare
+/// `hours`. A fractional number is never a correction (`12:00 +1.5 seconds`).
+pub(super) fn time_zone_correction(input: &mut &str) -> ModalResult<Offset> {
+    let has_fraction = peek((
+        plus_or_minus::<ErrMode<ContextError>>,
+        s(dec_uint_str),
+        '.',
+        one_of(AsChar::is_dec_digit),
+    ))
+    .parse_next(input)
+    .is_ok();
+    if has_fraction {
+        return Err(ErrMode::Backtrack(ContextError::new()));
+    }
+    alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input)
 }
 
 /// Parse a timezone starting with `+` or `-`.

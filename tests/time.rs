@@ -121,6 +121,7 @@ fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &st
 #[case("10:59am+01")]
 #[case("10:59+01pm")]
 #[case("23:59:59+00:00:00")]
+#[case("2026-08-27 12:00 +30 hours")]
 fn test_time_invalid(#[case] input: &str) {
     let result = parse_datetime::parse_datetime(input);
     assert_eq!(
@@ -315,4 +316,24 @@ fn test_relative_fractional_seconds(#[case] input: &str, #[case] expected: &str)
         .unwrap();
 
     check_time(input, expected, "%H:%M:%S.%N", Some(base));
+}
+
+// Expected values from GNU date 9.11 with TZ=UTC: a numeric offset right after
+// a time of day is a zone correction, and the relative unit that follows is a
+// bare unit, i.e. one of it.
+#[rstest]
+#[case::hours("2026-08-27 12:00 +3 hours", "2026-08-27 10:00:00")]
+#[case::hours_glued("2026-08-27 12:00 +3hours", "2026-08-27 10:00:00")]
+#[case::hhmm("2026-08-27 12:00 +0300 hours", "2026-08-27 10:00:00")]
+#[case::hours_ago("2026-08-27 12:00 +3 hours ago", "2026-08-27 08:00:00")]
+#[case::minutes("2026-08-27 12:00 +3 minutes", "2026-08-27 09:01:00")]
+#[case::days("2026-08-27 12:00 +3 days", "2026-08-28 09:00:00")]
+#[case::minus("2026-08-27 12:00 -3 hours", "2026-08-27 16:00:00")]
+#[case::two_items("2026-08-27 12:00 +3 hours 5 minutes", "2026-08-27 10:05:00")]
+#[case::named_zone_first("2026-08-27 12:00 utc +3 hours", "2026-08-27 15:00:00")]
+#[case::bare_hour("2026-08-27 12 +3 hours", "2026-08-27 15:00:00")]
+#[case::no_time_of_day("2026-08-27 +3 hours", "2026-08-27 03:00:00")]
+#[case::fraction("2026-08-27 12:00 +1.5 seconds", "2026-08-27 12:00:01")]
+fn test_time_correction_before_relative(#[case] input: &str, #[case] expected: &str) {
+    check_time(input, expected, "%Y-%m-%d %H:%M:%S", None);
 }
