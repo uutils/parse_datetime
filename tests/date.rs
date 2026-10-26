@@ -492,3 +492,48 @@ fn test_weekday_ignored_with_explicit_date(#[case] input: &str, #[case] expected
         "`{input}` should resolve to {expected}"
     );
 }
+
+// Wall-clock times in a DST gap (New York skips 02:00-03:00 on 2024-03-10,
+// Sao Paulo skipped midnight on 2018-11-04). Verified against GNU date 9.7.
+#[rstest]
+#[case::time_in_gap(r#"TZ="America/New_York" 2024-03-10 02:30"#)]
+#[case::gap_start(r#"TZ="America/New_York" 2024-03-10 02:00"#)]
+#[case::midnight_in_gap(r#"TZ="America/Sao_Paulo" 2018-11-04"#)]
+fn test_local_time_in_dst_gap_is_invalid(#[case] input: &str) {
+    assert!(parse_datetime::parse_datetime(input).is_err(), "{input}");
+}
+
+#[rstest]
+// A time with its own zone is not moved by the local zone's gap.
+#[case::utc(
+    r#"TZ="America/New_York" 2024-03-10 02:30 UTC"#,
+    "2024-03-10 02:30:00+00:00"
+)]
+#[case::z(
+    r#"TZ="America/New_York" 2024-03-10T02:30:00Z"#,
+    "2024-03-10 02:30:00+00:00"
+)]
+// Next to the gap, and in the repeated hour, local times still work.
+#[case::after_gap(
+    r#"TZ="America/New_York" 2024-03-10 03:00"#,
+    "2024-03-10 03:00:00-04:00"
+)]
+#[case::fold(
+    r#"TZ="America/New_York" 2024-11-03 01:30"#,
+    "2024-11-03 01:30:00-04:00"
+)]
+fn test_dst_gap_neighbours(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
+#[test]
+fn test_relative_item_moves_past_dst_gap() {
+    // GNU moves a relative result that lands in the gap forward.
+    let parsed = parse_datetime::parse_datetime(r#"TZ="America/Sao_Paulo" 2018-11-03 +1 day"#)
+        .unwrap()
+        .expect_in_range();
+    assert_eq!(
+        parsed.to_string(),
+        "2018-11-04T01:00:00-02:00[America/Sao_Paulo]"
+    );
+}
