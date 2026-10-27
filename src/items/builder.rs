@@ -279,7 +279,11 @@ impl DateTimeBuilder {
             || self.weekday.is_some()
             || (zone_seen && self.relative.is_empty());
 
+        // The wall-clock time the input asks for, before the time zone
+        // resolves it: GNU rejects one that falls in a DST gap.
+        let mut wanted = base.datetime();
         let mut dt = if need_midnight {
+            wanted = wanted.date().to_datetime(civil::time(0, 0, 0, 0));
             base.with().time(civil::time(0, 0, 0, 0)).build()?
         } else {
             base
@@ -294,17 +298,27 @@ impl DateTimeBuilder {
                     .map_err(|_| "base year must be non-negative")?;
                 date.with_year(base_year).try_into()?
             };
+            wanted = d.to_datetime(wanted.time());
             dt = dt.with().date(d).build()?;
         }
 
         // 4b. Apply time.
+        let mut fixed_offset = self.offset.is_some();
         if let Some(time) = self.time.clone() {
             if let Some(offset) = &time.offset {
                 dt = dt.datetime().to_zoned(offset.try_into()?)?;
+                fixed_offset = true;
             }
 
             let t: civil::Time = time.try_into()?;
+            wanted = wanted.date().to_datetime(t);
             dt = dt.with().time(t).build()?;
+        }
+
+        // A date or time that names a moment the time zone skips does not
+        // exist; jiff would move it past the gap.
+        if need_midnight && !fixed_offset && dt.datetime() != wanted {
+            return Err("invalid date: the local time does not exist in this time zone".into());
         }
 
         // 4c. Apply weekday.
@@ -347,6 +361,7 @@ impl DateTimeBuilder {
                 + offset.checked_mul(7).ok_or("multiplication overflow")?;
 
             dt = dt.checked_add(Span::new().try_days(delta)?)?;
+            wanted = wanted.checked_add(Span::new().try_days(delta)?)?;
         }
 
         // 4d. Apply fixed offset. This anchors the instant before relative
@@ -355,8 +370,15 @@ impl DateTimeBuilder {
         // across a DST boundary (see issue uutils/coreutils#12555).
         if let Some(offset) = self.offset {
             let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+            if need_midnight {
+                // The zone applies to the wall-clock time as written; going
+                // through the local zone would move a time in its DST gap.
+                let wall = wanted.checked_add(Span::new().hours(hour_adjustment))?;
+                dt = wall.to_zoned((&offset).try_into()?)?;
+            } else {
+                dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
+                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+            }
         }
 
         // 4e. Apply relative adjustments.
