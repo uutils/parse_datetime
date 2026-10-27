@@ -268,21 +268,21 @@ fn literal3(input: &mut &str) -> ModalResult<Date> {
 
 /// Parse the name of a month (case-insensitive)
 fn literal_month(input: &mut &str) -> ModalResult<u8> {
-    s(alpha1)
+    s((alpha1, opt('.')).take())
         .verify_map(|s: &str| {
             Some(match s {
-                "january" | "jan" => 1,
-                "february" | "feb" => 2,
-                "march" | "mar" => 3,
-                "april" | "apr" => 4,
-                "may" => 5,
-                "june" | "jun" => 6,
-                "july" | "jul" => 7,
-                "august" | "aug" => 8,
-                "september" | "sep" | "sept" => 9,
-                "october" | "oct" => 10,
-                "november" | "nov" => 11,
-                "december" | "dec" => 12,
+                "january" | "jan" | "jan." => 1,
+                "february" | "feb" | "feb." => 2,
+                "march" | "mar" | "mar." => 3,
+                "april" | "apr" | "apr." => 4,
+                "may" | "may." => 5,
+                "june" | "jun" | "jun." => 6,
+                "july" | "jul" | "jul." => 7,
+                "august" | "aug" | "aug." => 8,
+                "september" | "sep" | "sep." | "sept" => 9,
+                "october" | "oct" | "oct." => 10,
+                "november" | "nov" | "nov." => 11,
+                "december" | "dec" | "dec." => 12,
                 _ => return None,
             })
         })
@@ -480,6 +480,8 @@ mod tests {
             "14-nov2022",
             "14nov2022",
             "14nov      2022",
+            "14 nov. 2022",
+            "14-nov.-2022",
         ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
@@ -529,6 +531,8 @@ mod tests {
             "nov 14 2022",
             "nov14 2022",
             "nov14, 2022",
+            "nov. 14, 2022",
+            "nov.14 2022",
         ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
@@ -584,6 +588,7 @@ mod tests {
             "nov-14-2022",
             "nov---14---2022",
             "nov  -   14    -   2022",
+            "nov.-14-2022",
         ] {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");

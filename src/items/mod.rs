@@ -134,18 +134,18 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDa
 /// month               = dec_uint ;
 /// day                 = dec_uint ;
 ///
-/// literal_month       = "january" | "jan"
-///                     | "february" | "feb"
-///                     | "march" | "mar"
-///                     | "april" | "apr"
-///                     | "may"
-///                     | "june" | "jun"
-///                     | "july" | "jul"
-///                     | "august" | "aug"
-///                     | "september" | "sept" | "sep"
-///                     | "october" | "oct"
-///                     | "november" | "nov"
-///                     | "december" | "dec" ;
+/// literal_month       = "january" | "jan" | "jan."
+///                     | "february" | "feb" | "feb."
+///                     | "march" | "mar" | "mar."
+///                     | "april" | "apr" | "apr."
+///                     | "may" | "may."
+///                     | "june" | "jun" | "jun."
+///                     | "july" | "jul" | "jul."
+///                     | "august" | "aug" | "aug."
+///                     | "september" | "sept" | "sep" | "sep."
+///                     | "october" | "oct" | "oct."
+///                     | "november" | "nov" | "nov."
+///                     | "december" | "dec" | "dec." ;
 ///
 /// time                = iso_time | meridiem_time ;
 ///

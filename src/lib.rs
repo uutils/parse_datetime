@@ -345,6 +345,24 @@ mod tests {
             assert_eq!(parse_datetime("05/7/1987").unwrap(), expected);
             assert_eq!(parse_datetime("05/07/1987").unwrap(), expected);
         }
+
+        #[test]
+        fn month_abbreviation_with_period() {
+            let months = [
+                "jan.", "feb.", "mar.", "apr.", "may.", "jun.", "jul.", "aug.", "sep.", "oct.",
+                "nov.", "dec.",
+            ];
+            for (i, month) in months.iter().enumerate() {
+                let input = format!("{month} 5 2024");
+                let actual = parse_datetime(&input).unwrap().expect_in_range();
+                assert_eq!(actual.month() as usize, i + 1, "{input}");
+                assert_eq!(actual.day(), 5, "{input}");
+            }
+
+            for input in ["sept. 5 2024", "june. 5 2024", "jan.. 5 2024"] {
+                assert!(parse_datetime(input).is_err(), "{input}");
+            }
+        }
     }
 
     #[cfg(test)]
