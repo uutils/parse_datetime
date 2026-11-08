@@ -130,7 +130,26 @@ impl TryFrom<Date> for jiff::civil::Date {
 /// Parse a date that is not in ISO format. ISO dates are parsed by [`iso1`]
 /// and [`iso2`], which the caller tries first.
 pub(super) fn parse_non_iso(input: &mut &str) -> ModalResult<Date> {
-    alt((us, literal1, literal2, literal3)).parse_next(input)
+    alt((dotted, us, literal1, literal2, literal3)).parse_next(input)
+}
+
+/// Parse the European `DD.MM.[YYYY]` spelling.
+fn dotted(input: &mut &str) -> ModalResult<Date> {
+    let (day, _, month, _, year) = (
+        s(dec_uint),
+        s('.'),
+        s(dec_uint),
+        s('.'),
+        opt(terminated(year_str, alt((multispace1, eof)))),
+    )
+        .parse_next(input)?;
+
+    let date = match year {
+        Some(year) => (year, month, day).try_into(),
+        None => (month, day).try_into(),
+    };
+
+    date.map_err(|e| ErrMode::Backtrack(ctx_err(e)))
 }
 
 /// Parse `[year]-[month]-[day]`
@@ -659,6 +678,45 @@ mod tests {
             "14(comment????)nov",
         ] {
             assert_eq!(parse(&mut s).unwrap(), reference);
+        }
+    }
+
+    #[test]
+    fn dotted() {
+        let with_year = Date {
+            year: Some(2022),
+            month: 11,
+            day: 14,
+        };
+        for mut input in ["14.11.2022", "14 . 11 . 2022", "14  .  11  .   2022"] {
+            assert_eq!(
+                parse(&mut input).unwrap(),
+                with_year,
+                "Format string: {input}"
+            );
+        }
+
+        let without_year = Date {
+            year: None,
+            month: 11,
+            day: 14,
+        };
+        for mut input in ["14.11.", "14 . 11 ."] {
+            assert_eq!(
+                parse(&mut input).unwrap(),
+                without_year,
+                "Format string: {input}"
+            );
+        }
+
+        // A suffix must not be accepted as part of the year. The remaining
+        // number can still be interpreted as a pure year by the builder.
+        let mut input = "14.11.2022a";
+        assert_eq!(parse(&mut input).unwrap(), without_year);
+        assert_eq!(input, "2022a");
+
+        for mut input in ["14.11", "31.02.2022", "31.02.", "14.11.2147485548"] {
+            assert!(parse(&mut input).is_err(), "accepted invalid date: {input}");
         }
     }
 }
