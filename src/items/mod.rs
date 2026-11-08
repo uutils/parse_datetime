@@ -116,10 +116,13 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDa
 ///
 /// datetime            = date , [ "t" | whitespace ] , iso_time ;
 ///
-/// date                = iso_date | us_date | literal1_date | literal2_date ;
+/// date                = iso_date | dotted_date | us_date | literal1_date | literal2_date ;
 ///
 /// iso_date            = year , [ iso_date_delim ] , month , [ iso_date_delim ] , day ;
 /// iso_date_delim      = optional_whitespace , "-" , optional_whitespace ;
+///
+/// dotted_date         = day , dotted_date_delim , month , dotted_date_delim , [ year ] ;
+/// dotted_date_delim   = optional_whitespace , "." , optional_whitespace ;
 ///
 /// us_date             = month , [ us_date_delim ] , day , [ us_date_delim , year ];
 /// us_date_delim       = optional_whitespace , "/" , optional_whitespace ;
