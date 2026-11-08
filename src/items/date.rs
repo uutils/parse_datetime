@@ -36,6 +36,7 @@ use winnow::{
 };
 
 use super::{
+    names::month_number,
     primitive::{ctx_err, dec_uint, multispace1, s},
     year::{year_from_str, year_str},
 };
@@ -130,7 +131,35 @@ impl TryFrom<Date> for jiff::civil::Date {
 /// Parse a date that is not in ISO format. ISO dates are parsed by [`iso1`]
 /// and [`iso2`], which the caller tries first.
 pub(super) fn parse_non_iso(input: &mut &str) -> ModalResult<Date> {
-    alt((us, literal1, literal2, literal3)).parse_next(input)
+    alt((dotted, us, literal1, literal2, literal3)).parse_next(input)
+}
+
+/// Parse the European `DD.MM[.][YYYY]` spelling.
+///
+/// The final year is only part of the dotted date when it immediately follows
+/// the second dot. With whitespace after the dot GNU treats the following
+/// number as a separate pure-number item (usually a year or a time).
+fn dotted(input: &mut &str) -> ModalResult<Date> {
+    let (day, _, month, _, year) = (
+        s(dec_uint),
+        s('.'),
+        s(dec_uint),
+        '.',
+        opt(take_while(1.., AsChar::is_dec_digit)),
+    )
+        .parse_next(input)?;
+
+    match year {
+        Some(year) => {
+            year_from_str(year).map_err(|e| ErrMode::Backtrack(ctx_err(e)))?;
+            (year, month, day)
+                .try_into()
+                .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
+        }
+        None => (month, day)
+            .try_into()
+            .map_err(|e| ErrMode::Backtrack(ctx_err(e))),
+    }
 }
 
 /// Parse `[year]-[month]-[day]`
@@ -268,25 +297,7 @@ fn literal3(input: &mut &str) -> ModalResult<Date> {
 
 /// Parse the name of a month (case-insensitive)
 fn literal_month(input: &mut &str) -> ModalResult<u8> {
-    s(alpha1)
-        .verify_map(|s: &str| {
-            Some(match s {
-                "january" | "jan" => 1,
-                "february" | "feb" => 2,
-                "march" | "mar" => 3,
-                "april" | "apr" => 4,
-                "may" => 5,
-                "june" | "jun" => 6,
-                "july" | "jul" => 7,
-                "august" | "aug" => 8,
-                "september" | "sep" | "sept" => 9,
-                "october" | "oct" => 10,
-                "november" | "nov" => 11,
-                "december" | "dec" => 12,
-                _ => return None,
-            })
-        })
-        .parse_next(input)
+    s(alpha1).verify_map(month_number).parse_next(input)
 }
 
 fn month_from_str(s: &str) -> ModalResult<u8> {
@@ -588,6 +599,26 @@ mod tests {
             let old_s = s.to_owned();
             assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
         }
+    }
+
+    #[test]
+    fn dotted() {
+        assert_eq!(
+            parse(&mut "14.11.2022").unwrap(),
+            Date {
+                year: Some(2022),
+                month: 11,
+                day: 14,
+            }
+        );
+        assert_eq!(
+            parse(&mut "14.11.").unwrap(),
+            Date {
+                year: None,
+                month: 11,
+                day: 14,
+            }
+        );
     }
 
     #[test]

@@ -36,7 +36,7 @@ use winnow::{
 };
 
 use super::{
-    primitive::{colon, ctx_err, dec_uint, dec_uint_str, plus_or_minus, s},
+    primitive::{colon, ctx_err, dec_uint_str, plus_or_minus, s},
     relative,
 };
 
@@ -48,8 +48,9 @@ use super::{
 #[derive(PartialEq, Debug, Clone, Default)]
 pub(super) struct Offset {
     negative: bool,
-    hours: u8,
-    minutes: u8,
+    hours: u16,
+    minutes: u16,
+    name: Option<String>,
 }
 
 impl Offset {
@@ -70,18 +71,19 @@ impl Offset {
             }
         }
         let (total_minutes, negative) = combine(
-            (self.hours as u16) * 60 + (self.minutes as u16),
+            self.hours * 60 + self.minutes,
             self.negative,
-            (offset.hours as u16) * 60 + (offset.minutes as u16),
+            offset.hours * 60 + offset.minutes,
             offset.negative,
         );
-        let hours = (total_minutes / 60) as u8;
-        let minutes = (total_minutes % 60) as u8;
+        let hours = total_minutes / 60;
+        let minutes = total_minutes % 60;
 
         Offset {
             negative,
             hours,
             minutes,
+            name: self.name.or(offset.name),
         }
     }
 
@@ -93,17 +95,18 @@ impl Offset {
     /// - Otherwise, the hour field is reduced to 23 while preserving the minute
     ///   field, and the function returns the normalized offset along with the
     ///   hour adjustment needed to reach the original offset.
-    pub(super) fn normalize(self) -> (Offset, i8) {
+    pub(super) fn normalize(self) -> (Offset, i32) {
         if self.hours < 24 || (self.hours == 24 && self.minutes == 0) {
             return (self, 0);
         }
 
-        let hour_adjustment = (self.hours as i8 - 23) * if self.negative { 1 } else { -1 };
+        let hour_adjustment = (self.hours as i32 - 23) * if self.negative { 1 } else { -1 };
         (
             Offset {
                 negative: self.negative,
                 hours: 23,
                 minutes: self.minutes,
+                name: self.name,
             },
             hour_adjustment,
         )
@@ -117,23 +120,38 @@ impl Offset {
             secs
         }
     }
+
+    pub(super) fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
 }
 
 impl TryFrom<(bool, u8, u8)> for Offset {
     type Error = &'static str;
 
     fn try_from((negative, hours, minutes): (bool, u8, u8)) -> Result<Self, Self::Error> {
-        if hours > 24 {
-            return Err("timezone hour must be between 0 and 24");
-        }
-        if minutes > 60 || (hours == 24 && minutes != 0) {
-            return Err("timezone minute must be between 0 and 60");
+        Self::from_parts(negative, u32::from(hours), u32::from(minutes))
+    }
+}
+
+impl Offset {
+    /// Construct an offset from the raw hour and minute fields accepted by
+    /// GNU's parser. Minutes are normalized into hours, and the absolute
+    /// offset must not exceed 24 hours.
+    fn from_parts(negative: bool, hours: u32, minutes: u32) -> Result<Self, &'static str> {
+        let total_minutes = hours
+            .checked_mul(60)
+            .and_then(|hours| hours.checked_add(minutes))
+            .ok_or("timezone offset is too large")?;
+        if total_minutes > 24 * 60 {
+            return Err("timezone offset must be between -24:00 and +24:00");
         }
 
-        Ok(Offset {
+        Ok(Self {
             negative,
-            hours,
-            minutes,
+            hours: (total_minutes / 60) as u16,
+            minutes: (total_minutes % 60) as u16,
+            name: None,
         })
     }
 }
@@ -146,6 +164,7 @@ impl TryFrom<&Offset> for jiff::tz::TimeZone {
             negative,
             hours,
             minutes,
+            ..
         }: &Offset,
     ) -> Result<Self, Self::Error> {
         let secs = (*hours as i32) * 3600 + (*minutes as i32) * 60;
@@ -193,10 +212,11 @@ pub(super) fn parse_local(input: &mut &str) -> ModalResult<()> {
 
 /// Parse a timezone starting with `+` or `-`.
 pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
-    // Like GNU, read "+8 years" as a relative item, not as "+8" and "years".
-    // The costlier relative check only runs once an offset has parsed.
+    // Keep the public parser's historical behavior: a signed number followed
+    // by a relative unit is not a standalone timezone. The date-item parser
+    // uses `timezone_offset_raw` for GNU's context-sensitive `+N unit` form.
     let start = input.checkpoint();
-    let result = alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input);
+    let result = timezone_offset_raw.parse_next(input);
     if matches!(result, Err(ErrMode::Backtrack(_))) {
         return result;
     }
@@ -208,6 +228,14 @@ pub(super) fn timezone_offset(input: &mut &str) -> ModalResult<Offset> {
     }
     input.reset(&end);
     result
+}
+
+/// Parse a numeric timezone without applying the relative-item ambiguity
+/// check. This is used when a time item has already appeared to the left of a
+/// `+N unit` pair: GNU interprets the number as the time's offset and the unit
+/// as a separate relative item.
+pub(super) fn timezone_offset_raw(input: &mut &str) -> ModalResult<Offset> {
+    alt((timezone_offset_colon, timezone_offset_colonless)).parse_next(input)
 }
 
 /// Parse a timezone by name, with an optional numeric offset appended.
@@ -226,6 +254,7 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
                 negative: false,
                 hours: 1,
                 minutes: 0,
+                name: None,
             }));
         }
         input.reset(&start);
@@ -245,12 +274,16 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
 /// Parse a timezone offset with a colon separating hours and minutes, e.g.,
 /// `+08:00`, `+8:00`, `+8:0`.
 fn timezone_offset_colon(input: &mut &str) -> ModalResult<Offset> {
-    (plus_or_minus, s(dec_uint), s(colon), s(dec_uint))
+    (plus_or_minus, s(dec_uint_str), s(colon), s(dec_uint_str))
         .parse_next(input)
         .and_then(|(sign, hours, _, minutes)| {
-            (sign == '-', hours, minutes)
-                .try_into()
-                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+            let hours = hours
+                .parse::<u32>()
+                .map_err(|_| ErrMode::Cut(ctx_err("timezone hour is too large")))?;
+            let minutes = minutes
+                .parse::<u32>()
+                .map_err(|_| ErrMode::Cut(ctx_err("timezone minute is too large")))?;
+            Offset::from_parts(sign == '-', hours, minutes).map_err(|e| ErrMode::Cut(ctx_err(e)))
         })
 }
 
@@ -283,15 +316,13 @@ fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
                 _ => return None,
             };
 
-            let hours = h_str.parse::<u8>().ok()?;
-            let minutes = m_str.parse::<u8>().ok()?;
-            Some((sign, hours, minutes))
+            let hours = h_str.parse::<u32>().ok()?;
+            let minutes = m_str.parse::<u32>().ok()?;
+            Some((sign == '-', hours, minutes))
         })
         .parse_next(input)
-        .and_then(|(sign, hours, minutes)| {
-            (sign == '-', hours, minutes)
-                .try_into()
-                .map_err(|e| ErrMode::Cut(ctx_err(e)))
+        .and_then(|(negative, hours, minutes)| {
+            Offset::from_parts(negative, hours, minutes).map_err(|e| ErrMode::Cut(ctx_err(e)))
         })
 }
 
@@ -380,6 +411,12 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
         "akdt" => (true, 8, 0, false),
         "adt" => (true, 3, 0, false),
         "a" => (false, 1, 0, true),
+        // Australian abbreviations are retained for uutils compatibility.
+        "aest" => (false, 10, 0, true),
+        "aedt" => (false, 11, 0, false),
+        "acst" => (false, 9, 30, true),
+        "acdt" => (false, 10, 30, false),
+        "awst" => (false, 8, 0, false),
         _ => return Err(ErrMode::Backtrack(ContextError::new())),
     };
 
@@ -388,6 +425,7 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
             negative,
             hours,
             minutes,
+            name: Some(input.to_owned()),
         },
         takes_dst,
     ))
@@ -400,9 +438,15 @@ mod tests {
     fn off(negative: bool, hours: u8, minutes: u8) -> Offset {
         Offset {
             negative,
-            hours,
-            minutes,
+            hours: u16::from(hours),
+            minutes: u16::from(minutes),
+            name: None,
         }
+    }
+
+    fn unnamed(mut offset: Offset) -> Offset {
+        offset.name = None;
+        offset
     }
 
     #[test]
@@ -427,9 +471,11 @@ mod tests {
         }
 
         for input in [
-            "+25:00", // invalid: hours > 24
-            "-23:61", // invalid: minutes > 60
-            "+24:01", // invalid: minutes > 0 when hours == 24
+            "+25:00",                    // invalid: hours > 24
+            "-23:61",                    // invalid: minutes > 60
+            "+24:01",                    // invalid: minutes > 0 when hours == 24
+            "+999999999999999999999:00", // invalid: hour does not fit u32
+            "+01:999999999999999999999", // invalid: minute does not fit u32
         ] {
             let mut s = input;
             assert!(timezone_offset(&mut s).is_err(), "{input}");
@@ -490,10 +536,19 @@ mod tests {
             ("bst", off(false, 1, 0)),  // British Summer, was +6
             ("gst", off(false, 10, 0)), // Guam Standard, was +4
             ("sst", off(true, 12, 0)),  // was -11
+            ("aest", off(false, 10, 0)),
+            ("aedt", off(false, 11, 0)),
+            ("acst", off(false, 9, 30)),
+            ("acdt", off(false, 10, 30)),
+            ("awst", off(false, 8, 0)),
             ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
         }
 
         for input in [
@@ -520,7 +575,11 @@ mod tests {
             ("y-24", off(true, 36, 0)),          // maximum possible negative offset (y=-12)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
         }
 
         for input in [
@@ -546,7 +605,11 @@ mod tests {
             ("a dst", off(false, 2, 0)),    // military letter (a=+1)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
             assert!(s.is_empty(), "{input}");
         }
 
@@ -573,12 +636,18 @@ mod tests {
 
         // "utc +8 years" is "utc" followed by the relative item "+8 years".
         let mut s = "utc +8 years";
-        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 0, 0));
+        assert_eq!(
+            unnamed(timezone_name_offset(&mut s).unwrap()),
+            off(false, 0, 0)
+        );
         assert_eq!(s, " +8 years");
 
         // Without a relative item, the offset is still merged.
         let mut s = "utc +8";
-        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 8, 0));
+        assert_eq!(
+            unnamed(timezone_name_offset(&mut s).unwrap()),
+            off(false, 8, 0)
+        );
         assert!(s.is_empty());
     }
 

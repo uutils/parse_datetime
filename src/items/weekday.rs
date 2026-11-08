@@ -27,7 +27,7 @@ use winnow::{
     seq, ModalResult, Parser,
 };
 
-use super::{ordinal::ordinal, primitive::s};
+use super::{names::weekday_number, ordinal::ordinal, primitive::s};
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub(crate) enum Day {
@@ -72,14 +72,14 @@ pub(super) fn parse(input: &mut &str) -> ModalResult<Weekday> {
 fn day(input: &mut &str) -> ModalResult<Day> {
     s((alpha1, opt('.')).take())
         .verify_map(|s: &str| {
-            Some(match s {
-                "monday" | "mon" | "mon." => Day::Monday,
-                "tuesday" | "tue" | "tue." | "tues" => Day::Tuesday,
-                "wednesday" | "wed" | "wed." | "wednes" => Day::Wednesday,
-                "thursday" | "thu" | "thu." | "thur" | "thurs" => Day::Thursday,
-                "friday" | "fri" | "fri." => Day::Friday,
-                "saturday" | "sat" | "sat." => Day::Saturday,
-                "sunday" | "sun" | "sun." => Day::Sunday,
+            Some(match weekday_number(s)? {
+                0 => Day::Monday,
+                1 => Day::Tuesday,
+                2 => Day::Wednesday,
+                3 => Day::Thursday,
+                4 => Day::Friday,
+                5 => Day::Saturday,
+                6 => Day::Sunday,
                 _ => return None,
             })
         })

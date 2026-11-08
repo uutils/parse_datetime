@@ -1,11 +1,30 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil, Span, ToSpan, Zoned};
+use jiff::{civil, Span, Zoned};
 
-use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
+use super::parser::{DateKind, Item, RawYear};
+use super::resolve::{
+    apply_relative_date, apply_relative_time, matching_local_zone, matching_local_zone_at,
+    move_standard_named_zones_after_relative, named_zone_is_dst, relative_adjustment,
+    resolve_rule_offset_for_extended, shifted_year_month, weekday_monday0,
+};
+use super::{date, epoch, error, offset, relative, time, weekday, year};
 use crate::extended::{DateParts, TimeParts};
-use crate::{ExtendedDateTime, ParsedDateTime};
+use crate::{
+    ExtendedDateTime, MonthYearAdjustment, ParseTrace, ParsedDate, ParsedDateTime, ParsedItem,
+    ParsedTime, ParsedYear,
+};
+
+fn trace_mut<'a, const TRACE: bool>(
+    trace: &'a mut Option<&mut ParseTrace>,
+) -> Option<&'a mut ParseTrace> {
+    if TRACE {
+        trace.as_deref_mut()
+    } else {
+        None
+    }
+}
 
 /// The builder is used to construct a DateTime object from various components.
 /// The parser creates a `DateTimeBuilder` object with the parsed components,
@@ -240,6 +259,44 @@ impl DateTimeBuilder {
         }
     }
 
+    pub(super) fn build_with_trace(
+        self,
+        mut trace: ParseTrace,
+    ) -> Result<(ParsedDateTime, ParseTrace), error::Error> {
+        let result = self.build_inner_with_trace(&mut trace)?;
+        Ok((result, trace))
+    }
+
+    fn build_inner_with_trace(
+        mut self,
+        trace: &mut ParseTrace,
+    ) -> Result<ParsedDateTime, error::Error> {
+        if self.date.is_some() {
+            trace.weekday_ignored = self.weekday.is_some();
+            self.weekday = None;
+        }
+
+        if let Some(date) = self.date.as_ref() {
+            if date.year.unwrap_or(0) > 9999 {
+                return self.build_extended_with_trace(trace);
+            }
+        }
+
+        if !self.should_try_extended_fallback() {
+            return self
+                .build_in_range_with_trace(trace)
+                .map(ParsedDateTime::InRange);
+        }
+
+        // Near the year-9999 boundary, otherwise valid inputs can fail during
+        // in-range resolution due to transient timestamp/offset conversions.
+        // Retry in extended mode for boundary-risk contexts.
+        match self.clone().build_in_range() {
+            Ok(dt) => Ok(ParsedDateTime::InRange(dt)),
+            Err(in_range_err) => self.build_extended_with_trace(trace).or(Err(in_range_err)),
+        }
+    }
+
     fn should_try_extended_fallback(&self) -> bool {
         if self.timestamp.is_some() {
             return false;
@@ -252,6 +309,17 @@ impl DateTimeBuilder {
     }
 
     fn build_in_range(self) -> Result<Zoned, error::Error> {
+        self.build_in_range_impl::<false>(None)
+    }
+
+    fn build_in_range_with_trace(self, trace: &mut ParseTrace) -> Result<Zoned, error::Error> {
+        self.build_in_range_impl::<true>(Some(trace))
+    }
+
+    fn build_in_range_impl<const TRACE: bool>(
+        self,
+        mut trace: Option<&mut ParseTrace>,
+    ) -> Result<Zoned, error::Error> {
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
@@ -263,10 +331,29 @@ impl DateTimeBuilder {
             (None, None) => Zoned::now(),
         };
 
+        if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+            let base_year =
+                u32::try_from(base.year()).map_err(|_| "base year must be non-negative")?;
+            for item in &mut trace.items {
+                if let ParsedItem::Date(date) = item {
+                    if date.year.is_none() {
+                        date.year = Some(ParsedYear {
+                            value: base_year,
+                            digits: 0,
+                        });
+                    }
+                }
+            }
+        }
+
         // 2. Absolute timestamp override everything else.
         if let Some(ts) = self.timestamp {
             let ts = jiff::Timestamp::try_from(ts)?;
-            return Ok(ts.to_zoned(base.offset().to_time_zone()));
+            let result = ts.to_zoned(base.offset().to_time_zone());
+            if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+                trace.after_time_adjustment = Some(result.clone());
+            }
+            return Ok(result);
         }
 
         // 3. Determine whether to truncate the time of day. Like GNU, a
@@ -277,13 +364,19 @@ impl DateTimeBuilder {
         let need_midnight = self.date.is_some()
             || self.time.is_some()
             || self.weekday.is_some()
-            || (zone_seen && self.relative.is_empty());
+            || (zone_seen && self.relative.is_empty())
+            // An empty date string (and a string containing only ignored
+            // signs/comments) means the beginning of today. Relative items
+            // such as `today` remain distinct and keep the current time.
+            || self.relative.is_empty();
 
         let mut dt = if need_midnight {
             base.with().time(civil::time(0, 0, 0, 0)).build()?
         } else {
             base
         };
+        let mut named_fixed_zone_applied = false;
+        let mut named_fixed_hour_adjustment = 0;
 
         // 4a. Apply date.
         if let Some(date) = self.date {
@@ -304,7 +397,55 @@ impl DateTimeBuilder {
             }
 
             let t: civil::Time = time.try_into()?;
+            let local = civil::DateTime::new(
+                dt.year(),
+                dt.month(),
+                dt.day(),
+                t.hour(),
+                t.minute(),
+                t.second(),
+                t.subsec_nanosecond(),
+            )?;
+            let named_zone_is_local = self
+                .offset
+                .as_ref()
+                .and_then(|offset| offset.name())
+                .is_some_and(|name| matching_local_zone_at(&dt, local, name).is_some());
+            if !named_zone_is_local
+                && self
+                    .offset
+                    .as_ref()
+                    .and_then(|offset| offset.name())
+                    .is_some()
+            {
+                if let Some(offset) = self.offset.as_ref() {
+                    let (offset, hour_adjustment) = offset.clone().normalize();
+                    dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+                    named_fixed_hour_adjustment = hour_adjustment;
+                    named_fixed_zone_applied = true;
+                }
+            }
+            if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+                if self
+                    .offset
+                    .as_ref()
+                    .and_then(|offset| offset.name())
+                    .is_none()
+                    || named_zone_is_local
+                {
+                    let ambiguous = dt.time_zone().to_ambiguous_zoned(local);
+                    if matches!(ambiguous.offset(), jiff::tz::AmbiguousOffset::Gap { .. }) {
+                        trace.nonexistent_local_time = Some(crate::NonexistentLocalTime {
+                            provided: local,
+                            normalized: ambiguous.compatible().ok(),
+                        });
+                    }
+                }
+            }
             dt = dt.with().time(t).build()?;
+            if named_fixed_hour_adjustment != 0 {
+                dt = dt.checked_add(Span::new().hours(i64::from(named_fixed_hour_adjustment)))?;
+            }
         }
 
         // 4c. Apply weekday.
@@ -349,41 +490,140 @@ impl DateTimeBuilder {
             dt = dt.checked_add(Span::new().try_days(delta)?)?;
         }
 
+        if !TRACE && self.relative.is_empty() && self.offset.is_none() {
+            return Ok(dt);
+        }
+
+        if !TRACE
+            && self
+                .offset
+                .as_ref()
+                .and_then(|offset| offset.name())
+                .is_none()
+            && self.relative.len() == 1
+        {
+            let relative = self.relative[0];
+            return match relative {
+                relative::Relative::Years(_) | relative::Relative::Months(_) => {
+                    apply_relative_date(dt, relative_adjustment(&[relative]))
+                }
+                _ => Ok(dt.checked_add::<Span>(relative.try_into()?)?),
+            };
+        }
+
+        // A named abbreviation may describe the active local timezone rather
+        // than a fixed offset. Resolve it against the zone selected by the
+        // input/base when its abbreviation matches the requested wall clock.
+        // Otherwise retain the parser's fixed-offset interpretation.
+        let named_local_zone = self
+            .offset
+            .as_ref()
+            .and_then(|offset| offset.name())
+            .and_then(|name| matching_local_zone(&dt, name));
+        let use_named_local_zone = named_local_zone.is_some();
+        if use_named_local_zone {
+            // Keep the abbreviation's fixed offset while applying relative
+            // calendar fields, then resolve the resulting instant in the
+            // active local zone. This matters when a month/year adjustment
+            // crosses a daylight-saving transition.
+            if let Some(offset) = self.offset.as_ref() {
+                let (offset, hour_adjustment) = offset.clone().normalize();
+                dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
+                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+            }
+            if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+                if let Some(item) = trace
+                    .items
+                    .iter_mut()
+                    .find(|item| matches!(item, ParsedItem::NamedZone { .. }))
+                {
+                    let isdst = match item {
+                        ParsedItem::NamedZone { name, .. } => named_zone_is_dst(name),
+                        _ => false,
+                    };
+                    *item = ParsedItem::LocalZone {
+                        isdst: i8::from(isdst),
+                    };
+                }
+            }
+        }
+
         // 4d. Apply fixed offset. This anchors the instant before relative
         // adjustments so that "1970/01/01 UTC N seconds" adds N seconds to the
         // fixed-offset instant rather than to a local wall-clock that may drift
         // across a DST boundary (see issue uutils/coreutils#12555).
-        if let Some(offset) = self.offset {
-            let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+        if !use_named_local_zone && !named_fixed_zone_applied {
+            if let Some(offset) = self.offset {
+                let (offset, hour_adjustment) = offset.normalize();
+                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+                dt = dt.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+            }
         }
 
-        // 4e. Apply relative adjustments.
-        for rel in self.relative {
-            dt = match rel {
-                relative::Relative::Years(_) | relative::Relative::Months(_) => {
-                    // GNU way of calculating relative months and years.
-                    // GNU changes the month/year and then checks if the target month has
-                    // this day. If this day does not exist in the target month it overflows
-                    // the difference.
-                    let original_day_of_month = dt.day();
-                    dt = dt.checked_add::<Span>(rel.try_into()?)?;
-                    if original_day_of_month != dt.day() {
-                        dt = dt.checked_add(
-                            (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
-                        )?;
-                    }
-                    dt
-                }
-                _ => dt.checked_add::<Span>(rel.try_into()?)?,
-            };
+        if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+            // GNU reports standard named zones after relative items, while
+            // daylight and local zones remain in their parsed position.
+            // This is observable in `UTC -8 days` and similar inputs.
+            move_standard_named_zones_after_relative(&mut trace.items);
+        }
+
+        if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+            trace.starting = Some(dt.clone());
+        }
+
+        // 4e. Apply relative date adjustments first, then relative time
+        // adjustments. Keeping these phases explicit mirrors the parser's
+        // semantic model and makes diagnostics describe the actual stages.
+        let relative = relative_adjustment(&self.relative);
+        if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+            trace.date_adjustment = relative.date_part();
+            trace.time_adjustment = relative.time_part();
+            if relative.years != 0 || relative.months != 0 {
+                let (year, month) = shifted_year_month(&dt, relative)?;
+                trace.month_year_adjustment = Some(MonthYearAdjustment {
+                    year: i32::from(year),
+                    month,
+                    day: dt.day() as u8,
+                });
+            }
+        }
+
+        if relative.has_date_component() {
+            dt = apply_relative_date(dt, relative)?;
+            if let Some(zone) = named_local_zone.as_ref() {
+                dt = dt.with_time_zone(zone.clone());
+            }
+            if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+                trace.after_date_adjustment = Some(dt.clone());
+            }
+        } else if let Some(zone) = named_local_zone.as_ref() {
+            dt = dt.with_time_zone(zone.clone());
+        }
+
+        if relative.has_time_component() {
+            dt = apply_relative_time(dt, relative)?;
+            if let Some(trace) = trace_mut::<TRACE>(&mut trace) {
+                trace.after_time_adjustment = Some(dt.clone());
+            }
         }
 
         Ok(dt)
     }
 
     fn build_extended(self) -> Result<ParsedDateTime, error::Error> {
+        self.build_extended_impl()
+    }
+
+    fn build_extended_with_trace(
+        self,
+        _trace: &mut ParseTrace,
+    ) -> Result<ParsedDateTime, error::Error> {
+        // Extended years are formatted by callers separately. Keep the
+        // existing resolution path until the trace stages are needed there.
+        self.build_extended_impl()
+    }
+
+    fn build_extended_impl(self) -> Result<ParsedDateTime, error::Error> {
         if self.timestamp.is_some() {
             return Err("timestamp cannot be combined with large years".into());
         }
@@ -414,7 +654,8 @@ impl DateTimeBuilder {
         let need_midnight = date.is_some()
             || time.is_some()
             || weekday.is_some()
-            || (zone_seen && relative.is_empty());
+            || (zone_seen && relative.is_empty())
+            || relative.is_empty();
         let mut dt = ExtendedDateTime::new(
             DateParts {
                 year: u32::try_from(base.year()).map_err(|_| "year must be non-negative")?,
@@ -512,70 +753,180 @@ impl DateTimeBuilder {
     }
 }
 
-fn surrogate_year_for_rules(year: u32) -> i16 {
-    // Keep weekday/leap-year parity by preserving `year mod 400`, but avoid
-    // upper-bound years that can overflow when resolving a zoned instant.
-    const BASE: i64 = 9_599;
-    let mapped = BASE + (i64::from(year) - BASE).rem_euclid(400);
-    mapped as i16
-}
-
-fn resolve_rule_offset_for_extended(
-    tz: &jiff::tz::TimeZone,
-    dt: &ExtendedDateTime,
-) -> Result<i32, error::Error> {
-    let surrogate_year = surrogate_year_for_rules(dt.year);
-    let surrogate_dt = civil::DateTime::new(
-        surrogate_year,
-        dt.month as i8,
-        dt.day as i8,
-        dt.hour as i8,
-        dt.minute as i8,
-        dt.second as i8,
-        dt.nanosecond as i32,
-    )?;
-    let zoned = tz.to_ambiguous_zoned(surrogate_dt).compatible()?;
-    Ok(zoned.offset().seconds())
-}
-
-fn weekday_monday0(day: weekday::Day) -> u8 {
-    match day {
-        weekday::Day::Monday => 0,
-        weekday::Day::Tuesday => 1,
-        weekday::Day::Wednesday => 2,
-        weekday::Day::Thursday => 3,
-        weekday::Day::Friday => 4,
-        weekday::Day::Saturday => 5,
-        weekday::Day::Sunday => 6,
-    }
-}
-
 impl TryFrom<Vec<Item>> for DateTimeBuilder {
     type Error = &'static str;
 
     fn try_from(items: Vec<Item>) -> Result<Self, Self::Error> {
         let mut builder = DateTimeBuilder::new();
-
         for item in items {
             builder = match item {
-                Item::DateTime(dt) => builder.set_date(dt.date)?.set_time(dt.time)?,
-                Item::Date(d) => builder.set_date(d)?,
-                Item::Time(t) => builder.set_time(t)?,
+                Item::DateTime(dt, _) => builder.set_date(dt.date)?.set_time(dt.time)?,
+                Item::Date(date, _, _) => builder.set_date(date)?,
+                Item::Time(time) => builder.set_time(time)?,
                 Item::Weekday(weekday) => builder.set_weekday(weekday)?,
                 Item::Offset(offset) => builder.set_offset(offset)?,
                 Item::LocalZone => builder.set_local_zone()?,
-                Item::Relative(rel) => builder.push_relative(rel)?,
-                Item::TimeZone(tz) => builder.set_timezone(tz)?,
+                Item::Relative(relative) => builder.push_relative(relative)?,
+                Item::TimeZone(timezone) => builder.set_timezone(timezone)?,
                 Item::Pure(pure) => builder.set_pure(pure)?,
+            };
+        }
+        Ok(builder)
+    }
+}
+
+impl DateTimeBuilder {
+    pub(super) fn try_from_with_trace(
+        items: Vec<Item>,
+    ) -> Result<(Self, ParseTrace), &'static str> {
+        let mut trace = ParseTrace::default();
+        let (builder, _) = Self::from_items(items, Some(&mut trace))?;
+        Ok((builder, trace))
+    }
+
+    fn from_items(
+        items: Vec<Item>,
+        mut trace: Option<&mut ParseTrace>,
+    ) -> Result<(Self, ()), &'static str> {
+        let mut builder = DateTimeBuilder::new();
+
+        for item in items {
+            builder = match item {
+                Item::DateTime(dt, raw_year) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.items.push(ParsedItem::Date(ParsedDate {
+                            year: date_year(&dt.date, raw_year),
+                            month: dt.date.month,
+                            day: dt.date.day,
+                            number: false,
+                        }));
+                        trace.items.push(ParsedItem::Time(parsed_time(&dt.time)));
+                    }
+                    builder.set_date(dt.date)?.set_time(dt.time)?
+                }
+                Item::Date(d, kind, raw_year) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.items.push(ParsedItem::Date(ParsedDate {
+                            year: date_year(&d, raw_year),
+                            month: d.month,
+                            day: d.day,
+                            number: kind == DateKind::Number,
+                        }));
+                    }
+                    builder.set_date(d)?
+                }
+                Item::Time(t) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.items.push(ParsedItem::Time(parsed_time(&t)));
+                    }
+                    builder.set_time(t)?
+                }
+                Item::Weekday(weekday) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.items.push(ParsedItem::Weekday {
+                            ordinal: weekday.offset,
+                            day: weekday_number(weekday.day),
+                        });
+                    }
+                    builder.set_weekday(weekday)?
+                }
+                Item::Offset(offset) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        if let Some(name) = offset.name() {
+                            trace.items.push(ParsedItem::NamedZone {
+                                name: name.to_owned(),
+                                seconds: offset.total_seconds(),
+                            });
+                        } else {
+                            trace.items.push(ParsedItem::Offset {
+                                seconds: offset.total_seconds(),
+                            });
+                        }
+                    }
+                    builder.set_offset(offset)?
+                }
+                Item::LocalZone => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.items.push(ParsedItem::LocalZone { isdst: 0 });
+                    }
+                    builder.set_local_zone()?
+                }
+                Item::Relative(rel) => {
+                    builder = builder.push_relative(rel)?;
+                    if let Some(trace) = trace.as_deref_mut() {
+                        let cumulative = relative_adjustment(&builder.relative);
+                        trace.items.push(ParsedItem::Relative(cumulative));
+                    }
+                    builder
+                }
+                Item::TimeZone(tz) => builder.set_timezone(tz)?,
+                Item::Pure(pure) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        if builder
+                            .date
+                            .as_ref()
+                            .is_some_and(|date| date.year.is_none())
+                        {
+                            if let Ok(value) = pure.parse() {
+                                trace.items.push(ParsedItem::NumberYear(ParsedYear {
+                                    value,
+                                    digits: pure.len().try_into().unwrap_or(u8::MAX),
+                                }));
+                            }
+                        }
+                    }
+                    let before_time = builder.time.is_some();
+                    builder = builder.set_pure(pure.clone())?;
+                    if !before_time && builder.time.is_some() {
+                        if let Some(trace) = trace.as_deref_mut() {
+                            if let Some(time) = builder.time.as_ref() {
+                                trace.items.push(ParsedItem::NumberTime(parsed_time(time)));
+                            }
+                        }
+                    }
+                    builder
+                }
             }
         }
 
-        Ok(builder)
+        Ok((builder, ()))
+    }
+}
+
+fn date_year(date: &date::Date, raw_year: Option<RawYear>) -> Option<ParsedYear> {
+    raw_year
+        .map(|year| ParsedYear {
+            value: year.value,
+            digits: year.digits,
+        })
+        .or_else(|| date.year.map(|value| ParsedYear { value, digits: 0 }))
+}
+
+fn parsed_time(time: &time::Time) -> ParsedTime {
+    ParsedTime {
+        hour: time.hour,
+        minute: time.minute,
+        second: time.second,
+        nanosecond: time.nanosecond,
+        offset_seconds: time.offset.as_ref().map(offset::Offset::total_seconds),
+    }
+}
+
+fn weekday_number(day: weekday::Day) -> u8 {
+    match day {
+        weekday::Day::Sunday => 0,
+        weekday::Day::Monday => 1,
+        weekday::Day::Tuesday => 2,
+        weekday::Day::Wednesday => 3,
+        weekday::Day::Thursday => 4,
+        weekday::Day::Friday => 5,
+        weekday::Day::Saturday => 6,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::resolve::surrogate_year_for_rules;
     use super::*;
     use jiff::{civil::DateTime, tz::TimeZone};
 
@@ -591,6 +942,10 @@ mod tests {
 
     fn date_large(mut input: &str) -> date::Date {
         date::iso1(&mut input).unwrap()
+    }
+
+    fn date_item(date: date::Date) -> Item {
+        Item::Date(date, super::DateKind::Calendar, None)
     }
 
     fn time() -> time::Time {
@@ -677,7 +1032,7 @@ mod tests {
                 "timezone rule cannot appear more than once",
             ),
             (
-                vec![Item::Date(date()), Item::Date(date())],
+                vec![date_item(date()), date_item(date())],
                 "date cannot appear more than once",
             ),
             (
@@ -778,6 +1133,13 @@ mod tests {
     }
 
     #[test]
+    fn trace_records_unnamed_offset() {
+        let (_, trace) =
+            DateTimeBuilder::try_from_with_trace(vec![Item::Offset(offset())]).unwrap();
+        assert_eq!(trace.items, vec![ParsedItem::Offset { seconds: 18_000 }]);
+    }
+
+    #[test]
     fn helper_mappings() {
         let mapped = surrogate_year_for_rules(2024);
         assert!((9599..=9998).contains(&mapped));
@@ -790,6 +1152,24 @@ mod tests {
         assert_eq!(weekday_monday0(weekday::Day::Friday), 4);
         assert_eq!(weekday_monday0(weekday::Day::Saturday), 5);
         assert_eq!(weekday_monday0(weekday::Day::Sunday), 6);
+        assert_eq!(
+            date_year(&date(), None),
+            Some(ParsedYear {
+                value: 2023,
+                digits: 0,
+            })
+        );
+        for (day, number) in [
+            (weekday::Day::Sunday, 0),
+            (weekday::Day::Monday, 1),
+            (weekday::Day::Tuesday, 2),
+            (weekday::Day::Wednesday, 3),
+            (weekday::Day::Thursday, 4),
+            (weekday::Day::Friday, 5),
+            (weekday::Day::Saturday, 6),
+        ] {
+            assert_eq!(weekday_number(day), number);
+        }
     }
 
     #[test]
@@ -807,7 +1187,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("9999-12-31")),
+            date_item(date_large("9999-12-31")),
             Item::Relative(relative_day()),
         ])
         .unwrap();
@@ -823,7 +1203,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-01-01")),
+            date_item(date_large("10000-01-01")),
             Item::Relative(relative_day_ago()),
         ])
         .unwrap();
@@ -914,7 +1294,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-01-01")),
+            date_item(date_large("10000-01-01")),
             Item::Weekday(weekday_next_monday()),
             Item::Relative(relative_day()),
             Item::Relative(relative_hours()),
@@ -937,7 +1317,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-06-01")),
+            date_item(date_large("10000-06-01")),
             Item::Time(time()),
             Item::Offset(offset_large()),
         ])
@@ -954,12 +1334,45 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("9999-01-31")),
+            date_item(date_large("9999-01-31")),
             Item::Relative(relative_day()),
         ])
         .unwrap();
         let z = builder.set_base(base).build().unwrap().expect_in_range();
         assert_eq!(z.strftime("%Y-%m-%d").to_string(), "9999-02-01");
+    }
+
+    #[test]
+    fn traced_build_prefers_in_range_when_fallback_succeeds() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let (builder, trace) = DateTimeBuilder::try_from_with_trace(vec![
+            date_item(date_large("9999-01-31")),
+            Item::Relative(relative_day()),
+        ])
+        .unwrap();
+        let (parsed, _) = builder.set_base(base).build_with_trace(trace).unwrap();
+        let z = parsed.expect_in_range();
+        assert_eq!(z.strftime("%Y-%m-%d").to_string(), "9999-02-01");
+    }
+
+    #[test]
+    fn build_applies_hour_adjustment_for_large_named_offset() {
+        let base = "2000-01-01 00:00:00"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let builder = DateTimeBuilder::try_from(vec![
+            date_item(date()),
+            Item::Time(time()),
+            Item::Offset(offset_large()),
+        ])
+        .unwrap();
+        assert!(builder.set_base(base).build().is_ok());
     }
 
     #[test]
@@ -970,7 +1383,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("9999-12-31")),
+            date_item(date_large("9999-12-31")),
             Item::Time(time_with_small_offset()),
         ])
         .unwrap();
@@ -988,7 +1401,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("2021-01-31")),
+            date_item(date_large("2021-01-31")),
             Item::Relative(relative_month()),
         ])
         .unwrap();
@@ -1005,7 +1418,7 @@ mod tests {
             .unwrap();
         let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-01-01")),
+            date_item(date_large("10000-01-01")),
             Item::TimeZone(tz),
         ])
         .unwrap();
@@ -1017,7 +1430,7 @@ mod tests {
     fn build_extended_supports_timezone_without_base() {
         let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-01-01")),
+            date_item(date_large("10000-01-01")),
             Item::TimeZone(tz),
         ])
         .unwrap();
@@ -1037,7 +1450,38 @@ mod tests {
         let z = builder.build_extended().unwrap().expect_in_range();
         assert_eq!(
             z.strftime("%Y-%m-%d %H:%M:%S%.9f").to_string(),
-            "2000-01-01 10:11:12.123456789"
+            "2000-01-01 00:00:00.000000000"
+        );
+    }
+
+    #[test]
+    fn build_extended_need_midnight_respects_zone_and_relative() {
+        let base = "2025-01-01 10:11:12"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+
+        let mut zone_only = DateTimeBuilder::new();
+        zone_only.base = Some(base.clone());
+        zone_only.offset = Some(offset());
+        let midnight = zone_only.build_extended().unwrap().expect_in_range();
+        assert_eq!(
+            midnight.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+            "2025-01-01 00:00:00+05:00"
+        );
+
+        let mut zone_and_relative = DateTimeBuilder::new();
+        zone_and_relative.base = Some(base);
+        zone_and_relative.offset = Some(offset());
+        zone_and_relative.relative.push(relative_day());
+        let preserved = zone_and_relative
+            .build_extended()
+            .unwrap()
+            .expect_in_range();
+        assert_eq!(
+            preserved.strftime("%Y-%m-%d %H:%M:%S%:z").to_string(),
+            "2025-01-02 10:11:12+05:00"
         );
     }
 
@@ -1049,7 +1493,7 @@ mod tests {
             .to_zoned(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
-            Item::Date(date_large("10000-01-01")),
+            date_item(date_large("10000-01-01")),
             Item::Weekday(weekday_next_monday()),
         ])
         .unwrap();
@@ -1058,9 +1502,48 @@ mod tests {
     }
 
     #[test]
+    fn build_extended_applies_weekday_without_date_item() {
+        let base = "2025-01-01 10:11:12"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let mut builder = DateTimeBuilder::new();
+        builder.base = Some(base);
+        builder.weekday = Some(weekday_next_monday());
+
+        let dt = builder.build_extended().unwrap().expect_in_range();
+        assert_eq!(
+            dt.strftime("%Y-%m-%d %H:%M:%S").to_string(),
+            "2025-01-06 00:00:00"
+        );
+    }
+
+    #[test]
+    fn build_extended_preserves_base_time_for_relative_item() {
+        let base = "2025-01-01 10:11:12.123456789"
+            .parse::<DateTime>()
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+        let mut builder = DateTimeBuilder::new();
+        builder.base = Some(base);
+        builder.relative.push(relative_day());
+
+        let dt = builder.build_extended().unwrap().expect_in_range();
+        assert_eq!(dt.year(), 2025);
+        assert_eq!(dt.month(), 1);
+        assert_eq!(dt.day(), 2);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 11);
+        assert_eq!(dt.second(), 12);
+        assert_eq!(dt.subsec_nanosecond(), 123_456_789);
+    }
+
+    #[test]
     #[should_panic(expected = "ParsedDateTime is not representable as jiff::Zoned")]
     fn expect_in_range_panics_for_extended_input() {
-        let parsed = DateTimeBuilder::try_from(vec![Item::Date(date_large("10000-01-01"))])
+        let parsed = DateTimeBuilder::try_from(vec![date_item(date_large("10000-01-01"))])
             .unwrap()
             .build()
             .unwrap();

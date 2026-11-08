@@ -19,7 +19,7 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use crate::items::space;
+use super::primitive::space;
 
 use super::{date, primitive::s, time};
 

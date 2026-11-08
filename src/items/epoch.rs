@@ -39,6 +39,12 @@ pub(super) struct Timestamp {
     nanosecond: u32,
 }
 
+impl Timestamp {
+    pub(super) fn parts(self) -> (i64, u32) {
+        (self.second, self.nanosecond)
+    }
+}
+
 impl TryFrom<Timestamp> for jiff::Timestamp {
     type Error = &'static str;
 
