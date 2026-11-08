@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil, Span, ToSpan, Zoned};
+use jiff::{civil, Span, Zoned};
 
 use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
 use crate::extended::{DateParts, TimeParts};
@@ -277,13 +277,19 @@ impl DateTimeBuilder {
         let need_midnight = self.date.is_some()
             || self.time.is_some()
             || self.weekday.is_some()
-            || (zone_seen && self.relative.is_empty());
+            || (zone_seen && self.relative.is_empty())
+            // An empty date string (including one containing only comments or
+            // ignored signs) means the beginning of today. Explicit relative
+            // items such as `today` remain distinct and keep the current time.
+            || self.relative.is_empty();
 
         let mut dt = if need_midnight {
             base.with().time(civil::time(0, 0, 0, 0)).build()?
         } else {
             base
         };
+        let mut named_fixed_zone_applied = false;
+        let mut named_fixed_hour_adjustment = 0;
 
         // 4a. Apply date.
         if let Some(date) = self.date {
@@ -304,7 +310,38 @@ impl DateTimeBuilder {
             }
 
             let t: civil::Time = time.try_into()?;
+            let local = civil::DateTime::new(
+                dt.year(),
+                dt.month(),
+                dt.day(),
+                t.hour(),
+                t.minute(),
+                t.second(),
+                t.subsec_nanosecond(),
+            )?;
+            let named_zone_is_local = self
+                .offset
+                .as_ref()
+                .and_then(|offset| offset.name())
+                .is_some_and(|name| matching_local_zone_at(&dt, local, name).is_some());
+            if !named_zone_is_local
+                && self
+                    .offset
+                    .as_ref()
+                    .and_then(|offset| offset.name())
+                    .is_some()
+            {
+                if let Some(offset) = self.offset.as_ref() {
+                    let (offset, hour_adjustment) = offset.clone().normalize();
+                    dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+                    named_fixed_hour_adjustment = hour_adjustment;
+                    named_fixed_zone_applied = true;
+                }
+            }
             dt = dt.with().time(t).build()?;
+            if named_fixed_hour_adjustment != 0 {
+                dt = dt.checked_add(Span::new().hours(i64::from(named_fixed_hour_adjustment)))?;
+            }
         }
 
         // 4c. Apply weekday.
@@ -349,35 +386,47 @@ impl DateTimeBuilder {
             dt = dt.checked_add(Span::new().try_days(delta)?)?;
         }
 
-        // 4d. Apply fixed offset. This anchors the instant before relative
-        // adjustments so that "1970/01/01 UTC N seconds" adds N seconds to the
-        // fixed-offset instant rather than to a local wall-clock that may drift
-        // across a DST boundary (see issue uutils/coreutils#12555).
-        if let Some(offset) = self.offset {
-            let (offset, hour_adjustment) = offset.normalize();
-            dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+        // A named abbreviation can describe the active local timezone rather
+        // than a fixed offset. Preserve that zone when the abbreviation
+        // matches the requested wall clock so daylight-saving transitions are
+        // resolved using the base zone's rules.
+        let named_local_zone = self
+            .offset
+            .as_ref()
+            .and_then(|offset| offset.name())
+            .and_then(|name| matching_local_zone(&dt, name));
+        let use_named_local_zone = named_local_zone.is_some();
+        if use_named_local_zone {
+            if let Some(offset) = self.offset.as_ref() {
+                let (offset, hour_adjustment) = offset.clone().normalize();
+                dt = dt.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+            }
         }
 
-        // 4e. Apply relative adjustments.
-        for rel in self.relative {
-            dt = match rel {
-                relative::Relative::Years(_) | relative::Relative::Months(_) => {
-                    // GNU way of calculating relative months and years.
-                    // GNU changes the month/year and then checks if the target month has
-                    // this day. If this day does not exist in the target month it overflows
-                    // the difference.
-                    let original_day_of_month = dt.day();
-                    dt = dt.checked_add::<Span>(rel.try_into()?)?;
-                    if original_day_of_month != dt.day() {
-                        dt = dt.checked_add(
-                            (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
-                        )?;
-                    }
-                    dt
-                }
-                _ => dt.checked_add::<Span>(rel.try_into()?)?,
-            };
+        // Apply a fixed offset before relative adjustments. For offsets larger
+        // than 24 hours, first reinterpret the wall clock in the normalized
+        // zone and then apply the remaining hour correction.
+        if !use_named_local_zone && !named_fixed_zone_applied {
+            if let Some(offset) = self.offset {
+                let (offset, hour_adjustment) = offset.normalize();
+                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+                dt = dt.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+            }
+        }
+
+        let relative = relative_adjustment(&self.relative)?;
+        if relative.has_date_component() {
+            dt = apply_relative_date(dt, relative)?;
+            if let Some(zone) = named_local_zone.as_ref() {
+                dt = dt.with_time_zone(zone.clone());
+            }
+        } else if let Some(zone) = named_local_zone.as_ref() {
+            dt = dt.with_time_zone(zone.clone());
+        }
+
+        if relative.has_time_component() {
+            dt = apply_relative_time(dt, relative)?;
         }
 
         Ok(dt)
@@ -414,7 +463,8 @@ impl DateTimeBuilder {
         let need_midnight = date.is_some()
             || time.is_some()
             || weekday.is_some()
-            || (zone_seen && relative.is_empty());
+            || (zone_seen && relative.is_empty())
+            || relative.is_empty();
         let mut dt = ExtendedDateTime::new(
             DateParts {
                 year: u32::try_from(base.year()).map_err(|_| "year must be non-negative")?,
@@ -548,6 +598,182 @@ fn weekday_monday0(day: weekday::Day) -> u8 {
         weekday::Day::Saturday => 5,
         weekday::Day::Sunday => 6,
     }
+}
+
+/// Relative values are accumulated by unit before they are applied. GNU
+/// applies all year/month changes together, followed by days and then the
+/// clock units, rather than applying the input items one at a time.
+#[derive(Clone, Copy, Debug, Default)]
+struct RelativeAdjustment {
+    years: i64,
+    months: i64,
+    days: i64,
+    hours: i64,
+    minutes: i64,
+    seconds: i64,
+    nanoseconds: i64,
+}
+
+impl RelativeAdjustment {
+    fn has_date_component(self) -> bool {
+        self.years != 0 || self.months != 0 || self.days != 0
+    }
+
+    fn has_time_component(self) -> bool {
+        self.hours != 0 || self.minutes != 0 || self.seconds != 0 || self.nanoseconds != 0
+    }
+}
+
+fn relative_adjustment(
+    relative: &[relative::Relative],
+) -> Result<RelativeAdjustment, error::Error> {
+    let mut result = RelativeAdjustment::default();
+    for rel in relative {
+        match *rel {
+            relative::Relative::Years(value) => {
+                result.years = result
+                    .years
+                    .checked_add(i64::from(value))
+                    .ok_or("relative year adjustment overflow")?;
+            }
+            relative::Relative::Months(value) => {
+                result.months = result
+                    .months
+                    .checked_add(i64::from(value))
+                    .ok_or("relative month adjustment overflow")?;
+            }
+            relative::Relative::Days(value) => {
+                result.days = result
+                    .days
+                    .checked_add(i64::from(value))
+                    .ok_or("relative day adjustment overflow")?;
+            }
+            relative::Relative::Hours(value) => {
+                result.hours = result
+                    .hours
+                    .checked_add(i64::from(value))
+                    .ok_or("relative hour adjustment overflow")?;
+            }
+            relative::Relative::Minutes(value) => {
+                result.minutes = result
+                    .minutes
+                    .checked_add(i64::from(value))
+                    .ok_or("relative minute adjustment overflow")?;
+            }
+            relative::Relative::Seconds(seconds, nanoseconds) => {
+                result.seconds = result
+                    .seconds
+                    .checked_add(seconds)
+                    .ok_or("relative second adjustment overflow")?;
+                result.nanoseconds = result
+                    .nanoseconds
+                    .checked_add(i64::from(nanoseconds))
+                    .ok_or("relative nanosecond adjustment overflow")?;
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn apply_relative_date(mut dt: Zoned, relative: RelativeAdjustment) -> Result<Zoned, error::Error> {
+    // Change the year and month as one calendar operation. This intentionally
+    // preserves the original day until the target month is known, so a date
+    // such as January 31 overflows into March rather than clamping to February.
+    if relative.years != 0 || relative.months != 0 {
+        let (year, month) = shifted_year_month(&dt, relative)?;
+        let first = civil::Date::new(year, month as i8, 1)?;
+        let target = first.checked_add(Span::new().try_days(i64::from(dt.day() - 1))?)?;
+        dt = dt.with().date(target).build()?;
+    }
+    if relative.days != 0 {
+        dt = dt.checked_add(Span::new().try_days(relative.days)?)?;
+    }
+    Ok(dt)
+}
+
+fn shifted_year_month(dt: &Zoned, relative: RelativeAdjustment) -> Result<(i16, u8), error::Error> {
+    let month_index = i64::from(dt.year())
+        .checked_mul(12)
+        .and_then(|value| value.checked_add(i64::from(dt.month()) - 1))
+        .and_then(|value| value.checked_add(relative.years.checked_mul(12)?))
+        .and_then(|value| value.checked_add(relative.months))
+        .ok_or("relative month/year overflow")?;
+    let year = month_index.div_euclid(12);
+    let month = month_index.rem_euclid(12) + 1;
+    let year = i16::try_from(year).map_err(|_| "relative year overflow")?;
+    Ok((year, month as u8))
+}
+
+fn apply_relative_time(dt: Zoned, relative: RelativeAdjustment) -> Result<Zoned, error::Error> {
+    let seconds = relative
+        .hours
+        .checked_mul(3_600)
+        .and_then(|hours| {
+            relative
+                .minutes
+                .checked_mul(60)
+                .and_then(|minutes| hours.checked_add(minutes))
+        })
+        .and_then(|seconds| seconds.checked_add(relative.seconds))
+        .ok_or("relative time overflow")?;
+    let extra_seconds = relative.nanoseconds.div_euclid(1_000_000_000);
+    let nanoseconds = relative.nanoseconds.rem_euclid(1_000_000_000);
+    let seconds = seconds
+        .checked_add(extra_seconds)
+        .ok_or("relative time overflow")?;
+
+    // Relative::Seconds stores negative fractional values in timestamp form,
+    // e.g. (-1, 500_000_000) for -0.5 seconds. Jiff spans require the seconds
+    // and nanoseconds components to have the same sign, so normalize them.
+    let (seconds, nanoseconds) = if seconds < 0 && nanoseconds > 0 {
+        (
+            seconds.checked_add(1).ok_or("relative time overflow")?,
+            -(1_000_000_000 - nanoseconds),
+        )
+    } else {
+        (seconds, nanoseconds)
+    };
+    let span = Span::new()
+        .try_seconds(seconds)?
+        .try_nanoseconds(nanoseconds)?;
+    Ok(dt.checked_add(span)?)
+}
+
+fn matching_local_zone(dt: &Zoned, name: &str) -> Option<jiff::tz::TimeZone> {
+    matching_local_zone_at(dt, dt.datetime(), name)
+}
+
+fn matching_local_zone_at(
+    dt: &Zoned,
+    local: civil::DateTime,
+    name: &str,
+) -> Option<jiff::tz::TimeZone> {
+    // GNU's universal abbreviations always denote fixed UTC, even if the
+    // active local zone happens to use the same abbreviation.
+    if matches!(name, "utc" | "ut" | "gmt" | "z") {
+        return None;
+    }
+
+    let zone = dt.time_zone();
+    zone.iana_name()?;
+    let ambiguous = zone.to_ambiguous_zoned(local);
+    for candidate in [
+        ambiguous.clone().compatible(),
+        ambiguous.clone().earlier(),
+        ambiguous.later(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if candidate
+            .strftime("%Z")
+            .to_string()
+            .eq_ignore_ascii_case(name)
+        {
+            return Some(zone.clone());
+        }
+    }
+    None
 }
 
 impl TryFrom<Vec<Item>> for DateTimeBuilder {
@@ -1037,7 +1263,7 @@ mod tests {
         let z = builder.build_extended().unwrap().expect_in_range();
         assert_eq!(
             z.strftime("%Y-%m-%d %H:%M:%S%.9f").to_string(),
-            "2000-01-01 10:11:12.123456789"
+            "2000-01-01 00:00:00.000000000"
         );
     }
 

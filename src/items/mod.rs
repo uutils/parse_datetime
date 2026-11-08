@@ -245,10 +245,19 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     };
     let input = &mut lower.as_ref();
 
-    let (mut items, _): (Vec<Item>, _) = trace(
+    // Parse zero or more items until EOF (allowing trailing spaces). The
+    // parser needs to see the items already reduced because GNU uses a
+    // context-sensitive interpretation for `+N unit` after a time item.
+    let mut items = Vec::new();
+    let mut context = ParseContext::default();
+    let mut parse_next_item = |input: &mut &str| {
+        let item = parse_item_with_context(input, &mut items, &mut context)?;
+        items.push(item);
+        Ok(())
+    };
+    let _: (Vec<()>, &str) = trace(
         "parse_items",
-        // Parse zero or more items until EOF (allowing trailing spaces).
-        repeat_till(0.., parse_item, preceded(space, eof)),
+        repeat_till(0.., &mut parse_next_item, preceded(space, eof)),
     )
     .parse_next(input)?;
 
@@ -257,6 +266,102 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     }
 
     items.try_into().map_err(|e| expect_error(input, e))
+}
+
+#[derive(Default)]
+struct ParseContext {
+    /// Whether an earlier time item can still receive a numeric offset from a
+    /// following `+N unit` item.
+    unzoned_time_count: usize,
+    /// A timezone item anywhere in the input disables the special
+    /// interpretation, even when it appears before the time item.
+    has_zone_item: bool,
+    /// A zero-valued relative item disables the `+N unit` timezone
+    /// interpretation for the remainder of the input.
+    has_zero_relative: bool,
+}
+
+impl ParseContext {
+    fn can_attach_time_offset(&self) -> bool {
+        !self.has_zone_item && self.unzoned_time_count != 0 && !self.has_zero_relative
+    }
+}
+
+/// Parse an item using the reductions to its left to resolve GNU's ambiguous
+/// `+N unit` form. After a time item, `+N` is a numeric timezone correction
+/// while the following unit remains a relative adjustment with an implicit
+/// multiplier of one. Without a time to the left, the ordinary relative
+/// parser consumes the signed multiplier as a whole.
+fn parse_item_with_context(
+    input: &mut &str,
+    items: &mut [Item],
+    context: &mut ParseContext,
+) -> ModalResult<Item> {
+    // A zero-valued relative item (`today`, `now`, or `this ...`) stresses the
+    // surrounding date string, so it makes the following signed unit relative
+    // rather than a correction attached to the preceding time.
+    if context.can_attach_time_offset() {
+        let start = input.checkpoint();
+        if let Ok(offset) = offset::timezone_offset_raw.parse_next(input) {
+            if let Ok(relative) = relative::parse.parse_next(input) {
+                if attach_time_offset(items, offset) {
+                    context.unzoned_time_count -= 1;
+                    if is_zero_relative(relative) {
+                        context.has_zero_relative = true;
+                    }
+                    return Ok(Item::Relative(relative));
+                }
+            }
+        }
+        input.reset(&start);
+    }
+
+    let item = parse_item(input)?;
+    match &item {
+        Item::Offset(_) | Item::LocalZone | Item::TimeZone(_) => {
+            context.has_zone_item = true;
+        }
+        Item::Time(time) if time.offset.is_none() => {
+            context.unzoned_time_count += 1;
+        }
+        Item::DateTime(datetime) if datetime.time.offset.is_none() => {
+            context.unzoned_time_count += 1;
+        }
+        Item::Relative(relative) if is_zero_relative(*relative) => {
+            context.has_zero_relative = true;
+        }
+        _ => {}
+    }
+    Ok(item)
+}
+
+fn is_zero_relative(relative: relative::Relative) -> bool {
+    matches!(
+        relative,
+        relative::Relative::Years(0)
+            | relative::Relative::Months(0)
+            | relative::Relative::Days(0)
+            | relative::Relative::Hours(0)
+            | relative::Relative::Minutes(0)
+            | relative::Relative::Seconds(0, 0)
+    )
+}
+
+fn attach_time_offset(items: &mut [Item], offset: offset::Offset) -> bool {
+    for item in items.iter_mut().rev() {
+        match item {
+            Item::Time(time) if time.offset.is_none() => {
+                time.offset = Some(offset);
+                return true;
+            }
+            Item::DateTime(datetime) if datetime.time.offset.is_none() => {
+                datetime.time.offset = Some(offset);
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Parse an item.
