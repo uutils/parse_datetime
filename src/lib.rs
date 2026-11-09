@@ -355,8 +355,8 @@ mod tests {
             for (i, month) in months.iter().enumerate() {
                 let input = format!("{month} 5 2024");
                 let actual = parse_datetime(&input).unwrap().expect_in_range();
-                assert_eq!(actual.month() as usize, i + 1, "{input}");
-                assert_eq!(actual.day(), 5, "{input}");
+                let expected = format!("2024-{:02}-05 00:00:00", i + 1);
+                assert_eq!(actual.strftime("%F %T").to_string(), expected, "{input}");
             }
 
             for input in ["sept. 5 2024", "june. 5 2024", "jan.. 5 2024"] {

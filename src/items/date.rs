@@ -551,6 +551,17 @@ mod tests {
 
         let reference = Date {
             year: None,
+            month: 12,
+            day: 25,
+        };
+
+        for mut s in ["dec.25", "dec. 25"] {
+            let old_s = s.to_owned();
+            assert_eq!(parse(&mut s).unwrap(), reference, "Format string: {old_s}");
+        }
+
+        let reference = Date {
+            year: None,
             month: 11,
             day: 14,
         };
