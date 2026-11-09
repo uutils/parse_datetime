@@ -1,6 +1,18 @@
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 name: Basic CI
+
+permissions:
+  contents: read
+
+# A new push supersedes the older run for the same branch or pull request.
+# This prevents repeated pushes from multiplying the full matrix.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -8,47 +20,46 @@ env:
   RUST_MIN_SRV: "1.71.1"
 
 jobs:
-  check:
-    name: cargo check
+  quality:
+    name: Stable quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - run: cargo check
-
-  test:
-    name: cargo test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - run: cargo test
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Each step uses GitHub Actions' default `success()` condition, so a
+      # failed check does not start the more expensive steps for that OS.
+      - name: cargo check
+        run: cargo check
+      - name: cargo test
+        run: cargo test
+      - name: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   fmt:
     name: cargo fmt --all -- --check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - run: cargo fmt --all -- --check
-
-  clippy:
-    name: cargo clippy -- -D warnings
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - run: cargo clippy --all-targets -- -D warnings
 
   min_version:
     name: Minimum Supported Rust Version
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
     steps:
@@ -60,14 +71,13 @@ jobs:
 
   coverage:
     name: Code Coverage
-    runs-on: ${{ matrix.job.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
-      fail-fast: true
+      # Let every OS upload to Codecov even if another coverage job fails.
+      fail-fast: false
       matrix:
-        job:
-          - { os: ubuntu-latest  , features: unix }
-          - { os: macos-latest   , features: macos }
-          - { os: windows-latest , features: windows }
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
     - uses: actions/checkout@v7
     - name: emulate nightly toolchain
@@ -76,17 +86,9 @@ jobs:
       id: vars
       shell: bash
       run: |
-        ## VARs setup
-        outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo "${var}=${!var}" >> $GITHUB_OUTPUT; done; }
-        # * specify gnu-type TOOLCHAIN for windows; `grcov` requires gnu-style code coverage data files
-        case ${{ matrix.job.os }} in windows-*) TOOLCHAIN="$TOOLCHAIN-x86_64-pc-windows-gnu" ;; esac;
-        # * use requested TOOLCHAIN if specified
-        if [ -n "${{ matrix.job.toolchain }}" ]; then TOOLCHAIN="${{ matrix.job.toolchain }}" ; fi
-        outputs TOOLCHAIN
-        # target-specific options
         # * CODECOV_FLAGS
-        CODECOV_FLAGS=$( echo "${{ matrix.job.os }}" | sed 's/[^[:alnum:]]/_/g' )
-        outputs CODECOV_FLAGS
+        CODECOV_FLAGS=$(echo "${{ matrix.os }}" | sed 's/[^[:alnum:]]/_/g')
+        echo "CODECOV_FLAGS=${CODECOV_FLAGS}" >> "$GITHUB_OUTPUT"
 
     - name: rust toolchain ~ install
       uses: dtolnay/rust-toolchain@nightly # this job is not reproducible...
@@ -100,7 +102,6 @@ jobs:
         RUSTDOCFLAGS: "-Cpanic=abort"
         LLVM_PROFILE_FILE: "parse_datetime-%p-%m.profraw"
     - name: "`grcov` ~ install"
-      id: build_grcov
       shell: bash
       run: |
         git clone --depth=1 https://github.com/mozilla/grcov.git ~/grcov/
@@ -145,6 +146,7 @@ jobs:
   fuzz:
     name: Run the fuzzers
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       RUN_FOR: 60
       # cargo-fuzz uses nightly features
