@@ -28,10 +28,10 @@
 
 use winnow::{
     ascii::alpha1,
-    combinator::{alt, dispatch, eof, fail, opt, peek, preceded, terminated},
-    error::ErrMode,
+    combinator::{alt, dispatch, eof, fail, not, opt, peek, preceded, terminated},
+    error::{ContextError, ErrMode},
     stream::AsChar,
-    token::{any, take_while},
+    token::{any, one_of, take_while},
     ModalResult, Parser,
 };
 
@@ -196,6 +196,31 @@ pub(super) fn iso2(input: &mut &str) -> ModalResult<Date> {
     (year, month, day)
         .try_into()
         .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
+}
+
+/// Parse either of the compact or separated ISO date forms.
+///
+/// Compact dates contain at least five consecutive digits and do not have a
+/// possible ISO separator after that digit run. In that case, skip the failed
+/// `iso1` attempt. Inputs that could use whitespace/comments before a separator
+/// retain the original alternative ordering for compatibility.
+pub(super) fn iso(input: &mut &str) -> ModalResult<Date> {
+    if compact_iso_candidate(input) {
+        iso2.parse_next(input)
+    } else {
+        alt((iso1, iso2)).parse_next(input)
+    }
+}
+
+fn compact_iso_candidate(input: &str) -> bool {
+    (
+        take_while(5.., AsChar::is_dec_digit),
+        peek(not(one_of::<_, _, ErrMode<ContextError>>([
+            ' ', '\t', '\n', '\x0B', '\x0C', '\r', '(', '+', '-',
+        ]))),
+    )
+        .parse_peek(input)
+        .is_ok()
 }
 
 fn us_after(first: &str, input: &mut &str) -> ModalResult<Date> {
