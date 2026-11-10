@@ -99,13 +99,14 @@ fn posix_offset(input: &mut &str) -> ModalResult<i32> {
 
     (
         opt(plus_or_minus),
-        alt((
-            (uint, preceded(':', uint), preceded(':', uint)).map(|(h, m, s)| (h, m, s)),
-            (uint, preceded(':', uint)).map(|(h, m)| (h, m, 0)),
-            uint.map(|h| (h, 0, 0)),
-        )),
+        uint,
+        opt(preceded(':', (uint, opt(preceded(':', uint))))),
     )
-        .map(|(sign, (h, m, s))| {
+        .map(|(sign, h, time)| {
+            let (m, s) = time.map_or((0, 0), |(m, s)| (m, s.unwrap_or(0)));
+            (sign, h, m, s)
+        })
+        .map(|(sign, h, m, s)| {
             // The sign is opposite from the usual convention:
             // - Positive offsets are west of UTC.
             // - Negative offsets are east of UTC.
@@ -117,7 +118,6 @@ fn posix_offset(input: &mut &str) -> ModalResult<i32> {
             let h = h.min(24) as i32;
             let m = m.min(59) as i32;
             let s = s.min(59) as i32;
-
             sign * (h * 3600 + m * 60 + s)
         })
         .parse_next(input)
