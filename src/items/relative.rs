@@ -33,7 +33,8 @@
 
 use winnow::{
     ascii::alpha1,
-    combinator::{alt, opt},
+    combinator::{alt, dispatch, opt, peek},
+    token::any,
     ModalResult, Parser,
 };
 
@@ -78,16 +79,29 @@ impl TryFrom<Relative> for jiff::Span {
 }
 
 pub(super) fn parse(input: &mut &str) -> ModalResult<Relative> {
-    alt((
-        s("tomorrow").value(Relative::Days(1)),
-        s("yesterday").value(Relative::Days(-1)),
-        // For "today" and "now", the unit is arbitrary
-        s("today").value(Relative::Days(0)),
-        s("now").value(Relative::Days(0)),
-        seconds,
-        displacement,
-    ))
+    dispatch! { s(peek(any));
+        't' => alt((
+            s("tomorrow").value(Relative::Days(1)),
+            // For "today", the unit is arbitrary
+            s("today").value(Relative::Days(0)),
+            displacement,
+        )),
+        'y' => alt((
+            s("yesterday").value(Relative::Days(-1)),
+            displacement,
+        )),
+        'n' => alt((
+            // For "now", the unit is arbitrary
+            s("now").value(Relative::Days(0)),
+            displacement,
+        )),
+        _ => numeric_or_displacement,
+    }
     .parse_next(input)
+}
+
+fn numeric_or_displacement(input: &mut &str) -> ModalResult<Relative> {
+    alt((seconds, displacement)).parse_next(input)
 }
 
 fn seconds(input: &mut &str) -> ModalResult<Relative> {
