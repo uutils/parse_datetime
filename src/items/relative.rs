@@ -38,7 +38,11 @@ use winnow::{
     ModalResult, Parser,
 };
 
-use super::{epoch::sec_and_nsec, ordinal::ordinal, primitive::s};
+use super::{
+    epoch::{normalize_seconds, sec_and_nsec},
+    ordinal::ordinal,
+    primitive::s,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Relative {
@@ -112,14 +116,8 @@ fn seconds(input: &mut &str) -> ModalResult<Relative> {
         direction,
     )
         .verify_map(|(sign, (sec, nsec), _, ago)| {
-            let sec = i64::try_from(sec).ok()?;
             let sign = sign.unwrap_or(1) * if ago { -1 } else { 1 };
-            let (second, nanosecond) = match (sign, nsec) {
-                (-1, 0) => (-sec, 0),
-                // Truncate towards minus infinity.
-                (-1, _) => ((-sec).checked_sub(1)?, 1_000_000_000 - nsec),
-                _ => (sec, nsec),
-            };
+            let (second, nanosecond) = normalize_seconds(sign < 0, sec, nsec)?;
             Some(Relative::Seconds(second, nanosecond))
         })
         .parse_next(input)

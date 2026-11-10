@@ -19,12 +19,12 @@
 
 use winnow::{
     ascii::digit1,
-    combinator::{opt, preceded},
-    token::one_of,
+    combinator::{dispatch, opt, peek, preceded},
+    token::{any, one_of},
     ModalResult, Parser,
 };
 
-use super::primitive::{dec_uint, plus_or_minus, s};
+use super::primitive::{dec_uint, plus_or_minus, s, space};
 
 /// Represents a timestamp with nanosecond accuracy.
 ///
@@ -54,17 +54,26 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
 /// Parse a timestamp in the form of `@1234567890` or `@-1234567890.12345` or
 /// `@1234567890,12345`.
 pub(super) fn parse(input: &mut &str) -> ModalResult<Timestamp> {
-    (s("@"), opt(plus_or_minus), s(sec_and_nsec))
-        .verify_map(|(_, sign, (sec, nsec))| {
-            let sec = i64::try_from(sec).ok()?;
-            let (second, nanosecond) = match (sign, nsec) {
-                (Some('-'), 0) => (-sec, 0),
-                // Truncate towards minus infinity.
-                (Some('-'), _) => ((-sec).checked_sub(1)?, 1_000_000_000 - nsec),
-                _ => (sec, nsec),
-            };
-            Some(Timestamp { second, nanosecond })
-        })
+    dispatch! { peek(opt(any));
+        Some('@') => parse_at,
+        _ => (space, parse_at).map(|(_, value)| value),
+    }
+    .verify_map(|(sign, (sec, nsec))| {
+        let (second, nanosecond) = normalize_seconds(sign == Some('-'), sec, nsec)?;
+        Some(Timestamp { second, nanosecond })
+    })
+    .parse_next(input)
+}
+
+fn parse_at(input: &mut &str) -> ModalResult<(Option<char>, (u64, u32))> {
+    (
+        '@',
+        dispatch! { peek(opt(any));
+            Some('0'..='9') => sec_and_nsec.map(|value| (None, value)),
+            _ => (opt(plus_or_minus), s(sec_and_nsec)).map(|(sign, value)| (sign, value)),
+        },
+    )
+        .map(|(_, value)| value)
         .parse_next(input)
 }
 
@@ -86,6 +95,16 @@ pub(super) fn sec_and_nsec(input: &mut &str) -> ModalResult<(u64, u32)> {
             None => Some((sec, 0)),
         })
         .parse_next(input)
+}
+
+pub(super) fn normalize_seconds(negative: bool, sec: u64, nsec: u32) -> Option<(i64, u32)> {
+    let sec = i64::try_from(sec).ok()?;
+    match (negative, nsec) {
+        (true, 0) => Some((-sec, 0)),
+        // Truncate towards minus infinity.
+        (true, _) => Some(((-sec).checked_sub(1)?, 1_000_000_000 - nsec)),
+        _ => Some((sec, nsec)),
+    }
 }
 
 #[cfg(test)]
