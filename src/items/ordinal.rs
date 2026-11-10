@@ -3,14 +3,20 @@
 
 use winnow::{
     ascii::alpha1,
-    combinator::{alt, opt},
+    combinator::{alt, dispatch, fail, opt, peek},
+    token::any,
     ModalResult, Parser,
 };
 
 use super::primitive::{dec_uint, s};
 
 pub(super) fn ordinal(input: &mut &str) -> ModalResult<i32> {
-    alt((text_ordinal, number_ordinal)).parse_next(input)
+    dispatch! { s(peek(any));
+        'a'..='z' => text_ordinal,
+        '+' | '-' | '0'..='9' => number_ordinal,
+        _ => fail,
+    }
+    .parse_next(input)
 }
 
 fn number_ordinal(input: &mut &str) -> ModalResult<i32> {
