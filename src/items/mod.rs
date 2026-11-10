@@ -267,7 +267,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
     // An ISO date is either the start of a combined date and time item or a
     // date item on its own. Parse it once instead of once per alternative.
     let start = input.checkpoint();
-    if let Ok(date) = alt((date::iso1, date::iso2)).parse_next(input) {
+    if let Ok(date) = date::iso.parse_next(input) {
         let after_date = input.checkpoint();
         match combined::parse_time_after_date(input, date.clone()) {
             Ok(dt) => return Ok(Item::DateTime(dt)),
