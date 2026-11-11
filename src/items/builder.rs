@@ -317,8 +317,8 @@ impl DateTimeBuilder {
 
         // A date or time that names a moment the time zone skips does not
         // exist; jiff would move it past the gap.
-        if need_midnight && !fixed_offset && dt.datetime() != wanted {
-            return Err("invalid date: the local time does not exist in this time zone".into());
+        if !fixed_offset && dt.datetime() != wanted {
+            return Err("local time does not exist in this time zone".into());
         }
 
         // 4c. Apply weekday.
@@ -370,15 +370,10 @@ impl DateTimeBuilder {
         // across a DST boundary (see issue uutils/coreutils#12555).
         if let Some(offset) = self.offset {
             let (offset, hour_adjustment) = offset.normalize();
-            if need_midnight {
-                // The zone applies to the wall-clock time as written; going
-                // through the local zone would move a time in its DST gap.
-                let wall = wanted.checked_add(Span::new().hours(hour_adjustment))?;
-                dt = wall.to_zoned((&offset).try_into()?)?;
-            } else {
-                dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-                dt = dt.datetime().to_zoned((&offset).try_into()?)?;
-            }
+            // The zone applies to the wall-clock time as written; going
+            // through the local zone would move a time in its DST gap.
+            let wall = wanted.checked_add(Span::new().hours(hour_adjustment))?;
+            dt = wall.to_zoned((&offset).try_into()?)?;
         }
 
         // 4e. Apply relative adjustments.

@@ -513,6 +513,14 @@ fn test_local_time_in_dst_gap_is_invalid(#[case] input: &str) {
     r#"TZ="America/New_York" 2024-03-10T02:30:00Z"#,
     "2024-03-10 02:30:00+00:00"
 )]
+#[case::z_without_t(
+    r#"TZ="America/New_York" 2024-03-10 02:30Z"#,
+    "2024-03-10 02:30:00+00:00"
+)]
+#[case::numeric_offset(
+    r#"TZ="America/New_York" 2024-03-10 02:30 +00:00"#,
+    "2024-03-10 02:30:00+00:00"
+)]
 // Next to the gap, and in the repeated hour, local times still work.
 #[case::after_gap(
     r#"TZ="America/New_York" 2024-03-10 03:00"#,
