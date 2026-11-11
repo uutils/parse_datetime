@@ -16,7 +16,7 @@
 
 use jiff::tz::{Offset, TimeZone};
 use winnow::{
-    combinator::{alt, delimited, opt, preceded, repeat},
+    combinator::{alt, delimited, opt, peek, preceded, repeat, terminated},
     stream::AsChar,
     token::{one_of, take_while},
     ModalResult, Parser,
@@ -25,13 +25,18 @@ use winnow::{
 use super::primitive::{dec_uint, plus_or_minus};
 
 pub(super) fn parse(input: &mut &str) -> ModalResult<TimeZone> {
-    delimited("TZ=\"", preceded(opt(':'), alt((posix, iana))), '"').parse_next(input)
+    delimited(
+        "TZ=\"",
+        preceded(opt(':'), alt((terminated(posix, peek('"')), rule))),
+        '"',
+    )
+    .parse_next(input)
 }
 
 /// Parse a posix (proleptic) timezone string (e.g., "UTC7", "JST-9").
 ///
-/// TODO: This implementation is incomplete. It currently only parses the
-/// `STDOFFSET` part of the format.
+/// This only parses the `STDOFFSET` part of the format. A rule with a `DST`
+/// part or a quoted `<...>` name is left to [`posix_rule`], which hands it to jiff.
 ///
 /// From the GNU docs:
 ///
@@ -58,8 +63,27 @@ fn posix(input: &mut &str) -> ModalResult<TimeZone> {
         .parse_next(input)
 }
 
-/// Parse an IANA (geographical) timezone string (e.g., "Europe/Paris"). If the
-/// string is not a valid IANA timezone name, the UTC timezone is returned.
+/// Parse any other rule: an IANA name or a full posix rule (see [`iana`] and
+/// [`posix_rule`]). Anything else gives the UTC timezone, as in GNU `date`,
+/// unless it starts like a posix rule (e.g., "EST5EDT,"), which is an error.
+fn rule(input: &mut &str) -> ModalResult<TimeZone> {
+    repeat(
+        0..,
+        alt((
+            preceded('\\', one_of(['\\', '"'])).map(|c: char| c.to_string()),
+            take_while(1, |c| c != '"' && c != '\\').map(str::to_string),
+        )),
+    )
+    .map(|parts: Vec<String>| parts.concat())
+    .verify_map(|s| {
+        iana(&s)
+            .or_else(|| posix_rule(&s))
+            .or_else(|| posix(&mut s.as_str()).is_err().then_some(TimeZone::UTC))
+    })
+    .parse_next(input)
+}
+
+/// Resolve an IANA (geographical) timezone name (e.g., "Europe/Paris").
 ///
 /// Compatibility notes:
 ///
@@ -81,17 +105,17 @@ fn posix(input: &mut &str) -> ModalResult<TimeZone> {
 /// > ‘Asia/Tokyo’.  These data files are installed by the system
 /// > administrator, who also sets ‘/etc/localtime’ to point to the data file
 /// > for the local time zone ruleset.
-fn iana(input: &mut &str) -> ModalResult<TimeZone> {
-    repeat(
-        0..,
-        alt((
-            preceded('\\', one_of(['\\', '"'])).map(|c: char| c.to_string()),
-            take_while(1, |c| c != '"' && c != '\\').map(str::to_string),
-        )),
-    )
-    .map(|parts: Vec<String>| parts.concat())
-    .map(|s| TimeZone::get(&s).unwrap_or(TimeZone::UTC))
-    .parse_next(input)
+fn iana(s: &str) -> Option<TimeZone> {
+    TimeZone::get(s).ok()
+}
+
+/// Resolve a full posix rule, with a `DST` part or a quoted `<...>` name
+/// (e.g., "CET-1CEST,M3.5.0,M10.5.0/3", "<+03>-3").
+fn posix_rule(s: &str) -> Option<TimeZone> {
+    TimeZone::posix(s)
+        // Like glibc, use the US rules for a DST name without a rule (e.g., "EST5EDT")
+        .or_else(|_| TimeZone::posix(&format!("{s},M3.2.0,M11.1.0")))
+        .ok()
 }
 
 fn posix_offset(input: &mut &str) -> ModalResult<i32> {
@@ -126,6 +150,7 @@ fn posix_offset(input: &mut &str) -> ModalResult<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::Timestamp;
 
     #[test]
     fn tz_rule() {
@@ -188,11 +213,37 @@ mod tests {
             );
         }
 
+        // posix with a dst part or a quoted name: (input, offset in July, offset in January)
+        let july: Timestamp = "2026-07-01T12:00:00Z".parse().unwrap();
+        let january: Timestamp = "2026-01-01T12:00:00Z".parse().unwrap();
+        for (input, summer, winter) in [
+            (r#"TZ="EST5EDT,M3.2.0,M11.1.0""#, -4 * 3600, -5 * 3600),
+            (r#"TZ="EST5EDT""#, -4 * 3600, -5 * 3600),
+            (r#"TZ="XYZ+5ABC""#, -4 * 3600, -5 * 3600),
+            (r#"TZ="CET-1CEST,M3.5.0,M10.5.0/3""#, 2 * 3600, 3600),
+            (r#"TZ="NZST-12NZDT,M9.5.0,M4.1.0/3""#, 12 * 3600, 13 * 3600),
+            (r#"TZ="<+03>-3""#, 3 * 3600, 3 * 3600),
+            (r#"TZ="<-05>5""#, -5 * 3600, -5 * 3600),
+            (
+                r#"TZ="<+0530>-5:30""#,
+                5 * 3600 + 30 * 60,
+                5 * 3600 + 30 * 60,
+            ),
+        ] {
+            let mut s = input;
+            let tz = parse(&mut s).unwrap();
+            assert_eq!(tz.to_offset(july).seconds(), summer, "{input}");
+            assert_eq!(tz.to_offset(january).seconds(), winter, "{input}");
+        }
+
         // invalid
         for input in [
-            r#"UTC"#,      // missing "TZ="
-            r#"tz="UTC""#, // lowercase "tz"
-            r#"TZ=UTC"#,   // missing quotes
+            r#"UTC"#,                       // missing "TZ="
+            r#"tz="UTC""#,                  // lowercase "tz"
+            r#"TZ=UTC"#,                    // missing quotes
+            r#"TZ="EST5EDT,""#,             // empty dst rule
+            r#"TZ="EST5EDT,M3.2.0""#,       // dst rule without an end
+            r#"TZ="CET-1CEST,M3.5.0,M99""#, // bad dst rule
         ] {
             let mut s = input;
             assert!(parse(&mut s).is_err(), "{input}");
@@ -209,7 +260,7 @@ mod tests {
             ("Unknown/Timezone", "UTC"),              // unknown timezone
         ] {
             let mut s = input;
-            assert_eq!(iana(&mut s).unwrap().iana_name(), Some(expected), "{input}");
+            assert_eq!(rule(&mut s).unwrap().iana_name(), Some(expected), "{input}");
         }
     }
 
