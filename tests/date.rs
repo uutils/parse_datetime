@@ -294,6 +294,24 @@ fn test_multiple_month_skip(#[case] base: &str, #[case] input: &str, #[case] exp
     r#"TZ="Australia/Perth" 2016-08-15 07:00"#,
     "2016-08-15 07:00:00+08:00"
 )]
+// Full posix rules, with DST rules or a quoted name.
+#[case::posix_rule_summer(
+    r#"TZ="CET-1CEST,M3.5.0,M10.5.0/3" 2026-07-01 12:00"#,
+    "2026-07-01 12:00:00+02:00"
+)]
+#[case::posix_rule_winter(
+    r#"TZ="CET-1CEST,M3.5.0,M10.5.0/3" 2026-01-15 12:00"#,
+    "2026-01-15 12:00:00+01:00"
+)]
+#[case::posix_rule_southern(
+    r#"TZ="NZST-12NZDT,M9.5.0,M4.1.0/3" 2026-01-15 12:00"#,
+    "2026-01-15 12:00:00+13:00"
+)]
+#[case::posix_dst_name_without_rule(
+    r#"TZ="EST5EDT" 2026-07-01 12:00"#,
+    "2026-07-01 12:00:00-04:00"
+)]
+#[case::posix_quoted_name(r#"TZ="<+03>-3" 2026-07-01 12:00"#, "2026-07-01 12:00:00+03:00")]
 fn test_embedded_timezone(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
