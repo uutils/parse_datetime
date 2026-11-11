@@ -32,13 +32,11 @@ use common::{check_absolute, check_relative};
 #[case::dotted_date("14.11.2022", "2022-11-14 00:00:00+00:00")]
 #[case::dotted_date_spaced("14 . 11 . 2022", "2022-11-14 00:00:00+00:00")]
 #[case::dotted_date_short_year("14.11.22", "2022-11-14 00:00:00+00:00")]
-/** TODO: https://github.com/uutils/parse_datetime/issues/160
 #[case::year_10000("10000-12-31", "10000-12-31 00:00:00+00:00")]
 #[case::year_100000("100000-12-31", "100000-12-31 00:00:00+00:00")]
 #[case::year_1000000("1000000-12-31", "1000000-12-31 00:00:00+00:00")]
 #[case::year_10000000("10000000-12-31", "10000000-12-31 00:00:00+00:00")]
 #[case::max_date("2147485547-12-31", "2147485547-12-31 00:00:00+00:00")]
-**/
 #[case::long_month_in_the_middle("14 November 2022", "2022-11-14 00:00:00+00:00")]
 #[case::long_month_in_the_middle_lowercase("14 november 2022", "2022-11-14 00:00:00+00:00")]
 #[case::long_month_in_the_middle_uppercase("14 NOVEMBER 2022", "2022-11-14 00:00:00+00:00")]
