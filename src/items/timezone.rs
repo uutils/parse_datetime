@@ -27,7 +27,7 @@ use super::primitive::{dec_uint, plus_or_minus};
 pub(super) fn parse(input: &mut &str) -> ModalResult<TimeZone> {
     delimited(
         "TZ=\"",
-        preceded(opt(':'), alt((terminated(posix, peek('"')), iana))),
+        preceded(opt(':'), alt((terminated(posix, peek('"')), rule))),
         '"',
     )
     .parse_next(input)
@@ -36,7 +36,7 @@ pub(super) fn parse(input: &mut &str) -> ModalResult<TimeZone> {
 /// Parse a posix (proleptic) timezone string (e.g., "UTC7", "JST-9").
 ///
 /// This only parses the `STDOFFSET` part of the format. A rule with a `DST`
-/// part or a quoted `<...>` name is left to [`iana`], which hands it to jiff.
+/// part or a quoted `<...>` name is left to [`posix_rule`], which hands it to jiff.
 ///
 /// From the GNU docs:
 ///
@@ -63,11 +63,27 @@ fn posix(input: &mut &str) -> ModalResult<TimeZone> {
         .parse_next(input)
 }
 
-/// Parse an IANA (geographical) timezone string (e.g., "Europe/Paris"). If the
-/// string is not a valid IANA timezone name, it is read as a full posix rule
-/// (e.g., "CET-1CEST,M3.5.0,M10.5.0/3", "<+03>-3"). If that fails too, the UTC
-/// timezone is returned, unless the string starts like a posix rule (e.g.,
-/// "EST5EDT,"), which is an error.
+/// Parse any other rule: an IANA name or a full posix rule (see [`iana`] and
+/// [`posix_rule`]). Anything else gives the UTC timezone, as in GNU `date`,
+/// unless it starts like a posix rule (e.g., "EST5EDT,"), which is an error.
+fn rule(input: &mut &str) -> ModalResult<TimeZone> {
+    repeat(
+        0..,
+        alt((
+            preceded('\\', one_of(['\\', '"'])).map(|c: char| c.to_string()),
+            take_while(1, |c| c != '"' && c != '\\').map(str::to_string),
+        )),
+    )
+    .map(|parts: Vec<String>| parts.concat())
+    .verify_map(|s| {
+        iana(&s)
+            .or_else(|| posix_rule(&s))
+            .or_else(|| posix(&mut s.as_str()).is_err().then_some(TimeZone::UTC))
+    })
+    .parse_next(input)
+}
+
+/// Resolve an IANA (geographical) timezone name (e.g., "Europe/Paris").
 ///
 /// Compatibility notes:
 ///
@@ -89,24 +105,17 @@ fn posix(input: &mut &str) -> ModalResult<TimeZone> {
 /// > ‘Asia/Tokyo’.  These data files are installed by the system
 /// > administrator, who also sets ‘/etc/localtime’ to point to the data file
 /// > for the local time zone ruleset.
-fn iana(input: &mut &str) -> ModalResult<TimeZone> {
-    repeat(
-        0..,
-        alt((
-            preceded('\\', one_of(['\\', '"'])).map(|c: char| c.to_string()),
-            take_while(1, |c| c != '"' && c != '\\').map(str::to_string),
-        )),
-    )
-    .map(|parts: Vec<String>| parts.concat())
-    .verify_map(|s| {
-        TimeZone::get(&s)
-            .or_else(|_| TimeZone::posix(&s))
-            // Like glibc, use the US rules for a DST name without a rule (e.g., "EST5EDT")
-            .or_else(|_| TimeZone::posix(&format!("{s},M3.2.0,M11.1.0")))
-            .ok()
-            .or_else(|| posix(&mut s.as_str()).is_err().then_some(TimeZone::UTC))
-    })
-    .parse_next(input)
+fn iana(s: &str) -> Option<TimeZone> {
+    TimeZone::get(s).ok()
+}
+
+/// Resolve a full posix rule, with a `DST` part or a quoted `<...>` name
+/// (e.g., "CET-1CEST,M3.5.0,M10.5.0/3", "<+03>-3").
+fn posix_rule(s: &str) -> Option<TimeZone> {
+    TimeZone::posix(s)
+        // Like glibc, use the US rules for a DST name without a rule (e.g., "EST5EDT")
+        .or_else(|_| TimeZone::posix(&format!("{s},M3.2.0,M11.1.0")))
+        .ok()
 }
 
 fn posix_offset(input: &mut &str) -> ModalResult<i32> {
@@ -251,7 +260,7 @@ mod tests {
             ("Unknown/Timezone", "UTC"),              // unknown timezone
         ] {
             let mut s = input;
-            assert_eq!(iana(&mut s).unwrap().iana_name(), Some(expected), "{input}");
+            assert_eq!(rule(&mut s).unwrap().iana_name(), Some(expected), "{input}");
         }
     }
 
