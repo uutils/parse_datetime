@@ -88,6 +88,22 @@ fn test_whitespace_between_items(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// GNU treats an unmatched opening parenthesis as a comment through the end
+// of the input, and comment-only input starts today at midnight.
+#[rstest]
+#[case::unterminated_after_date("2024-02-29 12:34:56 (unterminated", "2024-02-29 12:34:56+00:00")]
+#[case::comment_only("(comment only)", "2000-06-15 00:00:00+00:00")]
+#[case::unterminated_comment_only("(comment only", "2000-06-15 00:00:00+00:00")]
+#[case::comment_before_date("(ignored) 1997-01-01", "1997-01-01 00:00:00+00:00")]
+fn test_comments(#[case] input: &str, #[case] expected: &str) {
+    let base = "2000-06-15 12:34:56"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::UTC)
+        .unwrap();
+    check_relative(base, input, expected);
+}
+
 #[rstest]
 #[case::us_style("11/14", 2022, "2022-11-14 00:00:00+00:00")]
 #[case::alphabetical_full_month_in_front("november 14", 2022, "2022-11-14 00:00:00+00:00")]

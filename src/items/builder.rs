@@ -277,7 +277,11 @@ impl DateTimeBuilder {
         let need_midnight = self.date.is_some()
             || self.time.is_some()
             || self.weekday.is_some()
-            || (zone_seen && self.relative.is_empty());
+            || (zone_seen && self.relative.is_empty())
+            // An empty date string (including one containing only comments or
+            // ignored signs) means the beginning of today. Explicit relative
+            // items such as `today` remain distinct and keep the current time.
+            || self.relative.is_empty();
 
         let mut dt = if need_midnight {
             base.with().time(civil::time(0, 0, 0, 0)).build()?
@@ -394,12 +398,11 @@ impl DateTimeBuilder {
             time,
             weekday,
             offset,
-            local_zone,
+            local_zone: _,
             timezone,
             relative,
         } = self;
 
-        let has_timezone = timezone.is_some();
         let base = match (base, timezone) {
             (Some(b), Some(tz)) => b.timestamp().to_zoned(tz),
             (Some(b), None) => b,
@@ -410,11 +413,8 @@ impl DateTimeBuilder {
 
         // See `build_in_range` for why a relative item alone keeps the
         // current time of day.
-        let zone_seen = offset.is_some() || local_zone || has_timezone;
-        let need_midnight = date.is_some()
-            || time.is_some()
-            || weekday.is_some()
-            || (zone_seen && relative.is_empty());
+        let need_midnight =
+            date.is_some() || time.is_some() || weekday.is_some() || relative.is_empty();
         let mut dt = ExtendedDateTime::new(
             DateParts {
                 year: u32::try_from(base.year()).map_err(|_| "year must be non-negative")?,
@@ -1026,7 +1026,7 @@ mod tests {
     }
 
     #[test]
-    fn build_extended_preserves_base_time_when_not_truncated() {
+    fn build_extended_starts_empty_input_at_midnight() {
         let base = "2000-01-01 10:11:12.123456789"
             .parse::<DateTime>()
             .unwrap()
@@ -1037,7 +1037,7 @@ mod tests {
         let z = builder.build_extended().unwrap().expect_in_range();
         assert_eq!(
             z.strftime("%Y-%m-%d %H:%M:%S%.9f").to_string(),
-            "2000-01-01 10:11:12.123456789"
+            "2000-01-01 00:00:00.000000000"
         );
     }
 
