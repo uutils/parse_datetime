@@ -383,6 +383,36 @@ fn test_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// GNU-compatible Australian zone abbreviations are accepted as fixed offsets
+// even when the process timezone is UTC.
+#[rstest]
+#[case::aest("2026-07-10 12:00 AEST", "2026-07-10 12:00:00+10:00")]
+#[case::aedt("2026-01-10 12:00 AEDT", "2026-01-10 12:00:00+11:00")]
+#[case::acst("2026-07-10 12:00 ACST", "2026-07-10 12:00:00+09:30")]
+#[case::acdt("2026-01-10 12:00 ACDT", "2026-01-10 12:00:00+10:30")]
+#[case::awst("2026-01-10 12:00 AWST", "2026-01-10 12:00:00+08:00")]
+fn test_australian_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
+// A named abbreviation matching the base IANA zone keeps that zone when a
+// relative adjustment crosses a daylight-saving transition.
+#[test]
+fn test_named_zone_keeps_base_zone_across_dst() {
+    let base = "2026-01-01 00:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned(TimeZone::get("America/New_York").unwrap())
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, "2026-03-07 12:00 EST 3 days")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.datetime().to_string(), "2026-03-10T13:00:00");
+    assert_eq!(parsed.offset().seconds(), -4 * 3600);
+}
+
 // Regression test for uutils/coreutils#12555.
 // A fixed offset (e.g. the "UTC" keyword) must anchor the instant *before*
 // relative adjustments are applied. Otherwise, when the base zone observes DST,
