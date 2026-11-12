@@ -89,8 +89,9 @@ where
 
 /// Parse a comment
 ///
-/// A comment is given between parentheses, which must be balanced. Any other
-/// tokens can be within the comment.
+/// A comment is given between parentheses. Any other tokens can be within the
+/// comment. GNU treats an unmatched opening parenthesis as a comment through
+/// the end of the input, so the closing parenthesis is optional here.
 fn comment<'a, E>(input: &mut &'a str) -> winnow::Result<(), E>
 where
     E: ParserError<&'a str>,
@@ -98,7 +99,7 @@ where
     delimited(
         '(',
         repeat(0.., alt((none_of(['(', ')']).void(), comment))),
-        ')',
+        opt(')'),
     )
     .parse_next(input)
 }
@@ -245,8 +246,8 @@ mod tests {
             // A sign followed by a digit is not ignored.
             ("- 12", "- 12"),
             (" +12", "+12"),
-            // An unbalanced comment is not skipped.
-            ("(foo abc", "(foo abc"),
+            // An unbalanced comment runs through the end of the input.
+            ("(foo abc", ""),
         ] {
             let mut s = input;
             space::<ContextError>(&mut s).unwrap();
