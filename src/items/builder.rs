@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil, Span, ToSpan, Zoned};
+use jiff::{civil, Span, Zoned};
 
 use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
 use crate::extended::{DateParts, TimeParts};
@@ -359,25 +359,15 @@ impl DateTimeBuilder {
             dt = dt.datetime().to_zoned((&offset).try_into()?)?;
         }
 
-        // 4e. Apply relative adjustments.
-        for rel in self.relative {
-            dt = match rel {
-                relative::Relative::Years(_) | relative::Relative::Months(_) => {
-                    // GNU way of calculating relative months and years.
-                    // GNU changes the month/year and then checks if the target month has
-                    // this day. If this day does not exist in the target month it overflows
-                    // the difference.
-                    let original_day_of_month = dt.day();
-                    dt = dt.checked_add::<Span>(rel.try_into()?)?;
-                    if original_day_of_month != dt.day() {
-                        dt = dt.checked_add(
-                            (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
-                        )?;
-                    }
-                    dt
-                }
-                _ => dt.checked_add::<Span>(rel.try_into()?)?,
-            };
+        // Apply relative date adjustments first, then relative time
+        // adjustments. GNU groups all year/month fields before normalizing
+        // the day, rather than applying each relative item in input order.
+        let relative = relative_adjustment(&self.relative)?;
+        if relative.has_date_component() {
+            dt = apply_relative_date(dt, relative)?;
+        }
+        if relative.has_time_component() {
+            dt = apply_relative_time(dt, relative)?;
         }
 
         Ok(dt)
@@ -548,6 +538,145 @@ fn weekday_monday0(day: weekday::Day) -> u8 {
         weekday::Day::Saturday => 5,
         weekday::Day::Sunday => 6,
     }
+}
+
+/// Relative values are accumulated by unit before they are applied. GNU
+/// applies all year/month changes together, followed by days and then the
+/// clock units, rather than applying the input items one at a time.
+#[derive(Clone, Copy, Debug, Default)]
+struct RelativeAdjustment {
+    years: i64,
+    months: i64,
+    days: i64,
+    hours: i64,
+    minutes: i64,
+    seconds: i64,
+    nanoseconds: i64,
+}
+
+impl RelativeAdjustment {
+    fn has_date_component(self) -> bool {
+        self.years != 0 || self.months != 0 || self.days != 0
+    }
+
+    fn has_time_component(self) -> bool {
+        self.hours != 0 || self.minutes != 0 || self.seconds != 0 || self.nanoseconds != 0
+    }
+}
+
+fn relative_adjustment(
+    relative: &[relative::Relative],
+) -> Result<RelativeAdjustment, error::Error> {
+    let mut result = RelativeAdjustment::default();
+    for rel in relative {
+        match *rel {
+            relative::Relative::Years(value) => {
+                result.years = result
+                    .years
+                    .checked_add(i64::from(value))
+                    .ok_or("relative year adjustment overflow")?;
+            }
+            relative::Relative::Months(value) => {
+                result.months = result
+                    .months
+                    .checked_add(i64::from(value))
+                    .ok_or("relative month adjustment overflow")?;
+            }
+            relative::Relative::Days(value) => {
+                result.days = result
+                    .days
+                    .checked_add(i64::from(value))
+                    .ok_or("relative day adjustment overflow")?;
+            }
+            relative::Relative::Hours(value) => {
+                result.hours = result
+                    .hours
+                    .checked_add(i64::from(value))
+                    .ok_or("relative hour adjustment overflow")?;
+            }
+            relative::Relative::Minutes(value) => {
+                result.minutes = result
+                    .minutes
+                    .checked_add(i64::from(value))
+                    .ok_or("relative minute adjustment overflow")?;
+            }
+            relative::Relative::Seconds(seconds, nanoseconds) => {
+                result.seconds = result
+                    .seconds
+                    .checked_add(seconds)
+                    .ok_or("relative second adjustment overflow")?;
+                result.nanoseconds = result
+                    .nanoseconds
+                    .checked_add(i64::from(nanoseconds))
+                    .ok_or("relative nanosecond adjustment overflow")?;
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn apply_relative_date(mut dt: Zoned, relative: RelativeAdjustment) -> Result<Zoned, error::Error> {
+    // Change the year and month as one calendar operation. This intentionally
+    // preserves the original day until the target month is known, so a date
+    // such as January 31 overflows into March rather than clamping to February.
+    if relative.years != 0 || relative.months != 0 {
+        let (year, month) = shifted_year_month(&dt, relative)?;
+        let first = civil::Date::new(year, month as i8, 1)?;
+        let target = first.checked_add(Span::new().try_days(i64::from(dt.day() - 1))?)?;
+        dt = dt.with().date(target).build()?;
+    }
+    if relative.days != 0 {
+        dt = dt.checked_add(Span::new().try_days(relative.days)?)?;
+    }
+    Ok(dt)
+}
+
+fn shifted_year_month(dt: &Zoned, relative: RelativeAdjustment) -> Result<(i16, u8), error::Error> {
+    let month_index = i64::from(dt.year())
+        .checked_mul(12)
+        .and_then(|value| value.checked_add(i64::from(dt.month()) - 1))
+        .and_then(|value| value.checked_add(relative.years.checked_mul(12)?))
+        .and_then(|value| value.checked_add(relative.months))
+        .ok_or("relative month/year overflow")?;
+    let year = month_index.div_euclid(12);
+    let month = month_index.rem_euclid(12) + 1;
+    let year = i16::try_from(year).map_err(|_| "relative year overflow")?;
+    Ok((year, month as u8))
+}
+
+fn apply_relative_time(dt: Zoned, relative: RelativeAdjustment) -> Result<Zoned, error::Error> {
+    let seconds = relative
+        .hours
+        .checked_mul(3_600)
+        .and_then(|hours| {
+            relative
+                .minutes
+                .checked_mul(60)
+                .and_then(|minutes| hours.checked_add(minutes))
+        })
+        .and_then(|seconds| seconds.checked_add(relative.seconds))
+        .ok_or("relative time overflow")?;
+    let extra_seconds = relative.nanoseconds.div_euclid(1_000_000_000);
+    let nanoseconds = relative.nanoseconds.rem_euclid(1_000_000_000);
+    let seconds = seconds
+        .checked_add(extra_seconds)
+        .ok_or("relative time overflow")?;
+
+    // Relative::Seconds stores negative fractional values in timestamp form,
+    // e.g. (-1, 500_000_000) for -0.5 seconds. Jiff spans require the seconds
+    // and nanoseconds components to have the same sign, so normalize them.
+    let (seconds, nanoseconds) = if seconds < 0 && nanoseconds > 0 {
+        (
+            seconds.checked_add(1).ok_or("relative time overflow")?,
+            -(1_000_000_000 - nanoseconds),
+        )
+    } else {
+        (seconds, nanoseconds)
+    };
+    let span = Span::new()
+        .try_seconds(seconds)?
+        .try_nanoseconds(nanoseconds)?;
+    Ok(dt.checked_add(span)?)
 }
 
 impl TryFrom<Vec<Item>> for DateTimeBuilder {
