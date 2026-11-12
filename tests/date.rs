@@ -201,17 +201,19 @@ fn test_negative_month_operations(#[case] base: &str, #[case] input: &str, #[cas
 // Test chained operations (multiple relative adjustments in one parse)
 // These ensure that year and month overflow logic works correctly when combined
 #[rstest]
-// Feb 29, 2020 + 1 year = March 1, 2021; + 1 month = April 1, 2021
+// GNU groups relative years and months before normalizing: 2020-02-29 plus
+// one year and one month produces 2021-03-29.
 #[case::feb29_plus_year_plus_month(
     "2020-02-29 00:00:00",
     "1 year 1 month",
-    "2021-04-01 00:00:00+00:00"
+    "2021-03-29 00:00:00+00:00"
 )]
-// Jan 31, 2024 + 1 month = March 2, 2024; + 1 year = March 2, 2025
+// GNU groups the month and year fields before normalizing the overflowing
+// February 31 date.
 #[case::jan31_plus_month_plus_year(
     "2024-01-31 00:00:00",
     "1 month 1 year",
-    "2025-03-02 00:00:00+00:00"
+    "2025-03-03 00:00:00+00:00"
 )]
 // Jan 31 + 2 months + 1 day
 #[case::jan31_plus_2months_1day(
@@ -219,11 +221,11 @@ fn test_negative_month_operations(#[case] base: &str, #[case] input: &str, #[cas
     "2 months 1 day",
     "2024-04-01 00:00:00+00:00"
 )]
-// Feb 29 - 1 year + 1 month (March 1, 2019 + 1 month = April 1, 2019)
+// GNU groups the relative year and month fields before normalization.
 #[case::feb29_minus_year_plus_month(
     "2020-02-29 00:00:00",
     "1 year ago 1 month",
-    "2019-04-01 00:00:00+00:00"
+    "2019-03-29 00:00:00+00:00"
 )]
 // Multiple operations with days
 #[case::complex_chain(
