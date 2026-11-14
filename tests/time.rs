@@ -70,6 +70,7 @@ fn test_time_12h_format(#[case] input: &str, #[case] expected: &str) {
 #[case::corrected_minus_hours_only("12:34:56-09", "21:34:56.000000000")]
 #[case::corrected_plus_minutes("12:34:56+09:12", "03:22:56.000000000")]
 #[case::corrected_minus_minutes("12:34:56-09:26", "22:00:56.000000000")]
+#[case::normalized_plus_minutes("12:34:56+00:60", "11:34:56.000000000")]
 #[case::corrected_plus_single_digit("12:34:56+9", "03:34:56.000000000")]
 #[case::corrected_minus_single_digit("12:34:56-9", "21:34:56.000000000")]
 #[case::with_space("12:34:56 -09:00", "21:34:56.000000000")]

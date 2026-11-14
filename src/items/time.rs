@@ -38,7 +38,7 @@
 //! > Either ‘am’/‘pm’ or a time zone correction may be specified, but not both.
 
 use winnow::{
-    combinator::{alt, opt, preceded},
+    combinator::{alt, dispatch, fail, opt, peek, preceded},
     error::ErrMode,
     ModalResult, Parser,
 };
@@ -46,7 +46,7 @@ use winnow::{
 use super::{
     epoch::sec_and_nsec,
     offset::{time_zone_correction, timezone_offset, Offset},
-    primitive::{colon, ctx_err, dec_uint, s},
+    primitive::{colon, ctx_err, dec_uint, s, space},
 };
 
 #[derive(PartialEq, Clone, Debug, Default)]
@@ -86,30 +86,42 @@ pub(crate) fn parse(input: &mut &str) -> ModalResult<Time> {
 ///
 /// Also used by the [`combined`](super::combined) module
 pub(super) fn iso(input: &mut &str) -> ModalResult<Time> {
-    alt((
-        (hour24, timezone_offset).map(|(hour, offset)| Time {
+    let hour = hour24.parse_next(input)?;
+    dispatch! { peek(preceded(space, alt((':', '+', '-'))));
+        '+' | '-' => move |input: &mut &str| iso_with_offset(hour, input),
+        ':' => move |input: &mut &str| iso_with_colon(hour, input),
+        _ => fail,
+    }
+    .parse_next(input)
+}
+
+fn iso_with_offset(hour: u8, input: &mut &str) -> ModalResult<Time> {
+    timezone_offset
+        .map(|offset| Time {
             hour,
             minute: 0,
             second: 0,
             nanosecond: 0,
             offset: Some(offset),
-        }),
-        (
-            hour24,
-            colon,
+        })
+        .parse_next(input)
+}
+
+fn iso_with_colon(hour: u8, input: &mut &str) -> ModalResult<Time> {
+    (
+        colon,
+        minute,
+        opt(preceded(colon, second)),
+        opt(time_zone_correction),
+    )
+        .map(|(_, minute, sec_nsec, offset)| Time {
+            hour,
             minute,
-            opt(preceded(colon, second)),
-            opt(time_zone_correction),
-        )
-            .map(|(hour, _, minute, sec_nsec, offset)| Time {
-                hour,
-                minute,
-                second: sec_nsec.map_or(0, |(s, _)| s),
-                nanosecond: sec_nsec.map_or(0, |(_, ns)| ns),
-                offset,
-            }),
-    ))
-    .parse_next(input)
+            second: sec_nsec.map_or(0, |(s, _)| s),
+            nanosecond: sec_nsec.map_or(0, |(_, ns)| ns),
+            offset,
+        })
+        .parse_next(input)
 }
 
 /// Parse a time ending with AM or PM
