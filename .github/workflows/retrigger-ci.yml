@@ -1,0 +1,225 @@
+name: Retrigger CI
+
+on:
+  issue_comment:
+    types: [created]
+
+# This workflow only talks to the GitHub API. It never checks out or executes
+# the pull request's code, which keeps the comment handler safe for fork PRs.
+permissions:
+  actions: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: retrigger-ci-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  retrigger:
+    # The script performs the command-prefix check as well, so comments such as
+    # "please do not use /retest" cannot trigger a rerun.
+    if: >-
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/retest') &&
+      (
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) ||
+        github.event.comment.user.login == github.event.issue.user.login
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate request and rerun pull request CI
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.issue.number;
+            const comment = context.payload.comment;
+
+            // Accept harmless surrounding whitespace, capitalization, and
+            // explanatory text after the command. Text before /retest is not
+            // interpreted as a command.
+            if (!comment.body.trim().toLowerCase().startsWith("/retest")) {
+              return;
+            }
+
+            const reply = async (body) => {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body,
+              });
+            };
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issueNumber,
+            });
+
+            // A PR author can trigger CI automatically by opening or updating
+            // their PR. Repository members and collaborators can do the same
+            // through normal pushes, so those trusted associations are also
+            // allowed to request a rerun. Nobody else can rerun another user's
+            // PR through a comment.
+            const trustedAssociation = [
+              "OWNER",
+              "MEMBER",
+              "COLLABORATOR",
+            ].includes(comment.author_association);
+            const isPullRequestAuthor =
+              comment.user.login === pullRequest.user.login;
+            if (!trustedAssociation && !isPullRequestAuthor) {
+              core.notice("/retest ignored: commenter cannot trigger this PR's CI");
+              return;
+            }
+
+            // Draft pull requests intentionally pass this check: GitHub
+            // reports drafts as open pull requests.
+            if (pullRequest.state !== "open") {
+              await reply("❌ `/retest` only works while the pull request is open.");
+              return;
+            }
+
+            const headRepository = pullRequest.head.repo?.full_name;
+            if (!headRepository) {
+              await reply(
+                "ℹ️ The pull request's head repository is no longer available, " +
+                "so its CI cannot be identified safely.",
+              );
+              return;
+            }
+
+            // Find every workflow run created by pull_request for this exact
+            // commit and source branch. Do not use a workflow-name allowlist:
+            // this automatically includes every current and future CI
+            // workflow that runs for pull requests, while excluding scheduled,
+            // push, manual, and this issue_comment workflow.
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              {
+                owner,
+                repo,
+                event: "pull_request",
+                head_sha: pullRequest.head.sha,
+                per_page: 100,
+              },
+            );
+
+            // GitHub can return an empty pull_requests array for a valid fork
+            // PR run. The head repository/ref checks are therefore required;
+            // the PR association is an additional check when GitHub provides
+            // it. This prevents a same-SHA run from another source branch or
+            // fork from being selected.
+            const pullRequestRuns = runs
+              .filter((run) => run.event === "pull_request")
+              .filter((run) => run.head_sha === pullRequest.head.sha)
+              .filter((run) => run.head_branch === pullRequest.head.ref)
+              .filter((run) => run.head_repository?.full_name === headRepository)
+              .filter((run) => {
+                const associatedPullRequests = run.pull_requests ?? [];
+                return associatedPullRequests.length === 0 ||
+                  associatedPullRequests.some(({ number }) => number === issueNumber);
+              })
+              .sort((a, b) =>
+                Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id,
+              );
+
+            // A workflow can have several historical runs for the same SHA.
+            // Select only its newest run so one command cannot queue duplicate
+            // reruns for the same workflow.
+            const latestRuns = [];
+            const seenWorkflows = new Set();
+            for (const run of pullRequestRuns) {
+              const workflowKey = String(run.workflow_id ?? run.path ?? run.name);
+              if (seenWorkflows.has(workflowKey)) {
+                continue;
+              }
+              seenWorkflows.add(workflowKey);
+              latestRuns.push(run);
+            }
+
+            if (latestRuns.length === 0) {
+              await reply(
+                "ℹ️ No pull-request CI run was found for the current commit. " +
+                "Push a commit first, then comment `/retest` again.",
+              );
+              return;
+            }
+
+            const rerun = [];
+            const waiting = [];
+            const skipped = [];
+            const failures = [];
+
+            for (const run of latestRuns) {
+              const workflowName = run.name || run.path || `workflow ${run.workflow_id}`;
+
+              if (run.status !== "completed") {
+                waiting.push(`${workflowName} (${run.status})`);
+                continue;
+              }
+
+              // Never use a rerun command to bypass GitHub's approval gate for
+              // first-time fork contributors.
+              if (run.conclusion === "action_required") {
+                skipped.push(`${workflowName} (approval required)`);
+                continue;
+              }
+
+              try {
+                if (run.conclusion === "failure") {
+                  await github.rest.actions.reRunWorkflowFailedJobs({
+                    owner,
+                    repo,
+                    run_id: run.id,
+                  });
+                  rerun.push(`${workflowName} (failed jobs)`);
+                } else {
+                  // Cancelled, timed-out, startup-failure, stale, successful,
+                  // neutral, and skipped runs get a complete rerun. This keeps
+                  // /retest useful for every applicable CI workflow, not just
+                  // workflows that happened to report conclusion=failure.
+                  await github.rest.actions.reRunWorkflow({
+                    owner,
+                    repo,
+                    run_id: run.id,
+                  });
+                  rerun.push(workflowName);
+                }
+              } catch (error) {
+                failures.push(`${workflowName}: ${error.message}`);
+              }
+            }
+
+            if (rerun.length === 0) {
+              const details = [];
+              if (waiting.length > 0) {
+                details.push(`already running: ${waiting.join(", ")}`);
+              }
+              if (skipped.length > 0) {
+                details.push(`awaiting approval: ${skipped.join(", ")}`);
+              }
+              if (failures.length > 0) {
+                details.push(`failed to request: ${failures.join("; ")}`);
+              }
+              await reply(
+                "ℹ️ No pull-request CI rerun was requested for commit " +
+                  `${pullRequest.head.sha.slice(0, 7)}${details.length ? ` (${details.join("; ")})` : "."}`,
+              );
+              return;
+            }
+
+            const details = [`✅ CI rerun requested for commit ${pullRequest.head.sha.slice(0, 7)}: ${rerun.join(", ")}.`];
+            if (waiting.length > 0) {
+              details.push(`⏳ Already running: ${waiting.join(", ")}.`);
+            }
+            if (skipped.length > 0) {
+              details.push(`🔒 Awaiting approval: ${skipped.join(", ")}.`);
+            }
+            if (failures.length > 0) {
+              details.push(`⚠️ Failed to request: ${failures.join("; ")}.`);
+            }
+            await reply(details.join("\n"));
