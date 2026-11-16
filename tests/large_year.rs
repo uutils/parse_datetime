@@ -21,7 +21,7 @@ fn helper_formats_relative_extended_values() {
     let base = "2000-01-01 00:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(base, "10000-01-01 +1 day", "10000-01-02 00:00:00+00:00");
 }

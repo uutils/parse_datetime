@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil, Span, ToSpan, Zoned};
+use jiff::{civil, Span, ToSpan, ZonedDateTime};
 
 use super::{date, epoch, error, offset, relative, time, weekday, year, Item};
 use crate::extended::{DateParts, TimeParts};
@@ -14,7 +14,7 @@ use crate::{ExtendedDateTime, ParsedDateTime};
 /// leave it unset to use the current date and time as the base.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct DateTimeBuilder {
-    base: Option<Zoned>,
+    base: Option<ZonedDateTime>,
     timestamp: Option<epoch::Timestamp>,
     date: Option<date::Date>,
     time: Option<time::Time>,
@@ -35,7 +35,7 @@ impl DateTimeBuilder {
 
     /// Sets the base date and time for the builder. If not set, the current
     /// date and time will be used.
-    pub(super) fn set_base(mut self, base: Zoned) -> Self {
+    pub(super) fn set_base(mut self, base: ZonedDateTime) -> Self {
         self.base = Some(base);
         self
     }
@@ -189,7 +189,7 @@ impl DateTimeBuilder {
     /// Build a parsed datetime result from the pieces accumulated in this builder.
     ///
     /// Returns [`ParsedDateTime::InRange`] when the result is representable as a
-    /// [`jiff::Zoned`], or [`ParsedDateTime::Extended`] for large/out-of-range
+    /// [`jiff::ZonedDateTime`], or [`ParsedDateTime::Extended`] for large/out-of-range
     /// year scenarios.
     ///
     /// Resolution order (mirrors GNU `date` semantics):
@@ -251,22 +251,22 @@ impl DateTimeBuilder {
             || self.base.as_ref().is_some_and(|b| b.year() >= 9999)
     }
 
-    fn build_in_range(self) -> Result<Zoned, error::Error> {
+    fn build_in_range(self) -> Result<ZonedDateTime, error::Error> {
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
         let has_timezone = self.timezone.is_some();
         let base = match (self.base, self.timezone) {
-            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz),
+            (Some(b), Some(tz)) => b.timestamp().to_zoned_datetime(tz),
             (Some(b), None) => b,
-            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz),
-            (None, None) => Zoned::now(),
+            (None, Some(tz)) => jiff::Timestamp::now().to_zoned_datetime(tz),
+            (None, None) => ZonedDateTime::now(),
         };
 
         // 2. Absolute timestamp override everything else.
         if let Some(ts) = self.timestamp {
             let ts = jiff::Timestamp::try_from(ts)?;
-            return Ok(ts.to_zoned(base.offset().to_time_zone()));
+            return Ok(ts.to_zoned_datetime(base.offset().to_time_zone()));
         }
 
         // 3. Determine whether to truncate the time of day. Like GNU, a
@@ -300,7 +300,7 @@ impl DateTimeBuilder {
         // 4b. Apply time.
         if let Some(time) = self.time.clone() {
             if let Some(offset) = &time.offset {
-                dt = dt.datetime().to_zoned(offset.try_into()?)?;
+                dt = dt.datetime().to_zoned_datetime(offset.try_into()?)?;
             }
 
             let t: civil::Time = time.try_into()?;
@@ -356,7 +356,7 @@ impl DateTimeBuilder {
         if let Some(offset) = self.offset {
             let (offset, hour_adjustment) = offset.normalize();
             dt = dt.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = dt.datetime().to_zoned((&offset).try_into()?)?;
+            dt = dt.datetime().to_zoned_datetime((&offset).try_into()?)?;
         }
 
         // 4e. Apply relative adjustments.
@@ -401,10 +401,10 @@ impl DateTimeBuilder {
 
         let has_timezone = timezone.is_some();
         let base = match (base, timezone) {
-            (Some(b), Some(tz)) => b.timestamp().to_zoned(tz),
+            (Some(b), Some(tz)) => b.timestamp().to_zoned_datetime(tz),
             (Some(b), None) => b,
-            (None, Some(tz)) => jiff::Timestamp::now().to_zoned(tz),
-            (None, None) => Zoned::now(),
+            (None, Some(tz)) => jiff::Timestamp::now().to_zoned_datetime(tz),
+            (None, None) => ZonedDateTime::now(),
         };
         let rule_tz = base.time_zone().clone();
 
@@ -504,7 +504,9 @@ impl DateTimeBuilder {
                 jiff::Timestamp::new(dt.unix_seconds(), dt.nanosecond as i32),
                 jiff::tz::Offset::from_seconds(dt.offset_seconds),
             ) {
-                return Ok(ParsedDateTime::InRange(ts.to_zoned(offset.to_time_zone())));
+                return Ok(ParsedDateTime::InRange(
+                    ts.to_zoned_datetime(offset.to_time_zone()),
+                ));
             }
         }
 
@@ -534,7 +536,7 @@ fn resolve_rule_offset_for_extended(
         dt.second as i8,
         dt.nanosecond as i32,
     )?;
-    let zoned = tz.to_ambiguous_zoned(surrogate_dt).compatible()?;
+    let zoned = tz.to_ambiguous_zoned_datetime(surrogate_dt).compatible()?;
     Ok(zoned.offset().seconds())
 }
 
@@ -804,7 +806,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("9999-12-31")),
@@ -820,7 +822,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("10000-01-01")),
@@ -911,7 +913,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("10000-01-01")),
@@ -934,7 +936,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("10000-06-01")),
@@ -951,7 +953,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("9999-01-31")),
@@ -967,7 +969,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("9999-12-31")),
@@ -985,7 +987,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("2021-01-31")),
@@ -1001,7 +1003,7 @@ mod tests {
         let base = "2000-01-01 10:11:12"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let tz = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
         let builder = DateTimeBuilder::try_from(vec![
@@ -1030,7 +1032,7 @@ mod tests {
         let base = "2000-01-01 10:11:12.123456789"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let mut builder = DateTimeBuilder::new();
         builder.base = Some(base);
@@ -1046,7 +1048,7 @@ mod tests {
         let base = "2000-01-01 10:11:12"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let builder = DateTimeBuilder::try_from(vec![
             Item::Date(date_large("10000-01-01")),
@@ -1058,7 +1060,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "ParsedDateTime is not representable as jiff::Zoned")]
+    #[should_panic(expected = "ParsedDateTime is not representable as jiff::ZonedDateTime")]
     fn expect_in_range_panics_for_extended_input() {
         let parsed = DateTimeBuilder::try_from(vec![Item::Date(date_large("10000-01-01"))])
             .unwrap()

@@ -12,7 +12,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 
 mod extended;
 mod items;
@@ -24,25 +24,25 @@ pub const GNU_MAX_YEAR: u32 = 2_147_485_547;
 
 /// Parsed datetime output.
 ///
-/// - [`ParsedDateTime::InRange`] contains a standard [`jiff::Zoned`] value.
+/// - [`ParsedDateTime::InRange`] contains a standard [`jiff::ZonedDateTime`] value.
 /// - [`ParsedDateTime::Extended`] contains an out-of-range year representation
 ///   (for example, years greater than `9999`) that cannot be represented by
-///   `jiff::Zoned`.
+///   `jiff::ZonedDateTime`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedDateTime {
-    InRange(Zoned),
+    InRange(ZonedDateTime),
     Extended(ExtendedDateTime),
 }
 
 impl ParsedDateTime {
-    pub fn as_zoned(&self) -> Option<&Zoned> {
+    pub fn as_zoned(&self) -> Option<&ZonedDateTime> {
         match self {
             ParsedDateTime::InRange(z) => Some(z),
             ParsedDateTime::Extended(_) => None,
         }
     }
 
-    pub fn into_zoned(self) -> Option<Zoned> {
+    pub fn into_zoned(self) -> Option<ZonedDateTime> {
         match self {
             ParsedDateTime::InRange(z) => Some(z),
             ParsedDateTime::Extended(_) => None,
@@ -105,9 +105,9 @@ impl ParsedDateTime {
     /// This is a convenience for contexts where the caller is certain the result
     /// is in range (e.g., tests). Prefer [`into_zoned`](Self::into_zoned) or
     /// pattern matching in production code.
-    pub fn expect_in_range(self) -> Zoned {
+    pub fn expect_in_range(self) -> ZonedDateTime {
         self.into_zoned()
-            .expect("ParsedDateTime is not representable as jiff::Zoned")
+            .expect("ParsedDateTime is not representable as jiff::ZonedDateTime")
     }
 }
 
@@ -127,9 +127,9 @@ impl fmt::Display for ParsedDateTime {
     }
 }
 
-/// An `Extended` value never compares equal to a `Zoned`.
-impl PartialEq<Zoned> for ParsedDateTime {
-    fn eq(&self, other: &Zoned) -> bool {
+/// An `Extended` value never compares equal to a `ZonedDateTime`.
+impl PartialEq<ZonedDateTime> for ParsedDateTime {
+    fn eq(&self, other: &ZonedDateTime) -> bool {
         match self {
             ParsedDateTime::InRange(z) => z == other,
             ParsedDateTime::Extended(_) => false,
@@ -206,10 +206,10 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 /// # Examples
 ///
 /// ```
-/// use jiff::Zoned;
+/// use jiff::ZonedDateTime;
 /// use parse_datetime::{parse_datetime_at_date, ParsedDateTime};
 ///
-///  let now = Zoned::now();
+///  let now = ZonedDateTime::now();
 ///  let after = parse_datetime_at_date(now, "2024-09-13UTC +3 days").unwrap();
 ///
 ///  match after {
@@ -228,7 +228,7 @@ pub fn parse_datetime<S: AsRef<str> + Clone>(
 /// This function will return `Err(ParseDateTimeError::InvalidInput)` if the
 /// input string cannot be parsed.
 pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
-    date: Zoned,
+    date: ZonedDateTime,
     input: S,
 ) -> Result<ParsedDateTime, ParseDateTimeError> {
     items::parse_at_date(date, input).map_err(|e| e.into())
@@ -238,7 +238,7 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
 mod tests {
     use jiff::{
         civil::{date, time, Time, Weekday},
-        ToSpan, Zoned,
+        ToSpan, ZonedDateTime,
     };
 
     use crate::parse_datetime;
@@ -322,14 +322,14 @@ mod tests {
     mod calendar_date_items {
         use jiff::{
             civil::{date, time},
-            Zoned,
+            ZonedDateTime,
         };
 
         use crate::parse_datetime;
 
         #[test]
         fn single_digit_month_day() {
-            let expected = Zoned::now()
+            let expected = ZonedDateTime::now()
                 .with()
                 .date(date(1987, 5, 7))
                 .time(time(0, 0, 0, 0))
@@ -367,7 +367,7 @@ mod tests {
 
     #[cfg(test)]
     mod offsets {
-        use jiff::{civil::DateTime, tz, Zoned};
+        use jiff::{civil::DateTime, tz, ZonedDateTime};
 
         use crate::parse_datetime;
 
@@ -382,7 +382,7 @@ mod tests {
                 "Z+07",
             ];
 
-            let expected = format!("{}{}", Zoned::now().strftime("%Y%m%d"), "0000+0700");
+            let expected = format!("{}{}", ZonedDateTime::now().strftime("%Y%m%d"), "0000+0700");
             for offset in offsets {
                 let actual = parse_datetime(offset).unwrap().expect_in_range();
                 assert_eq!(expected, actual.strftime("%Y%m%d%H%M%z").to_string());
@@ -392,7 +392,7 @@ mod tests {
         #[test]
         fn test_partial_offset() {
             let offsets = vec!["UTC+00:15", "UTC+0015", "Z+00:15", "Z+0015"];
-            let expected = format!("{}{}", Zoned::now().strftime("%Y%m%d"), "0000+0015");
+            let expected = format!("{}{}", ZonedDateTime::now().strftime("%Y%m%d"), "0000+0015");
             for offset in offsets {
                 let actual = parse_datetime(offset).unwrap().expect_in_range();
                 assert_eq!(expected, actual.strftime("%Y%m%d%H%M%z").to_string());
@@ -405,7 +405,7 @@ mod tests {
             let expected = "1997-01-19 08:17:48"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(tz::TimeZone::fixed(tz::offset(2)))
+                .to_zoned_datetime(tz::TimeZone::fixed(tz::offset(2)))
                 .unwrap();
             assert_eq!(actual, expected);
         }
@@ -416,7 +416,7 @@ mod tests {
             let expected = "1997-01-19 08:17:48"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(tz::TimeZone::fixed(tz::offset(-3)))
+                .to_zoned_datetime(tz::TimeZone::fixed(tz::offset(-3)))
                 .unwrap();
             assert_eq!(actual, expected);
         }
@@ -486,11 +486,11 @@ mod tests {
 
     #[cfg(test)]
     mod weekday {
-        use jiff::{civil::DateTime, tz::TimeZone, Zoned};
+        use jiff::{civil::DateTime, tz::TimeZone, ZonedDateTime};
 
         use crate::parse_datetime_at_date;
 
-        fn get_formatted_date(date: &Zoned, weekday: &str) -> String {
+        fn get_formatted_date(date: &ZonedDateTime, weekday: &str) -> String {
             let result = parse_datetime_at_date(date.clone(), weekday)
                 .unwrap()
                 .expect_in_range();
@@ -504,7 +504,7 @@ mod tests {
             let date = "2023-02-28 10:12:03"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .unwrap();
 
             // 2023-2-28 is tuesday
@@ -545,7 +545,7 @@ mod tests {
             let date = "2023-02-28 10:12:03"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .unwrap();
 
             assert_eq!(
@@ -559,7 +559,7 @@ mod tests {
             let date = "2023-02-28 10:12:03"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .unwrap();
 
             for (weekday, expected) in [
@@ -626,7 +626,7 @@ mod tests {
             let expected = "2021-02-14 06:37:47"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .unwrap();
 
             assert_eq!(dt, expected);
@@ -650,7 +650,7 @@ mod tests {
     #[test]
     fn test_datetime_ending_in_z() {
         let actual = parse_datetime("2023-06-03 12:00:01Z").unwrap();
-        let expected = "2023-06-03 12:00:01[UTC]".parse::<Zoned>().unwrap();
+        let expected = "2023-06-03 12:00:01[UTC]".parse::<ZonedDateTime>().unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -668,7 +668,7 @@ mod tests {
     #[test]
     fn parsed_datetime_extended_never_equals_zoned() {
         let extended = parse_datetime("10000-01-01").unwrap();
-        let zoned = Zoned::now();
+        let zoned = ZonedDateTime::now();
         assert_ne!(extended, zoned);
     }
 
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn test_parse_datetime_tz_nodelta() {
         // 1997-01-01 00:00:00 +0000
-        let expected = "1997-01-01 00:00:00[UTC]".parse::<Zoned>().unwrap();
+        let expected = "1997-01-01 00:00:00[UTC]".parse::<ZonedDateTime>().unwrap();
 
         for s in [
             "1997-01-01 00:00:00 +0000",
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_parse_datetime_notz_nodelta() {
-        let expected = Zoned::now()
+        let expected = ZonedDateTime::now()
             .with()
             .date(date(1997, 1, 1))
             .time(time(0, 0, 0, 0))
@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_parse_date_notz_nodelta() {
-        let expected = Zoned::now()
+        let expected = ZonedDateTime::now()
             .with()
             .date(date(1997, 1, 1))
             .time(time(0, 0, 0, 0))
@@ -741,7 +741,7 @@ mod tests {
     #[test]
     fn test_parse_datetime_tz_delta() {
         // 1998-01-01
-        let expected = "1998-01-01 00:00:00[UTC]".parse::<Zoned>().unwrap();
+        let expected = "1998-01-01 00:00:00[UTC]".parse::<ZonedDateTime>().unwrap();
 
         for s in [
             "1997-01-01 00:00:00 +0000 +1 year",
@@ -759,7 +759,7 @@ mod tests {
 
     #[test]
     fn test_parse_datetime_notz_delta() {
-        let expected = Zoned::now()
+        let expected = ZonedDateTime::now()
             .with()
             .date(date(1998, 1, 1))
             .time(time(0, 0, 0, 0))
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_parse_date_notz_delta() {
-        let expected = Zoned::now()
+        let expected = ZonedDateTime::now()
             .with()
             .date(date(1998, 1, 1))
             .time(time(0, 0, 0, 0))
@@ -821,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_weekday_only() {
-        let now = Zoned::now();
+        let now = ZonedDateTime::now();
         let midnight = Time::new(0, 0, 0, 0).unwrap();
         let today = now.weekday();
         let midnight_today = now.with().time(midnight).build().unwrap();
@@ -847,7 +847,7 @@ mod tests {
 
         #[test]
         fn test_hence_suffix() {
-            let now: jiff::Zoned = "2026-01-15T12:00:00Z[UTC]".parse().unwrap();
+            let now: jiff::ZonedDateTime = "2026-01-15T12:00:00Z[UTC]".parse().unwrap();
             for relative in [
                 "2 months",
                 "year",
@@ -972,7 +972,7 @@ mod tests {
             let base = "2024-06-15 08:30:00"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::UTC)
+                .to_zoned_datetime(TimeZone::UTC)
                 .unwrap();
             let parsed = parse_datetime_at_date(base, "2024-06-15 08:30:00").unwrap();
             assert_eq!(parsed.to_string(), "2024-06-15 08:30:00+00:00");
@@ -983,7 +983,7 @@ mod tests {
             let base = "2024-06-15 08:30:00.123456789"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::UTC)
+                .to_zoned_datetime(TimeZone::UTC)
                 .unwrap();
             // Parsing "now" at a base with subsecond precision preserves it.
             let parsed = parse_datetime_at_date(base, "now").unwrap();
@@ -1046,7 +1046,7 @@ mod tests {
             let base = "2024-01-01 00:00:00"
                 .parse::<DateTime>()
                 .unwrap()
-                .to_zoned(TimeZone::UTC)
+                .to_zoned_datetime(TimeZone::UTC)
                 .unwrap();
             let parsed = parse_datetime_at_date(base, input).unwrap();
             (parsed.unix_epoch_second(), parsed.subsec_nanosecond())
@@ -1107,7 +1107,7 @@ mod tests {
         #[test]
         fn extended_values_use_extended_epoch_path() {
             let parsed = parse_datetime("10000-01-01").unwrap();
-            // Year 10000 is beyond jiff::Zoned's representable range, so
+            // Year 10000 is beyond jiff::ZonedDateTime's representable range, so
             // parse_datetime must route through the ExtendedDateTime branch
             // of both accessors.
             assert!(matches!(parsed, ParsedDateTime::Extended(_)));

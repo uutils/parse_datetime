@@ -27,10 +27,10 @@ cargo add parse_datetime
 Then, import the crate and use the `parse_datetime_at_date` function:
 
 ```rs
-use jiff::{ToSpan, Zoned};
+use jiff::{ToSpan, ZonedDateTime};
 use parse_datetime::{parse_datetime_at_date, ParsedDateTime};
 
-let now = Zoned::now();
+let now = ZonedDateTime::now();
 let after = parse_datetime_at_date(now.clone(), "+3 days");
 
 match after.unwrap() {
@@ -42,12 +42,12 @@ match after.unwrap() {
 For DateTime parsing, import the `parse_datetime` function:
 
 ```rs
-use jiff::{civil::{date, time} ,Zoned};
+use jiff::{civil::{date, time}, ZonedDateTime};
 use parse_datetime::{parse_datetime, ParsedDateTime};
 
 let dt = parse_datetime("2021-02-14 06:37:47");
 match dt.unwrap() {
-  ParsedDateTime::InRange(z) => assert_eq!(z, Zoned::now().with().date(date(2021, 2, 14)).time(time(6, 37, 47, 0)).build().unwrap()),
+  ParsedDateTime::InRange(z) => assert_eq!(z, ZonedDateTime::now().with().date(date(2021, 2, 14)).time(time(6, 37, 47, 0)).build().unwrap()),
   ParsedDateTime::Extended(_) => unreachable!("unexpected for this input"),
 }
 ```
@@ -91,7 +91,7 @@ The `parse_datetime` and `parse_datetime_at_date` functions support absolute dat
 The `parse_datetime` and `parse_datetime_at_date` function return:
 
 - `Ok(ParsedDateTime)` - If the input string can be parsed
-  - `ParsedDateTime::InRange(Zoned)` for years supported by `jiff::Zoned`
+  - `ParsedDateTime::InRange(ZonedDateTime)` for years supported by `jiff::ZonedDateTime`
   - `ParsedDateTime::Extended(ExtendedDateTime)` for out-of-range years (for example `>9999`)
 - `Err(ParseDateTimeError::InvalidInput)` - If the input string cannot be parsed
 

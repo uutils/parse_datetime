@@ -3,7 +3,7 @@
 
 use std::env;
 
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use parse_datetime::{parse_datetime, parse_datetime_at_date};
 
 pub fn check_absolute(input: &str, expected: &str) {
@@ -17,7 +17,7 @@ pub fn check_absolute(input: &str, expected: &str) {
     assert_eq!(parsed.to_string(), expected, "Input value: {input}");
 }
 
-pub fn check_relative(now: Zoned, input: &str, expected: &str) {
+pub fn check_relative(now: ZonedDateTime, input: &str, expected: &str) {
     env::set_var("TZ", "UTC0");
 
     let parsed = match parse_datetime_at_date(now, input) {

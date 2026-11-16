@@ -1,7 +1,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-use jiff::{civil::DateTime, tz::TimeZone, Zoned};
+use jiff::{civil::DateTime, tz::TimeZone, ZonedDateTime};
 use parse_datetime::parse_datetime_at_date;
 use rstest::rstest;
 
@@ -13,9 +13,9 @@ use rstest::rstest;
 // Documentation for the date format can be found at:
 // https://www.gnu.org/software/coreutils/manual/html_node/Time-of-day-items.html
 
-pub fn check_time(input: &str, expected: &str, format: &str, base: Option<Zoned>) {
+pub fn check_time(input: &str, expected: &str, format: &str, base: Option<ZonedDateTime>) {
     std::env::set_var("TZ", "UTC0");
-    let now = base.unwrap_or(Zoned::now());
+    let now = base.unwrap_or(ZonedDateTime::now());
     let parsed = match parse_datetime_at_date(now, input) {
         Ok(v) => v,
         Err(e) => panic!("Failed to parse time from value '{input}': {e}"),
@@ -205,7 +205,7 @@ fn test_time_correction_with_overflow(#[case] input: &str, #[case] expected: &st
     let now = "2022-06-10 00:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d %H:%M:%S", Some(now));
 }
@@ -259,7 +259,7 @@ fn test_time_months_ago(#[case] input: &str, #[case] expected: &str) {
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -275,7 +275,7 @@ fn test_relative_month_time_non_leap_year(#[case] input: &str, #[case] expected:
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -292,7 +292,7 @@ fn test_relative_month_time_dest_month_does_not_have_the_day(
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -304,7 +304,7 @@ fn test_relative_year_time_leap_year(#[case] input: &str, #[case] expected: &str
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -320,7 +320,7 @@ fn test_relative_month_time_leap_year(#[case] input: &str, #[case] expected: &st
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -348,7 +348,7 @@ fn test_time_in_months(#[case] input: &str, #[case] expected: &str) {
     let now = "2026-01-12"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_time(input, expected, "%Y-%m-%d", Some(now));
 }
@@ -417,7 +417,7 @@ fn test_relative_fractional_seconds(#[case] input: &str, #[case] expected: &str)
     let base = "2026-08-27 12:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
 
     check_time(input, expected, "%H:%M:%S.%N", Some(base));
