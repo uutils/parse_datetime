@@ -51,7 +51,7 @@ pub(crate) mod error;
 use std::borrow::Cow;
 
 use crate::ParsedDateTime;
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use primitive::space;
 use winnow::{
     combinator::{alt, eof, preceded, repeat_till, terminated, trace},
@@ -82,7 +82,7 @@ enum Item {
 /// Parse a date and time string and resolve it against the given base date and
 /// time, returning a [`ParsedDateTime`] result.
 pub(crate) fn parse_at_date<S: AsRef<str> + Clone>(
-    base: Zoned,
+    base: ZonedDateTime,
     input: S,
 ) -> Result<ParsedDateTime, Error> {
     match parse(&mut input.as_ref()) {
@@ -307,16 +307,16 @@ fn expect_error(input: &mut &str, reason: &'static str) -> ErrMode<ContextError>
 #[cfg(test)]
 mod tests {
     use crate::ParsedDateTime;
-    use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
+    use jiff::{civil::DateTime, tz::TimeZone, ToSpan, ZonedDateTime};
 
     use super::*;
 
-    fn at_date(builder: DateTimeBuilder, base: Zoned) -> Zoned {
+    fn at_date(builder: DateTimeBuilder, base: ZonedDateTime) -> ZonedDateTime {
         builder.set_base(base).build().unwrap().expect_in_range()
     }
 
-    fn at_utc(builder: DateTimeBuilder) -> Zoned {
-        at_date(builder, Zoned::now().with_time_zone(TimeZone::UTC))
+    fn at_utc(builder: DateTimeBuilder) -> ZonedDateTime {
+        at_date(builder, ZonedDateTime::now().with_time_zone(TimeZone::UTC))
     }
 
     fn test_eq_fmt(fmt: &str, input: &str) -> String {
@@ -329,7 +329,7 @@ mod tests {
             .to_string()
     }
 
-    fn assert_extended_datetime(input: &str, base: Zoned, expected: &str) {
+    fn assert_extended_datetime(input: &str, base: ZonedDateTime, expected: &str) {
         let parsed = parse_at_date(base, input).unwrap();
         assert!(
             matches!(parsed, ParsedDateTime::Extended(_)),
@@ -512,7 +512,7 @@ mod tests {
     fn negative_base_year_with_yearless_date_errors() {
         let base = DateTime::new(-1, 1, 1, 0, 0, 0, 0)
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "11/14");
         assert!(result.is_err());
@@ -527,7 +527,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31 +1 day", base, "10000-01-01 00:00:00+00:00");
     }
@@ -537,7 +537,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31", base, "9999-12-31 00:00:00+00:00");
     }
@@ -547,7 +547,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31 12:00", base, "9999-12-31 12:00:00+00:00");
     }
@@ -557,7 +557,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31 12:00 UTC", base, "9999-12-31 12:00:00+00:00");
     }
@@ -567,7 +567,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("9999-12-31 12:00 +01:00", base, "9999-12-31 12:00:00+01:00");
     }
@@ -577,7 +577,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
 
         assert_extended_datetime(
@@ -613,7 +613,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "10000-01-01 -1000 years").unwrap();
         let z = result.expect_in_range();
@@ -628,7 +628,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "TZ=\"Europe/Paris\" 10000-01-01 -1000 years").unwrap();
         let z = result.expect_in_range();
@@ -643,7 +643,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let dt =
             expect_extended_datetime(parse_at_date(base, "10000-01-01 12:34:56+02:00").unwrap());
@@ -657,7 +657,7 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let result = parse_at_date(base, "not-a-date");
         assert!(result.is_err());
@@ -669,18 +669,18 @@ mod tests {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         assert_extended_datetime("2001-01-01", base, "2001-01-01 00:00:00+00:00");
     }
 
     #[test]
-    #[should_panic(expected = "ParsedDateTime is not representable as jiff::Zoned")]
+    #[should_panic(expected = "ParsedDateTime is not representable as jiff::ZonedDateTime")]
     fn expect_in_range_panics_for_extended_input() {
         let base = "2000-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
         let parsed = parse_at_date(base, "10000-01-01").unwrap();
         let _ = parsed.expect_in_range();
@@ -692,7 +692,7 @@ mod tests {
         let now = "2025-01-01 00:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
 
         assert_eq!(
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn relative_date_time() {
-        let now = Zoned::now().with_time_zone(TimeZone::UTC);
+        let now = ZonedDateTime::now().with_time_zone(TimeZone::UTC);
 
         let result = at_date(parse(&mut "2 days ago").unwrap(), now.clone());
         assert_eq!(result, now.checked_sub(2.days()).unwrap());
@@ -772,7 +772,7 @@ mod tests {
         let base = "2000-01-01 12:00:00"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
 
         // Both read "+8 years" as a relative item, not as an offset of +8.
@@ -787,7 +787,7 @@ mod tests {
         let base = "2000-06-15 12:34:56"
             .parse::<DateTime>()
             .unwrap()
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .unwrap();
 
         for (input, expected) in [
@@ -808,7 +808,7 @@ mod tests {
 
     #[test]
     fn pure() {
-        let now = Zoned::now().with_time_zone(TimeZone::UTC);
+        let now = ZonedDateTime::now().with_time_zone(TimeZone::UTC);
 
         // Pure number as year.
         let result = at_date(parse(&mut "jul 18 12:30 2025").unwrap(), now.clone());
@@ -840,13 +840,13 @@ mod tests {
             (
                 r#"TZ="Europe/Paris" 2025-01-02"#,
                 "2025-01-02 00:00:00[Europe/Paris]"
-                    .parse::<Zoned>()
+                    .parse::<ZonedDateTime>()
                     .unwrap(),
             ),
             (
                 r#"TZ="Europe/Paris" 2025-01-02 03:04:05"#,
                 "2025-01-02 03:04:05[Europe/Paris]"
-                    .parse::<Zoned>()
+                    .parse::<ZonedDateTime>()
                     .unwrap(),
             ),
         ] {

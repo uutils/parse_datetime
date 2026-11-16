@@ -53,7 +53,7 @@ fuzz_target!(|input: Input| {
     // Test parse_datetime_at_date with a controlled base.
     let by = base_year(input.base_year_selector);
     if let Ok(base) = DateTime::new(by, 1, 1, 0, 0, 0, 0) {
-        if let Ok(base) = base.to_zoned(TimeZone::UTC) {
+        if let Ok(base) = base.to_zoned_datetime(TimeZone::UTC) {
             let _ = parse_datetime::parse_datetime_at_date(base, &date_str);
         }
     }

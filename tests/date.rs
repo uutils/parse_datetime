@@ -104,7 +104,7 @@ fn test_date_omitting_year(#[case] input: &str, #[case] year: u32, #[case] expec
     let now = format!("{year}-06-01 00:00:00")
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -121,7 +121,7 @@ fn test_tz_prefix_with_base_date(#[case] input: &str, #[case] expected: &str) {
     let base = "2020-06-15 12:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(base, input, expected);
 }
@@ -139,7 +139,7 @@ fn test_leap_year_overflow(#[case] base: &str, #[case] input: &str, #[case] expe
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -160,7 +160,7 @@ fn test_month_overflow(#[case] base: &str, #[case] input: &str, #[case] expected
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -174,7 +174,7 @@ fn test_negative_year_operations(#[case] base: &str, #[case] input: &str, #[case
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -193,7 +193,7 @@ fn test_negative_month_operations(#[case] base: &str, #[case] input: &str, #[cas
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -235,7 +235,7 @@ fn test_chained_operations(#[case] base: &str, #[case] input: &str, #[case] expe
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -269,7 +269,7 @@ fn test_multiple_month_skip(#[case] base: &str, #[case] input: &str, #[case] exp
     let now = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
     check_relative(now, input, expected);
 }
@@ -344,7 +344,7 @@ fn test_utc_keyword_plus_relative_seconds_across_dst() {
     let base = "2020-06-15 12:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::get("Europe/Berlin").unwrap())
+        .to_zoned_datetime(TimeZone::get("Europe/Berlin").unwrap())
         .unwrap();
 
     // A timestamp landing in summer (CEST, UTC+2) while the epoch base is in
@@ -378,7 +378,7 @@ fn test_military_j_is_local_time(#[case] base: &str, #[case] expected_offset: i3
     let base = base
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::get("America/New_York").unwrap())
+        .to_zoned_datetime(TimeZone::get("America/New_York").unwrap())
         .unwrap();
 
     let parsed = parse_datetime::parse_datetime_at_date(base.clone(), "8j")
@@ -453,7 +453,7 @@ fn test_zone_item_keeps_time_of_day_with_relative(#[case] input: &str, #[case] e
     let base = "2026-08-29 11:30:45"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::get("America/New_York").unwrap())
+        .to_zoned_datetime(TimeZone::get("America/New_York").unwrap())
         .unwrap();
 
     let parsed = parse_datetime::parse_datetime_at_date(base, input)
@@ -498,7 +498,7 @@ fn test_weekday_ignored_with_explicit_date(#[case] input: &str, #[case] expected
     let base = "2026-10-01 12:00:00"
         .parse::<DateTime>()
         .unwrap()
-        .to_zoned(TimeZone::UTC)
+        .to_zoned_datetime(TimeZone::UTC)
         .unwrap();
 
     let parsed = parse_datetime::parse_datetime_at_date(base, input)

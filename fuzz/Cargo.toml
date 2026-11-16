@@ -9,7 +9,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.7"
 arbitrary = { version = "1", features = ["derive"] }
-jiff = "0.2"
+jiff = "1.0.0"
 
 [dependencies.parse_datetime]
 path = "../"

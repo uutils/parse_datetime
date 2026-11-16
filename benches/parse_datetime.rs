@@ -1,5 +1,5 @@
 use codspeed_criterion_compat::{criterion_group, criterion_main, Criterion};
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use parse_datetime::{parse_datetime, parse_datetime_at_date};
 
 fn bench_iso_datetime(c: &mut Criterion) {
@@ -33,14 +33,14 @@ fn bench_epoch_timestamp(c: &mut Criterion) {
 }
 
 fn bench_relative_time(c: &mut Criterion) {
-    let now = Zoned::now();
+    let now = ZonedDateTime::now();
     c.bench_function("parse_relative_time", |b| {
         b.iter(|| parse_datetime_at_date(now.clone(), "+3 days"))
     });
 }
 
 fn bench_relative_time_complex(c: &mut Criterion) {
-    let now = Zoned::now();
+    let now = ZonedDateTime::now();
     c.bench_function("parse_relative_time_complex", |b| {
         b.iter(|| parse_datetime_at_date(now.clone(), "1 year 3 months 2 days ago"))
     });
@@ -60,7 +60,7 @@ fn bench_weekday(c: &mut Criterion) {
     // makes the measurement vary with the day the benchmark runs.
     // 2000-01-03 is a Monday, so "wednesday" resolves two days ahead.
     let base = jiff::civil::DateTime::from(jiff::civil::date(2000, 1, 3))
-        .to_zoned(jiff::tz::TimeZone::UTC)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .unwrap();
     c.bench_function("parse_weekday", |b| {
         b.iter(|| parse_datetime_at_date(base.clone(), "wednesday"))
@@ -117,7 +117,7 @@ fn bench_extended_year_rollover(c: &mut Criterion) {
 
 fn bench_extended_year_relative(c: &mut Criterion) {
     let base = jiff::civil::DateTime::from(jiff::civil::date(2000, 1, 1))
-        .to_zoned(jiff::tz::TimeZone::UTC)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .unwrap();
     c.bench_function("parse_extended_year_relative", |b| {
         b.iter(|| parse_datetime_at_date(base.clone(), "10000-01-01 +1 day"))
