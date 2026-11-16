@@ -33,11 +33,16 @@
 
 use winnow::{
     ascii::alpha1,
-    combinator::{alt, opt},
+    combinator::{alt, dispatch, opt, peek},
+    token::any,
     ModalResult, Parser,
 };
 
-use super::{epoch::sec_and_nsec, ordinal::ordinal, primitive::s};
+use super::{
+    epoch::{normalize_seconds, sec_and_nsec},
+    ordinal::ordinal,
+    primitive::s,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Relative {
@@ -78,16 +83,29 @@ impl TryFrom<Relative> for jiff::Span {
 }
 
 pub(super) fn parse(input: &mut &str) -> ModalResult<Relative> {
-    alt((
-        s("tomorrow").value(Relative::Days(1)),
-        s("yesterday").value(Relative::Days(-1)),
-        // For "today" and "now", the unit is arbitrary
-        s("today").value(Relative::Days(0)),
-        s("now").value(Relative::Days(0)),
-        seconds,
-        displacement,
-    ))
+    dispatch! { s(peek(any));
+        't' => alt((
+            s("tomorrow").value(Relative::Days(1)),
+            // For "today", the unit is arbitrary
+            s("today").value(Relative::Days(0)),
+            displacement,
+        )),
+        'y' => alt((
+            s("yesterday").value(Relative::Days(-1)),
+            displacement,
+        )),
+        'n' => alt((
+            // For "now", the unit is arbitrary
+            s("now").value(Relative::Days(0)),
+            displacement,
+        )),
+        _ => numeric_or_displacement,
+    }
     .parse_next(input)
+}
+
+fn numeric_or_displacement(input: &mut &str) -> ModalResult<Relative> {
+    alt((seconds, displacement)).parse_next(input)
 }
 
 fn seconds(input: &mut &str) -> ModalResult<Relative> {
@@ -98,14 +116,8 @@ fn seconds(input: &mut &str) -> ModalResult<Relative> {
         direction,
     )
         .verify_map(|(sign, (sec, nsec), _, ago)| {
-            let sec = i64::try_from(sec).ok()?;
             let sign = sign.unwrap_or(1) * if ago { -1 } else { 1 };
-            let (second, nanosecond) = match (sign, nsec) {
-                (-1, 0) => (-sec, 0),
-                // Truncate towards minus infinity.
-                (-1, _) => ((-sec).checked_sub(1)?, 1_000_000_000 - nsec),
-                _ => (sec, nsec),
-            };
+            let (second, nanosecond) = normalize_seconds(sign < 0, sec, nsec)?;
             Some(Relative::Seconds(second, nanosecond))
         })
         .parse_next(input)

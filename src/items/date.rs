@@ -28,15 +28,15 @@
 
 use winnow::{
     ascii::alpha1,
-    combinator::{alt, eof, opt, preceded, terminated},
-    error::ErrMode,
+    combinator::{alt, dispatch, eof, fail, not, opt, peek, preceded, terminated},
+    error::{ContextError, ErrMode},
     stream::AsChar,
-    token::take_while,
+    token::{any, one_of, take_while},
     ModalResult, Parser,
 };
 
 use super::{
-    primitive::{ctx_err, dec_uint, multispace1, s},
+    primitive::{ctx_err, dec_uint, dec_uint_str, multispace1, s},
     year::{year_from_str, year_str},
 };
 
@@ -130,13 +130,30 @@ impl TryFrom<Date> for jiff::civil::Date {
 /// Parse a date that is not in ISO format. ISO dates are parsed by [`iso1`]
 /// and [`iso2`], which the caller tries first.
 pub(super) fn parse_non_iso(input: &mut &str) -> ModalResult<Date> {
-    alt((dotted, us, literal1, literal2, literal3)).parse_next(input)
+    dispatch! { s(peek(any));
+        '0'..='9' => numeric,
+        'a'..='z' => literal_month_first,
+        _ => fail,
+    }
+    .parse_next(input)
 }
 
-/// Parse the European `DD.MM.[YYYY]` spelling.
-fn dotted(input: &mut &str) -> ModalResult<Date> {
-    let (day, _, month, _, year) = (
-        s(dec_uint),
+fn numeric(input: &mut &str) -> ModalResult<Date> {
+    let first = s(dec_uint_str).parse_next(input)?;
+
+    dispatch! { s(peek(any));
+        '.' => move |input: &mut &str| dotted_after(first, input),
+        '/' => move |input: &mut &str| us_after(first, input),
+        '-' | 'a'..='z' => move |input: &mut &str| literal1_after(first, input),
+        _ => fail,
+    }
+    .parse_next(input)
+}
+
+/// Parse the European `DD.MM.[YYYY]` spelling after the shared numeric prefix.
+fn dotted_after(first: &str, input: &mut &str) -> ModalResult<Date> {
+    let day = day_from_str(first)?;
+    let (_, month, _, year) = (
         s('.'),
         s(dec_uint),
         s('.'),
@@ -181,10 +198,33 @@ pub(super) fn iso2(input: &mut &str) -> ModalResult<Date> {
         .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
 }
 
-/// Parse `[year]/[month]/[day]` or `[month]/[day]/[year]` or `[month]/[day]`.
-fn us(input: &mut &str) -> ModalResult<Date> {
-    let (s1, _, n, s2) = (
-        s(take_while(1.., AsChar::is_dec_digit)),
+/// Parse either of the compact or separated ISO date forms.
+///
+/// Compact dates contain at least five consecutive digits and do not have a
+/// possible ISO separator after that digit run. In that case, skip the failed
+/// `iso1` attempt. Inputs that could use whitespace/comments before a separator
+/// retain the original alternative ordering for compatibility.
+pub(super) fn iso(input: &mut &str) -> ModalResult<Date> {
+    if compact_iso_candidate(input) {
+        iso2.parse_next(input)
+    } else {
+        alt((iso1, iso2)).parse_next(input)
+    }
+}
+
+fn compact_iso_candidate(input: &str) -> bool {
+    (
+        take_while(5.., AsChar::is_dec_digit),
+        peek(not(one_of::<_, _, ErrMode<ContextError>>([
+            ' ', '\t', '\n', '\x0B', '\x0C', '\r', '(', '+', '-',
+        ]))),
+    )
+        .parse_peek(input)
+        .is_ok()
+}
+
+fn us_after(first: &str, input: &mut &str) -> ModalResult<Date> {
+    let (_, n, s2) = (
         s('/'),
         s(dec_uint),
         opt(preceded(s('/'), s(take_while(1.., AsChar::is_dec_digit)))),
@@ -192,26 +232,26 @@ fn us(input: &mut &str) -> ModalResult<Date> {
         .parse_next(input)?;
 
     match s2 {
-        Some(s2) if s1.len() >= 4 => {
+        Some(s2) if first.len() >= 4 => {
             // [year]/[month]/[day]
             //
             // GNU quirk: interpret as [year]/[month]/[day] if the first part is at
             // least 4 characters long.
             let day = day_from_str(s2)?;
-            (s1, n, day)
+            (first, n, day)
                 .try_into()
                 .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
         }
         Some(s2) => {
             // [month]/[day]/[year]
-            let month = month_from_str(s1)?;
+            let month = month_from_str(first)?;
             (s2, month, n)
                 .try_into()
                 .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
         }
         None => {
             // [month]/[day]
-            let month = month_from_str(s1)?;
+            let month = month_from_str(first)?;
             (month, n)
                 .try_into()
                 .map_err(|e| ErrMode::Backtrack(ctx_err(e)))
@@ -219,11 +259,9 @@ fn us(input: &mut &str) -> ModalResult<Date> {
     }
 }
 
-/// Parse `14 November 2022`, `14 Nov 2022`, "14nov2022", "14-nov-2022",
-/// "14-nov2022", "14nov-2022".
-fn literal1(input: &mut &str) -> ModalResult<Date> {
-    let (day, _, month, year) = (
-        s(dec_uint),
+fn literal1_after(first: &str, input: &mut &str) -> ModalResult<Date> {
+    let day = day_from_str(first)?;
+    let (_, month, year) = (
         opt(s('-')),
         s(literal_month),
         opt(terminated(
@@ -244,10 +282,19 @@ fn literal1(input: &mut &str) -> ModalResult<Date> {
     }
 }
 
-/// Parse `November 14, 2022`, `Nov 14, 2022`, and `Nov 14 2022`.
-fn literal2(input: &mut &str) -> ModalResult<Date> {
-    let (month, day, year) = (
-        s(literal_month),
+fn literal_month_first(input: &mut &str) -> ModalResult<Date> {
+    let month = s(literal_month).parse_next(input)?;
+
+    dispatch! { s(peek(any));
+        '-' => move |input: &mut &str| literal3_after(month, input),
+        '0'..='9' => move |input: &mut &str| literal2_after(month, input),
+        _ => fail,
+    }
+    .parse_next(input)
+}
+
+fn literal2_after(month: u8, input: &mut &str) -> ModalResult<Date> {
+    let (day, year) = (
         s(dec_uint),
         opt(terminated(
             preceded(
@@ -273,11 +320,8 @@ fn literal2(input: &mut &str) -> ModalResult<Date> {
     }
 }
 
-/// Parse `November-14-2022` and `Nov-14-2022`. Unlike `literal2`, the year is mandatory
-/// to match the behavior of GNU `date`.
-fn literal3(input: &mut &str) -> ModalResult<Date> {
-    let (month, _, day, _, year) =
-        (s(literal_month), s('-'), s(dec_uint), s('-'), year_str).parse_next(input)?;
+fn literal3_after(month: u8, input: &mut &str) -> ModalResult<Date> {
+    let (_, day, _, year) = (s('-'), s(dec_uint), s('-'), year_str).parse_next(input)?;
 
     // Map err to Backtrack instead of Cut to avoid early termination of parsing
     (year, month, day)

@@ -13,8 +13,8 @@
 use winnow::{stream::AsChar, token::take_while, ModalResult, Parser};
 
 use super::primitive::s;
+use crate::GNU_MAX_YEAR;
 
-const GNU_MAX_YEAR: u32 = 2_147_485_547;
 // TODO: Leverage `TryFrom` trait.
 pub(super) fn year_from_str(year_str: &str) -> Result<u32, &'static str> {
     let mut year = year_str

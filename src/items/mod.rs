@@ -54,9 +54,10 @@ use crate::ParsedDateTime;
 use jiff::Zoned;
 use primitive::space;
 use winnow::{
-    combinator::{alt, eof, preceded, repeat_till, terminated, trace},
+    combinator::{alt, dispatch, eof, opt, peek, preceded, repeat_till, terminated, trace},
     error::{AddContext, ContextError, ErrMode, StrContext, StrContextValue},
     stream::Stream,
+    token::any,
     ModalResult, Parser,
 };
 
@@ -105,7 +106,7 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDa
 /// Grammar:
 ///
 /// ```ebnf
-/// spec                = [ tz_rule ] ( timestamp | items ) ;
+/// spec                = [ tz_rule ] ( timestamp | items | optional_whitespace ) ;
 ///
 /// tz_rule            = "TZ=" , "\"" , ( posix_tz | iana_tz ) , "\"" ;
 ///
@@ -201,7 +202,34 @@ pub(crate) fn parse_at_local<S: AsRef<str> + Clone>(input: S) -> Result<ParsedDa
 /// optional_whitespace = { whitespace } ;
 /// ```
 fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    trace("parse", alt((parse_timestamp, parse_items))).parse_next(input)
+    trace(
+        "parse",
+        dispatch! { peek(opt(any));
+            Some('@') => parse_timestamp,
+            Some('T') => parse_t_prefix,
+            Some(c) if c.is_ascii_whitespace() || matches!(c, '(' | '+' | '-') => {
+                alt((parse_timestamp, parse_items_without_timezone))
+            },
+            _ => parse_items_without_timezone,
+        },
+    )
+    .parse_next(input)
+}
+
+fn parse_t_prefix(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    dispatch! { peek(opt("TZ=\""));
+        Some(_) => parse_timezone_prefix,
+        None => parse_items_without_timezone,
+    }
+    .parse_next(input)
+}
+
+fn parse_timezone_prefix(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    let tz = timezone::parse.parse_next(input)?;
+    alt((parse_timestamp, move |input: &mut &str| {
+        parse_items_after_timezone(input, Some(Item::TimeZone(tz.clone())))
+    }))
+    .parse_next(input)
 }
 
 /// Parse a standalone epoch timestamp (e.g., `@1758724019`).
@@ -215,9 +243,6 @@ fn parse(input: &mut &str) -> ModalResult<DateTimeBuilder> {
 ///   has no effect on the epoch value. We intentionally parse and ignore it.
 /// - Trailing input (aside from optional whitespaces) is rejected.
 fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    // Parse and ignore an optional leading timezone rule.
-    let _ = timezone::parse(input);
-
     trace(
         "parse_timestamp",
         // Expect exactly one timestamp and then EOF (allowing trailing spaces).
@@ -227,19 +252,12 @@ fn parse_timestamp(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     .parse_next(input)
 }
 
-/// Parse a sequence of date/time items, honoring an optional leading TZ rule.
-///
-/// Notes:
-///
-/// - If a timezone rule (`TZ="..."`) appears at the beginning of the input,
-///   parse it first. The timezone rule is case-sensitive.
-/// - After the optional timezone rule is parsed, we convert the input to
-///   lowercase to allow case-insensitive parsing of the remaining items.
-/// - Trailing input (aside from optional whitespaces) is rejected.
-fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
-    // Parse and consume an optional leading timezone rule.
-    let tz = timezone::parse(input).map(Item::TimeZone);
+/// Parse a sequence of date/time items without a leading TZ rule.
+fn parse_items_without_timezone(input: &mut &str) -> ModalResult<DateTimeBuilder> {
+    parse_items_after_timezone(input, None)
+}
 
+fn parse_items_after_timezone(input: &mut &str, tz: Option<Item>) -> ModalResult<DateTimeBuilder> {
     // Convert input to lowercase for case-insensitive parsing.
     let lower: Cow<str> = if input.bytes().any(|b| b.is_ascii_uppercase()) {
         input.to_ascii_lowercase().into()
@@ -255,7 +273,7 @@ fn parse_items(input: &mut &str) -> ModalResult<DateTimeBuilder> {
     )
     .parse_next(input)?;
 
-    if let Ok(tz) = tz {
+    if let Some(tz) = tz {
         items.push(tz);
     }
 
@@ -267,7 +285,7 @@ fn parse_item(input: &mut &str) -> ModalResult<Item> {
     // An ISO date is either the start of a combined date and time item or a
     // date item on its own. Parse it once instead of once per alternative.
     let start = input.checkpoint();
-    if let Ok(date) = alt((date::iso1, date::iso2)).parse_next(input) {
+    if let Ok(date) = date::iso.parse_next(input) {
         let after_date = input.checkpoint();
         match combined::parse_time_after_date(input, date.clone()) {
             Ok(dt) => return Ok(Item::DateTime(dt)),
