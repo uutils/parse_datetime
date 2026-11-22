@@ -14,7 +14,7 @@ num-traits = "0.2.19"
 jiff = { version = "1.0.0", default-features = false, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 
 [dev-dependencies]
-rstest = "0.28"
+rstest = "0.29"
 
 [dev-dependencies.codspeed-criterion-compat]
 version = "6.0"
