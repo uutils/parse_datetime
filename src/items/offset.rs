@@ -433,6 +433,17 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
         "akdt" => (true, 8, 0, false),
         "adt" => (true, 3, 0, false),
         "a" => (false, 1, 0, true),
+        // GNU date's time-zone item documentation covers this abbreviation
+        // syntax and the optional `DST` suffix:
+        // https://www.gnu.org/software/coreutils/manual/html_node/Time-zone-items.html
+        // The Australian names and offsets are listed in the IANA Time Zone
+        // Database's "Australian miscellany" table:
+        // https://data.iana.org/time-zones/tzdb/australasia
+        "aest" => (false, 10, 0, true),
+        "aedt" => (false, 11, 0, false),
+        "acst" => (false, 9, 30, true),
+        "acdt" => (false, 10, 30, false),
+        "awst" => (false, 8, 0, false),
         _ => return Err(ErrMode::Backtrack(ContextError::new())),
     };
 
@@ -547,6 +558,11 @@ mod tests {
             ("mesz", off(false, 2, 0)),
             ("mest", off(false, 2, 0)),
             ("kst", off(false, 9, 0)),
+            ("aest", off(false, 10, 0)),
+            ("aedt", off(false, 11, 0)),
+            ("acst", off(false, 9, 30)),
+            ("acdt", off(false, 10, 30)),
+            ("awst", off(false, 8, 0)),
             // Corrected to the offsets GNU date assigns these abbreviations.
             ("adt", off(true, 3, 0)),   // Atlantic Daylight, was +4
             ("ast", off(true, 4, 0)),   // Atlantic Standard, was -3
@@ -610,11 +626,13 @@ mod tests {
     #[test]
     fn timezone_name_with_dst() {
         for (input, expected) in [
-            ("est dst", off(true, 4, 0)),   // EST is UTC-5, so EST DST is UTC-4
-            ("cet  dst", off(false, 2, 0)), // more than one space
-            ("utc dst", off(false, 1, 0)),  // UTC
-            ("ist dst", off(false, 6, 30)), // offset with minutes (ist=+5:30)
-            ("a dst", off(false, 2, 0)),    // military letter (a=+1)
+            ("est dst", off(true, 4, 0)),     // EST is UTC-5, so EST DST is UTC-4
+            ("cet  dst", off(false, 2, 0)),   // more than one space
+            ("utc dst", off(false, 1, 0)),    // UTC
+            ("ist dst", off(false, 6, 30)),   // offset with minutes (ist=+5:30)
+            ("a dst", off(false, 2, 0)),      // military letter (a=+1)
+            ("aest dst", off(false, 11, 0)),  // Australian Eastern Standard Time
+            ("acst dst", off(false, 10, 30)), // Australian Central Standard Time
         ] {
             let mut s = input;
             assert_eq!(
@@ -626,9 +644,12 @@ mod tests {
         }
 
         for input in [
-            "edt dst", // already a daylight saving time zone
-            "t dst",   // rejected by GNU date as well
-            "estdst",  // DST must be a separate word
+            "edt dst",  // already a daylight saving time zone
+            "aedt dst", // already a daylight saving time zone
+            "acdt dst", // already a daylight saving time zone
+            "awst dst", // Western Australia does not observe DST
+            "t dst",    // rejected by GNU date as well
+            "estdst",   // DST must be a separate word
             "est dstx",
         ] {
             let mut s = input;

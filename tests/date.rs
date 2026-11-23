@@ -346,6 +346,20 @@ fn test_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// GNU date's time-zone item documentation covers this abbreviation syntax.
+// The Australian names and offsets come from the IANA Time Zone Database's
+// "Australian miscellany" table:
+// https://data.iana.org/time-zones/tzdb/australasia
+#[rstest]
+#[case::aest("2026-06-15 12:00 AEST", "2026-06-15 12:00:00+10:00")]
+#[case::aedt("2026-06-15 12:00 AEDT", "2026-06-15 12:00:00+11:00")]
+#[case::acst("2026-06-15 12:00 ACST", "2026-06-15 12:00:00+09:30")]
+#[case::acdt("2026-06-15 12:00 ACDT", "2026-06-15 12:00:00+10:30")]
+#[case::awst("2026-06-15 12:00 AWST", "2026-06-15 12:00:00+08:00")]
+fn test_australian_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
 // A named abbreviation matching the base IANA zone keeps that zone when a
 // relative adjustment crosses a daylight-saving transition.
 #[test]
