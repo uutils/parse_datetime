@@ -50,6 +50,8 @@ pub(super) struct Offset {
     negative: bool,
     hours: u8,
     minutes: u8,
+    name: Option<String>,
+    universal: bool,
 }
 
 impl Offset {
@@ -82,6 +84,8 @@ impl Offset {
             negative,
             hours,
             minutes,
+            name: self.name.or(offset.name),
+            universal: self.universal,
         }
     }
 
@@ -104,6 +108,8 @@ impl Offset {
                 negative: self.negative,
                 hours: 23,
                 minutes: self.minutes,
+                name: self.name,
+                universal: self.universal,
             },
             hour_adjustment,
         )
@@ -116,6 +122,14 @@ impl Offset {
         } else {
             secs
         }
+    }
+
+    pub(super) fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub(super) fn is_universal(&self) -> bool {
+        self.universal
     }
 }
 
@@ -134,6 +148,8 @@ impl TryFrom<(bool, u8, u8)> for Offset {
             negative,
             hours,
             minutes,
+            name: None,
+            universal: false,
         })
     }
 }
@@ -146,6 +162,7 @@ impl TryFrom<&Offset> for jiff::tz::TimeZone {
             negative,
             hours,
             minutes,
+            ..
         }: &Offset,
     ) -> Result<Self, Self::Error> {
         let secs = (*hours as i32) * 3600 + (*minutes as i32) * 60;
@@ -247,6 +264,8 @@ fn timezone_name_offset(input: &mut &str) -> ModalResult<Offset> {
                 negative: false,
                 hours: 1,
                 minutes: 0,
+                name: None,
+                universal: false,
             }));
         }
         input.reset(&start);
@@ -325,8 +344,12 @@ fn timezone_offset_colonless(input: &mut &str) -> ModalResult<Offset> {
 /// The flag says whether the zone can be followed by DST. GNU date rejects it
 /// after a daylight saving time zone, and after `t`.
 fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
+    let mut universal = false;
     let (negative, hours, minutes, takes_dst) = match input {
-        "z" => (false, 0, 0, true),
+        "z" => {
+            universal = true;
+            (false, 0, 0, true)
+        }
         "y" => (true, 12, 0, true),
         "x" => (true, 11, 0, true),
         "wet" => (false, 0, 0, true),
@@ -334,8 +357,14 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
         "wat" => (false, 1, 0, true),
         "w" => (true, 10, 0, true),
         "v" => (true, 9, 0, true),
-        "utc" => (false, 0, 0, true),
-        "ut" => (false, 0, 0, true),
+        "utc" => {
+            universal = true;
+            (false, 0, 0, true)
+        }
+        "ut" => {
+            universal = true;
+            (false, 0, 0, true)
+        }
         "u" => (true, 8, 0, true),
         "t" => (true, 7, 0, false),
         "sst" => (true, 12, 0, true),
@@ -373,7 +402,10 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
         "hadt" => (true, 9, 0, false),
         "h" => (false, 8, 0, true),
         "gst" => (false, 10, 0, true),
-        "gmt" => (false, 0, 0, true),
+        "gmt" => {
+            universal = true;
+            (false, 0, 0, true)
+        }
         "g" => (false, 7, 0, true),
         "f" => (false, 6, 0, true),
         "est" => (true, 5, 0, true),
@@ -409,6 +441,8 @@ fn timezone_name_to_offset(input: &str) -> ModalResult<(Offset, bool)> {
             negative,
             hours,
             minutes,
+            name: Some(input.to_owned()),
+            universal,
         },
         takes_dst,
     ))
@@ -423,7 +457,15 @@ mod tests {
             negative,
             hours,
             minutes,
+            name: None,
+            universal: false,
         }
+    }
+
+    fn unnamed(mut offset: Offset) -> Offset {
+        offset.name = None;
+        offset.universal = false;
+        offset
     }
 
     #[test]
@@ -514,7 +556,11 @@ mod tests {
             ("z123", off(false, 0, 0)), // space separator can be ignored if immediately followed by digits (GNU date behavior)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
         }
 
         for input in [
@@ -541,7 +587,11 @@ mod tests {
             ("y-24", off(true, 36, 0)),          // maximum possible negative offset (y=-12)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
         }
 
         for input in [
@@ -567,7 +617,11 @@ mod tests {
             ("a dst", off(false, 2, 0)),    // military letter (a=+1)
         ] {
             let mut s = input;
-            assert_eq!(timezone_name_offset(&mut s).unwrap(), expected, "{input}");
+            assert_eq!(
+                unnamed(timezone_name_offset(&mut s).unwrap()),
+                expected,
+                "{input}"
+            );
             assert!(s.is_empty(), "{input}");
         }
 
@@ -594,12 +648,18 @@ mod tests {
 
         // "utc +8 years" is "utc" followed by the relative item "+8 years".
         let mut s = "utc +8 years";
-        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 0, 0));
+        assert_eq!(
+            unnamed(timezone_name_offset(&mut s).unwrap()),
+            off(false, 0, 0)
+        );
         assert_eq!(s, " +8 years");
 
         // Without a relative item, the offset is still merged.
         let mut s = "utc +8";
-        assert_eq!(timezone_name_offset(&mut s).unwrap(), off(false, 8, 0));
+        assert_eq!(
+            unnamed(timezone_name_offset(&mut s).unwrap()),
+            off(false, 8, 0)
+        );
         assert!(s.is_empty());
     }
 
