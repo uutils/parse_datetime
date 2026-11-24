@@ -252,10 +252,22 @@ impl DateTimeBuilder {
     }
 
     fn build_in_range(self) -> Result<ZonedDateTime, error::Error> {
+        let DateTimeBuilder {
+            base,
+            timestamp,
+            date,
+            time,
+            weekday,
+            offset,
+            local_zone: _,
+            timezone,
+            relative,
+        } = self;
+
         // 1. Choose the base instant.
         // If a TZ="..." prefix was parsed, it should override the base's timezone
         // while keeping the base's timestamp for relative date calculations.
-        let base = match (self.base, self.timezone) {
+        let base = match (base, timezone) {
             (Some(b), Some(tz)) => b.timestamp().to_zoned_datetime(tz),
             (Some(b), None) => b,
             (None, Some(tz)) => jiff::Timestamp::now().to_zoned_datetime(tz),
@@ -263,7 +275,7 @@ impl DateTimeBuilder {
         };
 
         // 2. Absolute timestamp override everything else.
-        if let Some(ts) = self.timestamp {
+        if let Some(ts) = timestamp {
             let ts = jiff::Timestamp::try_from(ts)?;
             return Ok(ts.to_zoned_datetime(base.offset().to_time_zone()));
         }
@@ -271,10 +283,8 @@ impl DateTimeBuilder {
         // 3. Determine whether to truncate the time of day. Like GNU, a
         // relative item on its own keeps the current time of day. All other
         // inputs, including an empty or comment-only input, start at midnight.
-        let need_midnight = self.date.is_some()
-            || self.time.is_some()
-            || self.weekday.is_some()
-            || self.relative.is_empty();
+        let need_midnight =
+            date.is_some() || time.is_some() || weekday.is_some() || relative.is_empty();
 
         // The wall-clock time the input asks for, before the time zone
         // resolves it: GNU rejects one that falls in a DST gap.
@@ -285,9 +295,12 @@ impl DateTimeBuilder {
         } else {
             base
         };
+        let named_offset = offset
+            .as_ref()
+            .and_then(|offset| offset.name().map(|name| NamedOffset { offset, name }));
 
         // 4a. Apply date.
-        if let Some(date) = self.date {
+        if let Some(date) = date {
             let d: civil::Date = if date.year.is_some() {
                 date.try_into()?
             } else {
@@ -300,8 +313,8 @@ impl DateTimeBuilder {
         }
 
         // 4b. Apply time.
-        let mut fixed_offset = self.offset.is_some();
-        if let Some(time) = self.time.clone() {
+        let mut fixed_offset = offset.is_some();
+        let parsed_time = if let Some(time) = time.clone() {
             if let Some(offset) = &time.offset {
                 dt = dt.datetime().to_zoned_datetime(offset.try_into()?)?;
                 fixed_offset = true;
@@ -309,6 +322,12 @@ impl DateTimeBuilder {
 
             let t: civil::Time = time.try_into()?;
             wanted = wanted.date().to_datetime(t);
+            Some(t)
+        } else {
+            None
+        };
+        let has_time = parsed_time.is_some();
+        if let Some(t) = parsed_time {
             dt = dt.with().time(t).build()?;
         }
 
@@ -319,8 +338,8 @@ impl DateTimeBuilder {
         }
 
         // 4c. Apply weekday.
-        if let Some(weekday::Weekday { mut offset, day }) = self.weekday {
-            if self.time.is_none() {
+        if let Some(weekday::Weekday { mut offset, day }) = weekday {
+            if !has_time {
                 dt = dt.with().time(civil::time(0, 0, 0, 0)).build()?;
             }
 
@@ -361,37 +380,64 @@ impl DateTimeBuilder {
             wanted = wanted.checked_add(Span::new().try_days(delta)?)?;
         }
 
-        // 4d. Apply fixed offset. This anchors the instant before relative
-        // adjustments so that "1970/01/01 UTC N seconds" adds N seconds to the
-        // fixed-offset instant rather than to a local wall-clock that may drift
-        // across a DST boundary (see issue uutils/coreutils#12555).
-        if let Some(offset) = self.offset {
-            let (offset, hour_adjustment) = offset.normalize();
-            // The zone applies to the wall-clock time as written; going
-            // through the local zone would move a time in its DST gap.
-            let wall = wanted.checked_add(Span::new().hours(hour_adjustment))?;
-            dt = wall.to_zoned_datetime((&offset).try_into()?)?;
+        let named_local_zone =
+            named_offset.and_then(|named| matching_local_zone(&dt, wanted, named));
+
+        // 4d. Apply the named or fixed offset. A named abbreviation can
+        // describe the active local timezone rather than a fixed offset.
+        // Preserve that zone when the abbreviation matches the requested wall
+        // clock so daylight-saving transitions are resolved using the base
+        // zone's rules.
+        if let Some(named) = named_local_zone.as_ref() {
+            let (offset, hour_adjustment) = named.offset.clone().normalize();
+            dt = dt.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+            dt = dt.datetime().to_zoned_datetime((&offset).try_into()?)?;
+        }
+
+        // Apply a fixed offset before relative adjustments. For offsets larger
+        // than 24 hours, apply the hour correction before reinterpreting the
+        // wall clock in the normalized zone.
+        if named_local_zone.is_none() {
+            if let Some(offset) = offset.as_ref() {
+                let (offset, hour_adjustment) = offset.clone().normalize();
+                if hour_adjustment == 0 {
+                    // The zone applies to the wall-clock time as written;
+                    // going through the local zone would move a time in its
+                    // DST gap.
+                    let wall = wanted.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+                    dt = wall.to_zoned_datetime((&offset).try_into()?)?;
+                } else {
+                    dt = dt.checked_add(Span::new().hours(i64::from(hour_adjustment)))?;
+                    dt = dt.datetime().to_zoned_datetime((&offset).try_into()?)?;
+                }
+            }
         }
 
         // 4e. Apply relative adjustments.
-        for rel in self.relative {
-            dt = match rel {
-                relative::Relative::Years(_) | relative::Relative::Months(_) => {
-                    // GNU way of calculating relative months and years.
-                    // GNU changes the month/year and then checks if the target month has
-                    // this day. If this day does not exist in the target month it overflows
-                    // the difference.
-                    let original_day_of_month = dt.day();
-                    dt = dt.checked_add::<Span>(rel.try_into()?)?;
-                    if original_day_of_month != dt.day() {
-                        dt = dt.checked_add(
-                            (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
-                        )?;
-                    }
-                    dt
+        if let Some(named) = named_local_zone {
+            let zone = named.zone;
+            let mut date_relative = Vec::new();
+            let mut time_relative = Vec::new();
+            for rel in relative {
+                match rel {
+                    relative::Relative::Years(_)
+                    | relative::Relative::Months(_)
+                    | relative::Relative::Days(_) => date_relative.push(rel),
+                    _ => time_relative.push(rel),
                 }
-                _ => dt.checked_add::<Span>(rel.try_into()?)?,
-            };
+            }
+
+            for rel in date_relative {
+                dt = apply_relative(dt, rel)?;
+            }
+            dt = dt.with_time_zone(zone);
+            for rel in time_relative {
+                dt = apply_relative(dt, rel)?;
+            }
+        } else {
+            for rel in relative {
+                dt = apply_relative(dt, rel)?;
+            }
         }
 
         Ok(dt)
@@ -560,6 +606,71 @@ fn weekday_monday0(day: weekday::Day) -> u8 {
         weekday::Day::Saturday => 5,
         weekday::Day::Sunday => 6,
     }
+}
+
+#[derive(Clone, Copy)]
+struct NamedOffset<'a> {
+    offset: &'a offset::Offset,
+    name: &'a str,
+}
+
+struct NamedLocalZone<'a> {
+    zone: jiff::tz::TimeZone,
+    offset: &'a offset::Offset,
+}
+
+fn apply_relative(
+    mut dt: ZonedDateTime,
+    rel: relative::Relative,
+) -> Result<ZonedDateTime, error::Error> {
+    match rel {
+        relative::Relative::Years(_) | relative::Relative::Months(_) => {
+            // GNU changes the month/year and then checks if the target month
+            // has this day. If this day does not exist in the target month it
+            // overflows the difference.
+            let original_day_of_month = dt.day();
+            dt = dt.checked_add::<Span>(rel.try_into()?)?;
+            if original_day_of_month != dt.day() {
+                dt = dt.checked_add(
+                    (original_day_of_month.checked_sub(dt.day()).unwrap_or(0)).days(),
+                )?;
+            }
+            Ok(dt)
+        }
+        _ => Ok(dt.checked_add::<Span>(rel.try_into()?)?),
+    }
+}
+
+fn matching_local_zone<'a>(
+    dt: &ZonedDateTime,
+    local: civil::DateTime,
+    named: NamedOffset<'a>,
+) -> Option<NamedLocalZone<'a>> {
+    if named.offset.is_universal() {
+        return None;
+    }
+
+    let zone = dt.time_zone();
+    zone.iana_name()?;
+    let offset_seconds = named.offset.total_seconds();
+    let ambiguous = zone.to_ambiguous_zoned_datetime(local);
+    for candidate in [ambiguous.clone().earlier(), ambiguous.later()]
+        .into_iter()
+        .flatten()
+    {
+        if candidate.offset().seconds() != offset_seconds {
+            continue;
+        }
+        let info = candidate.time_zone().to_offset_info(candidate.timestamp());
+        let abbreviation = info.abbreviation();
+        if abbreviation.eq_ignore_ascii_case(named.name) {
+            return Some(NamedLocalZone {
+                zone: zone.clone(),
+                offset: named.offset,
+            });
+        }
+    }
+    None
 }
 
 impl TryFrom<Vec<Item>> for DateTimeBuilder {
