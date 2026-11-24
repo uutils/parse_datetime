@@ -346,6 +346,55 @@ fn test_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
     check_absolute(input, expected);
 }
 
+// GNU date's time-zone item documentation covers this abbreviation syntax.
+// The Australian names and offsets come from the IANA Time Zone Database's
+// "Australian miscellany" table:
+// https://data.iana.org/time-zones/tzdb/australasia
+#[rstest]
+#[case::aest("2026-06-15 12:00 AEST", "2026-06-15 12:00:00+10:00")]
+#[case::aedt("2026-06-15 12:00 AEDT", "2026-06-15 12:00:00+11:00")]
+#[case::acst("2026-06-15 12:00 ACST", "2026-06-15 12:00:00+09:30")]
+#[case::acdt("2026-06-15 12:00 ACDT", "2026-06-15 12:00:00+10:30")]
+#[case::awst("2026-06-15 12:00 AWST", "2026-06-15 12:00:00+08:00")]
+fn test_australian_zone_abbreviation_offsets(#[case] input: &str, #[case] expected: &str) {
+    check_absolute(input, expected);
+}
+
+// A named abbreviation matching the base IANA zone keeps that zone when a
+// relative adjustment crosses a daylight-saving transition.
+#[test]
+fn test_named_zone_keeps_base_zone_across_dst() {
+    let base = "2026-01-01 00:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned_datetime(TimeZone::get("America/New_York").unwrap())
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, "2026-03-07 12:00 EST 3 days")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.datetime().to_string(), "2026-03-10T13:00:00");
+    assert_eq!(parsed.offset().seconds(), -4 * 3600);
+    assert_eq!(parsed.strftime("%Z").to_string(), "EDT");
+}
+
+#[test]
+fn test_named_zone_preserves_month_overflow() {
+    let base = "2026-01-01 00:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned_datetime(TimeZone::get("America/New_York").unwrap())
+        .unwrap();
+
+    let parsed = parse_datetime::parse_datetime_at_date(base, "2026-01-31 EST +1 month")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.datetime().to_string(), "2026-03-03T00:00:00");
+    assert_eq!(parsed.offset().seconds(), -5 * 3600);
+}
+
 // Regression test for uutils/coreutils#12555.
 // A fixed offset (e.g. the "UTC" keyword) must anchor the instant *before*
 // relative adjustments are applied. Otherwise, when the base zone observes DST,
@@ -372,6 +421,27 @@ fn test_utc_keyword_plus_relative_seconds_across_dst() {
         .unwrap()
         .expect_in_range();
     assert_eq!(parsed.timestamp().as_second(), seconds);
+}
+
+#[test]
+fn test_large_offset_keeps_offset_application_order() {
+    let base = "2026-03-29 12:00:00"
+        .parse::<DateTime>()
+        .unwrap()
+        .to_zoned_datetime(TimeZone::get("Europe/Berlin").unwrap())
+        .unwrap();
+    let parsed = parse_datetime::parse_datetime_at_date(base.clone(), "m+24 +0 days")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.datetime().to_string(), "2026-03-28T22:00:00");
+    assert_eq!(parsed.offset().seconds(), 23 * 3600);
+    let parsed = parse_datetime::parse_datetime_at_date(base, "2026-03-29 12:00 m+24")
+        .unwrap()
+        .expect_in_range();
+
+    assert_eq!(parsed.datetime().to_string(), "2026-03-28T22:00:00");
+    assert_eq!(parsed.offset().seconds(), 23 * 3600);
 }
 
 // The military time zone letter `j`.
