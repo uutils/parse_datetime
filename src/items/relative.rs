@@ -49,31 +49,30 @@ pub(crate) enum Relative {
     Seconds(i64, u32),
 }
 
-impl TryFrom<Relative> for jiff::Span {
-    type Error = &'static str;
+#[derive(Clone, Copy, Debug)]
+pub(super) enum RelativeUnit {
+    Years,
+    Months,
+    Days,
+    Hours,
+    Minutes,
+    Seconds,
+    Nanoseconds,
+}
 
-    fn try_from(relative: Relative) -> Result<Self, Self::Error> {
-        match relative {
-            Relative::Years(years) => jiff::Span::new().try_years(years),
-            Relative::Months(months) => jiff::Span::new().try_months(months),
-            Relative::Days(days) => jiff::Span::new().try_days(days),
-            Relative::Hours(hours) => jiff::Span::new().try_hours(hours),
-            Relative::Minutes(minutes) => jiff::Span::new().try_minutes(minutes),
-            Relative::Seconds(seconds, nanoseconds) => {
-                // -0.25 is stored as (-1, 750_000_000), but a `jiff::Span` needs
-                // both fields with one sign, so move the fraction onto it.
-                let (seconds, nanoseconds) = if seconds < 0 && nanoseconds > 0 {
-                    (seconds + 1, -i64::from(1_000_000_000 - nanoseconds))
-                } else {
-                    (seconds, i64::from(nanoseconds))
-                };
-
-                jiff::Span::new()
-                    .try_seconds(seconds)
-                    .and_then(|span| span.try_nanoseconds(nanoseconds))
-            }
+impl Relative {
+    pub(super) fn components(self) -> [Option<(RelativeUnit, i64)>; 2] {
+        match self {
+            Self::Years(value) => [Some((RelativeUnit::Years, i64::from(value))), None],
+            Self::Months(value) => [Some((RelativeUnit::Months, i64::from(value))), None],
+            Self::Days(value) => [Some((RelativeUnit::Days, i64::from(value))), None],
+            Self::Hours(value) => [Some((RelativeUnit::Hours, i64::from(value))), None],
+            Self::Minutes(value) => [Some((RelativeUnit::Minutes, i64::from(value))), None],
+            Self::Seconds(seconds, nanoseconds) => [
+                Some((RelativeUnit::Seconds, seconds)),
+                Some((RelativeUnit::Nanoseconds, i64::from(nanoseconds))),
+            ],
         }
-        .map_err(|_| "relative value is invalid")
     }
 }
 
